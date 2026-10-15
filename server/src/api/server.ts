@@ -7,13 +7,16 @@ import { toDto } from './dto.js';
 import type { IndexQuote } from '../sources/yahoo.js';
 import type { EarningsResponse, MarketIndexDto, MarketsResponse, StatusResponse } from './types.js';
 
-/** Five largest exchanges by listed market value, each with its headline index. */
+/** Five largest exchanges by listed market value plus India's two, each with its headline index. */
 export const MARKET_INDICES = [
   { exchange: 'NYSE', index: 'S&P 500', symbol: '^GSPC' },
   { exchange: 'Nasdaq', index: 'Nasdaq Composite', symbol: '^IXIC' },
   { exchange: 'Shanghai', index: 'SSE Composite', symbol: '000001.SS' },
   { exchange: 'Japan Exchange', index: 'Nikkei 225', symbol: '^N225' },
   { exchange: 'Euronext', index: 'Euronext 100', symbol: '^N100' },
+  // India, for the app's users
+  { exchange: 'NSE', index: 'NIFTY 50', symbol: '^NSEI' },
+  { exchange: 'BSE', index: 'SENSEX', symbol: '^BSESN' },
 ] as const;
 const MARKETS_TTL_MS = 60_000;
 

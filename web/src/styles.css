@@ -128,7 +128,7 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .down { color: var(--miss); }
 
 /* World markets strip */
-.markets { display: grid; background: var(--raised); grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin-bottom: 22px; overflow: hidden; }
+.markets { display: grid; background: var(--raised); grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin-bottom: 22px; overflow: hidden; }
 .market { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 10px 14px; border-left: 1px solid var(--line); }
 .market:first-child { border-left: 0; }
 .market-exchange { font-weight: 700; font-stretch: 112%; }

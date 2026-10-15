@@ -106,15 +106,16 @@ describe('routes', () => {
 });
 
 describe('markets', () => {
-  test('GET /api/markets returns the five indices, cached between calls', async () => {
+  test('GET /api/markets returns the seven indices, cached between calls', async () => {
     let calls = 0;
     const quote = (symbol: string) => ({ symbol, price: 100, previousClose: 99, changePct: 1.01, asOf: NOW, currency: 'USD' });
     const app = buildServer(db, { indexQuote: async (s) => { calls++; return quote(s); } });
     const first = (await app.inject({ method: 'GET', url: '/api/markets' })).json();
     await app.inject({ method: 'GET', url: '/api/markets' });
-    expect(first.indices.map((i: { exchange: string }) => i.exchange)).toEqual(['NYSE', 'Nasdaq', 'Shanghai', 'Japan Exchange', 'Euronext']);
+    expect(first.indices.map((i: { exchange: string }) => i.exchange))
+      .toEqual(['NYSE', 'Nasdaq', 'Shanghai', 'Japan Exchange', 'Euronext', 'NSE', 'BSE']);
     expect(first.indices[0]).toMatchObject({ index: 'S&P 500', price: 100, changePct: 1.01 });
-    expect(calls).toBe(5);
+    expect(calls).toBe(7);
   });
   test('one failed index shows as unavailable, others still load', async () => {
     const app = buildServer(db, { indexQuote: async (s) => {
