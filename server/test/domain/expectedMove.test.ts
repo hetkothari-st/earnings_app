@@ -55,6 +55,12 @@ describe('computeExpectedMove', () => {
     expect(em?.strike).toBe(100);
     expect(em?.movePct).toBe(5.85);
   });
+  test('no strike within 10% of the price gives no value (live LOOP: $0.34 stock, $0.50 strike)', () => {
+    const c: OptionChain = { underlying: 0.342, quotes: [
+      q('2026-10-16', 'C', 0.5, 0.05, 0.6), q('2026-10-16', 'P', 0.5, 0.1, 0.45),
+    ] };
+    expect(computeExpectedMove(c, '2026-10-16', 'BMO')).toBeNull();
+  });
   test('zero bid is flagged illiquid', () => {
     const c = chain(100);
     c.quotes = c.quotes.map((x) => (x.expiry === '2026-10-16' && x.strike === 100 && x.type === 'P' ? { ...x, bid: 0 } : x));

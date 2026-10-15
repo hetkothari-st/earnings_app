@@ -41,6 +41,8 @@ export function computeExpectedMove(chain: OptionChain, reportDate: string, timi
 
   let strike = strikes[0]!;
   for (const k of strikes) if (Math.abs(k - u) < Math.abs(strike - u)) strike = k;
+  // A straddle far from the price is mostly intrinsic value, not an earnings premium.
+  if (Math.abs(strike - u) / u > 0.1) return null;
 
   const { call, put } = pairs.get(strike) as { call: OptionQuote; put: OptionQuote };
   const callMid = mid(call);
