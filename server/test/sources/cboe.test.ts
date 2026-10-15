@@ -6,7 +6,7 @@ import { HttpError, SourceFormatError } from '../../src/sources/http.js';
 const body = {
   timestamp: '2026-10-15 02:18:14',
   data: {
-    symbol: 'JPM', current_price: 335.9,
+    symbol: 'JPM', current_price: 335.9, close: 335.28,
     options: [
       { option: 'JPM261016C00180000', bid: 153.3, ask: 157.25, iv: 0 },
       { option: 'JPM261016P00180000', bid: 0, ask: 0.01, iv: 2.5 },
@@ -18,15 +18,20 @@ const body = {
 describe('cboe', () => {
   test('parses chain and skips unparseable symbols', () => {
     expect(parseCboeChain(body)).toEqual({
-      underlying: 335.9,
+      underlying: 335.28,
       quotes: [
         { expiry: '2026-10-16', type: 'C', strike: 180, bid: 153.3, ask: 157.25 },
         { expiry: '2026-10-16', type: 'P', strike: 180, bid: 0, ask: 0.01 },
       ],
     });
   });
+  test('uses the regular-session close, not an extended-hours price', () => {
+    // Live TSM 2026-10-15 02:50 ET: overnight trade 422.55 after results; options quoted at the 430.00 close.
+    const chain = parseCboeChain({ data: { current_price: 422.5537, close: 430.0, options: [] } });
+    expect(chain?.underlying).toBe(430.0);
+  });
   test('missing price -> null', () => {
-    expect(parseCboeChain({ data: { current_price: null, options: [] } })).toBeNull();
+    expect(parseCboeChain({ data: { current_price: null, close: null, options: [] } })).toBeNull();
   });
   test('bad shape throws', () => {
     expect(() => parseCboeChain({ nope: 1 })).toThrow(SourceFormatError);
