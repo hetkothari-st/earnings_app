@@ -41,21 +41,38 @@ export function computeExpectedMove(chain: OptionChain, reportDate: string, timi
 
   let strike = strikes[0]!;
   for (const k of strikes) if (Math.abs(k - u) < Math.abs(strike - u)) strike = k;
+  const pair = (k: number) => pairs.get(k) as { call: OptionQuote; put: OptionQuote };
+  // Time value of the straddle at strike k (excludes intrinsic value |u - k|).
+  const timeValue = (k: number) => mid(pair(k).call) + mid(pair(k).put) - Math.abs(u - k);
+  const isIlliquid = (k: number) => {
+    const { call, put } = pair(k);
+    return call.bid <= 0 || put.bid <= 0 || call.ask - call.bid > 0.3 * mid(call) || put.ask - put.bid > 0.3 * mid(put);
+  };
 
-  const { call, put } = pairs.get(strike) as { call: OptionQuote; put: OptionQuote };
-  const callMid = mid(call);
-  const putMid = mid(put);
-  const illiquid =
-    call.bid <= 0 || put.bid <= 0 ||
-    call.ask - call.bid > 0.3 * callMid || put.ask - put.bid > 0.3 * putMid;
+  // The at-the-money straddle at the exact price is estimated by interpolating time value between the
+  // strikes either side of the price; off-strike intrinsic value would otherwise inflate the move.
+  const below = strikes.filter((k) => k <= u).pop();
+  const above = strikes.find((k) => k >= u);
+  let tv: number;
+  let used: number[];
+  if (below != null && above != null && below !== above) {
+    const w = (u - below) / (above - below);
+    tv = timeValue(below) * (1 - w) + timeValue(above) * w;
+    used = [below, above];
+  } else {
+    tv = timeValue(strike);
+    used = [strike];
+  }
+  if (!(tv > 0)) return null;
 
+  const { call, put } = pair(strike);
   return {
     expiry,
     strike,
-    callMid,
-    putMid,
+    callMid: mid(call),
+    putMid: mid(put),
     underlying: u,
-    movePct: Math.round(((callMid + putMid) / u) * 10000) / 100,
-    illiquid,
+    movePct: Math.round((tv / u) * 10000) / 100,
+    illiquid: used.some(isIlliquid),
   };
 }

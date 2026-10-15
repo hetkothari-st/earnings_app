@@ -71,8 +71,9 @@ export function DetailPanel({ r, zone, onClose }: { r: ReportDto; zone: string; 
             <>
               <p className="big-move">±{em.movePct.toFixed(2)}%</p>
               <p className="muted">
-                Straddle at the {em.strike} strike expiring {formatDateHeading(em.expiry)}: call {em.callMid.toFixed(2)} plus put {em.putMid.toFixed(2)},
-                against a close of {em.underlying.toFixed(2)}. Priced {when(em.snapshotAt)}.
+                At-the-money straddle for the {formatDateHeading(em.expiry)} expiry, using time value interpolated between
+                the strikes around the {em.underlying.toFixed(2)} close{em.quoteDate ? ` of ${formatDateHeading(em.quoteDate)}` : ''}.
+                {em.provisional ? ' Provisional: the final value uses the last close before the release.' : ''}
               </p>
             </>
           ) : <p className="muted">Not available. It is calculated after the close before the report.</p>}
