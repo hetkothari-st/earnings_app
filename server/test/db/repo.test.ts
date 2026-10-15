@@ -56,6 +56,18 @@ describe('upsertCalendarRow', () => {
       reportDate: '2026-10-21', rescheduledFrom: '2026-10-16', timing: 'UNKNOWN', timingSource: null, expectedMove: null,
     });
   });
+  test('reschedule clears every SEC field, including links and check time', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    const id = all(db)[0]!.id;
+    setSecResult(db, id, {
+      check: 'verified', timing: 'BMO', timingSource: 'sec', acceptedAt: '2026-10-16T11:00:00Z',
+      docUrl: 'https://sec.gov/doc.htm', indexUrl: 'https://sec.gov/index.htm',
+    }, NOW);
+    upsertCalendarRow(db, row({ reportDate: '2026-10-21', timing: 'UNKNOWN' }), NOW, TODAY);
+    expect(getReport(db, id)).toMatchObject({
+      secCheck: null, secAcceptedAt: null, secDocUrl: null, secIndexUrl: null, secCheckedAt: null,
+    });
+  });
 });
 
 describe('review fixes', () => {
