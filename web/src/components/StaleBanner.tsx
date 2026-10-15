@@ -6,7 +6,7 @@ export function StaleBanner({ sources }: { sources: SourceStatusDto[] }) {
   if (stale.length === 0) return null;
   return (
     <div className="banner" role="status">
-      {stale.map((s) => <p key={s.source}>⚠ {s.message}. Showing the last good data.</p>)}
+      {stale.map((s) => <p key={s.source}>{s.message} <a href="/status">Details</a></p>)}
     </div>
   );
 }

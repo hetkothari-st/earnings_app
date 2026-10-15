@@ -19,9 +19,10 @@ const RowSchema = z.object({
   lastYearRptDt: Str,
 });
 
-// `data` must be present: Nasdaq signals errors as HTTP 200 with data: null. Only `rows` may be null (weekends).
+// data: null is only an empty day when status says OK ("No record found" for far-future dates);
+// otherwise it is a failure. rows: null is an empty day (weekends).
 const ResponseSchema = z.object({
-  data: z.object({ rows: z.array(RowSchema).nullish() }),
+  data: z.object({ rows: z.array(RowSchema).nullish() }).nullable(),
   status: z.object({ rCode: z.number().nullish() }).nullish(),
 });
 
@@ -42,6 +43,10 @@ export function parseNasdaqCalendar(json: unknown, date: string): CalendarRow[] 
   if (!parsed.success) throw new SourceFormatError(`Nasdaq calendar ${date}: ${parsed.error.message}`);
   const rCode = parsed.data.status?.rCode;
   if (rCode != null && rCode !== 200) throw new SourceFormatError(`Nasdaq calendar ${date}: status rCode ${rCode}`);
+  if (parsed.data.data === null) {
+    if (rCode === 200) return [];
+    throw new SourceFormatError(`Nasdaq calendar ${date}: no data and no OK status`);
+  }
   return (parsed.data.data.rows ?? [])
     .filter((r) => r.symbol.trim() !== '')
     .map((r) => {

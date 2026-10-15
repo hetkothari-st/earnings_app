@@ -10,6 +10,7 @@ import { DayStrip } from './DayStrip';
 import { DetailPanel } from './DetailPanel';
 import { EarningsTable } from './EarningsTable';
 import { Header } from './Header';
+import { LiveMarketBar } from './MarketBar';
 import { SessionBand } from './SessionBand';
 import { StaleBanner } from './StaleBanner';
 
@@ -50,6 +51,7 @@ export function Calendar() {
 
   return (
     <div className="app">
+      <LiveMarketBar />
       <Header
         view={view} onView={setView} range={range} custom={custom} onCustom={setCustom}
         onShift={(dir) => setAnchor((a) => shiftAnchor(view, a, dir))} onToday={() => setAnchor(today)}

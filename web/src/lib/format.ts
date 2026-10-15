@@ -28,3 +28,16 @@ export function formatPct(n: number | null): string {
 export function formatDateHeading(date: string): string {
   return DateTime.fromISO(date).setLocale('en-US').toFormat('ccc, LLL d, yyyy');
 }
+
+/** Signed change with a true minus sign: "+0.42%", "−1.11%". */
+export function formatChange(n: number | null, decimals = 2): string {
+  if (n == null) return '—';
+  const s = Math.abs(n).toFixed(decimals);
+  return `${n > 0 ? '+' : n < 0 ? '−' : ''}${s}%`;
+}
+
+export const changeClass = (n: number | null) => (n == null || n === 0 ? '' : n > 0 ? 'up' : 'down');
+
+export function formatCount(n: number | null | undefined): string {
+  return n == null ? '—' : n.toLocaleString('en-US');
+}

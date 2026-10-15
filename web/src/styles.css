@@ -1,31 +1,21 @@
-/* Palette: colour carries meaning. Dawn = before the open, dusk = after the close. */
+/* Trading terminal palette (dark only). Colour carries meaning:
+   blue = before the open, violet = after the close, green/red = up/beat vs down/miss, amber = needs attention. */
 :root {
-  --paper: #f2f4f7;
-  --surface: #ffffff;
-  --ink: #16202e;
-  --muted: #5d6b7e;
-  --line: #dce2ea;
-  --dawn: #2f6fb2;
-  --dusk: #6d4ab0;
-  --beat: #18825a;
-  --miss: #c23b3b;
-  --amber: #a86a12;
-  --dawn-wash: color-mix(in srgb, var(--dawn) 12%, transparent);
-  --dusk-wash: color-mix(in srgb, var(--dusk) 12%, transparent);
-  --open-wash: color-mix(in srgb, var(--ink) 7%, transparent);
+  --paper: #090d15;
+  --surface: #0f1521;
+  --raised: #141c2b;
+  --ink: #e4eaf3;
+  --muted: #7b889d;
+  --line: #1d2636;
+  --dawn: #4c9aff;
+  --dusk: #a78bfa;
+  --beat: #22c07a;
+  --miss: #ff5d6c;
+  --amber: #f5a524;
+  --dawn-wash: color-mix(in srgb, var(--dawn) 16%, transparent);
+  --dusk-wash: color-mix(in srgb, var(--dusk) 16%, transparent);
+  --open-wash: color-mix(in srgb, var(--ink) 8%, transparent);
   --font: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --paper: #0e1626; --surface: #142035; --ink: #e5ebf4; --muted: #93a1b5; --line: #253250;
-    --dawn: #6ea7e6; --dusk: #a98ce9; --beat: #47c08b; --miss: #f07a72; --amber: #e5ad4a;
-    color-scheme: dark;
-  }
-}
-:root[data-theme='dark'] {
-  --paper: #0e1626; --surface: #142035; --ink: #e5ebf4; --muted: #93a1b5; --line: #253250;
-  --dawn: #6ea7e6; --dusk: #a98ce9; --beat: #47c08b; --miss: #f07a72; --amber: #e5ad4a;
   color-scheme: dark;
 }
 
@@ -35,7 +25,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 400 14px/1.5 var(--font);
+  font: 400 13px/1.45 var(--font);
   font-variant-numeric: tabular-nums;
 }
 a { color: var(--dawn); text-underline-offset: 2px; }
@@ -53,7 +43,7 @@ button { cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--muted); }
 button.icon { width: 34px; padding: 6px 0; font-size: 18px; line-height: 1; }
 
-.app { max-width: 1240px; margin: 0 auto; padding: 20px 24px 40px; }
+.app { max-width: 1440px; margin: 0 auto; padding: 20px 24px 40px; }
 
 /* Header */
 .header { display: grid; gap: 18px; margin-bottom: 20px; }
@@ -64,7 +54,7 @@ button.icon { width: 34px; padding: 6px 0; font-size: 18px; line-height: 1; }
 .headline { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 h1 {
   margin: 0;
-  font-size: clamp(30px, 5vw, 46px);
+  font-size: clamp(24px, 3.4vw, 34px);
   line-height: 1.05;
   font-weight: 750;
   font-stretch: 112%;
@@ -78,7 +68,7 @@ h1 {
 .check { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
 .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
 .seg button { border: 0; border-radius: 5px; background: transparent; padding: 5px 12px; color: var(--muted); }
-.seg button.on { background: var(--ink); color: var(--surface); }
+.seg button.on { background: var(--dawn); color: #04101f; font-weight: 600; }
 
 /* Session band: the US trading day on the viewer's clock */
 .band { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px 12px; margin-bottom: 18px; }
@@ -111,9 +101,9 @@ h1 {
 /* Table */
 .content { min-height: 200px; }
 table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.earnings th, .earnings td { padding: 10px 12px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--line); }
+.earnings th, .earnings td { padding: 7px 10px; white-space: nowrap; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--line); }
 .earnings thead th { font-size: 12px; font-weight: 500; color: var(--muted); background: var(--surface); position: sticky; top: 0; z-index: 1; }
-.date-row th { background: var(--paper); font-size: 16px; font-weight: 700; font-stretch: 112%; padding-top: 16px; }
+.date-row th { background: var(--raised); font-size: 14px; font-weight: 700; font-stretch: 112%; padding-top: 16px; }
 .group-row th { background: var(--surface); padding: 12px 12px 6px; border-bottom: 0; }
 .group-name { font-weight: 700; margin-right: 10px; }
 .group-count { color: var(--muted); font-size: 12px; }
@@ -128,18 +118,32 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .row:hover, .row:focus-visible { background: color-mix(in srgb, var(--edge, var(--muted)) 6%, var(--surface)); outline: none; }
 .row.is-hidden { opacity: 0.4; }
 .c-hide { width: 44px; }
-.c-hide input { width: 16px; height: 16px; accent-color: var(--ink); }
-.company { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.c-hide input { width: 15px; height: 15px; accent-color: var(--dawn); }
 .ticker { font-weight: 800; font-stretch: 125%; letter-spacing: 0.02em; }
-.name { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.name { display: block; color: var(--ink); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exchange { display: block; color: var(--muted); font-size: 12px; }
+.date { white-space: nowrap; color: var(--muted); }
+.up { color: var(--beat); }
+.down { color: var(--miss); }
+
+/* World markets strip */
+.markets { display: grid; background: var(--raised); grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin-bottom: 22px; overflow: hidden; }
+.market { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 10px 14px; border-left: 1px solid var(--line); }
+.market:first-child { border-left: 0; }
+.market-exchange { font-weight: 700; font-stretch: 112%; }
+.market-index { grid-column: 1; color: var(--muted); font-size: 12px; }
+.market-level { grid-column: 2; grid-row: 1; text-align: right; font-weight: 600; }
+.market-change { grid-column: 2; grid-row: 2; text-align: right; font-size: 12px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.table-wrap table.earnings { border: 0; border-radius: 0; min-width: 1240px; }
 .num { text-align: right; white-space: nowrap; }
 .est { color: var(--muted); }
 .sep { color: var(--line); }
 .act.beat, dd.beat { color: var(--beat); font-weight: 650; }
 .act.miss, dd.miss { color: var(--miss); font-weight: 650; }
-.move { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.move-track { width: 56px; height: 6px; border-radius: 3px; background: var(--paper); display: flex; justify-content: center; overflow: hidden; }
-.move-range { height: 100%; border-radius: 3px; background: var(--ink); opacity: 0.55; }
+.move-inner { display: inline-flex; align-items: center; gap: 8px; }
+.move-track { width: 56px; height: 6px; border-radius: 3px; background: var(--line); display: flex; justify-content: center; overflow: hidden; }
+.move-range { height: 100%; border-radius: 3px; background: var(--amber); }
 .warn { color: var(--amber); cursor: help; margin-left: 2px; }
 .plus1 { color: var(--muted); margin-left: 3px; font-size: 10px; }
 .muted { color: var(--muted); }
@@ -150,7 +154,7 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .banner p { margin: 4px 0; }
 
 /* Detail sheet */
-.scrim { position: fixed; inset: 0; background: rgb(14 22 38 / 0.28); z-index: 9; }
+.scrim { position: fixed; inset: 0; background: rgb(0 0 0 / 0.5); z-index: 9; }
 .panel {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 10;
   width: min(460px, 100%); overflow-y: auto;
@@ -204,8 +208,15 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
   .row td:first-child { box-shadow: none; }
   .earnings tr.row { box-shadow: inset 3px 0 0 var(--edge, transparent); }
   .earnings td[data-label]::before { content: attr(data-label); display: inline-block; width: 120px; color: var(--muted); font-size: 12px; }
-  .earnings td.company::before, .earnings td.c-hide::before { display: none; }
-  .move { justify-content: flex-start; }
+  .earnings td.symbol::before, .earnings td.c-hide::before { display: none; }
+  .table-wrap { overflow: visible; border: 0; background: transparent; }
+  .table-wrap table.earnings { min-width: 0; border: 1px solid var(--line); border-radius: 10px; }
+  .markets { grid-template-columns: repeat(5, minmax(150px, 1fr)); overflow-x: auto; }
   .name { max-width: none; }
   .panel { padding: 20px 18px 32px; }
 }
+
+/* Terminal details */
+.earnings thead th { text-transform: none; letter-spacing: 0.01em; background: var(--raised); }
+.row:nth-child(even of .row) { background: color-mix(in srgb, var(--raised) 45%, var(--surface)); }
+.market-level { font-size: 14px; }

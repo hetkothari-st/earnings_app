@@ -10,7 +10,7 @@ const dto = (over: Partial<ReportDto>): ReportDto => ({
   marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
   eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6, lastYear: null, lastYearReportDate: null },
   revenue: { estimate: null, actual: null, surprisePct: null, result: null },
-  expectedMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
+  expectedMove: null, previousMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
   fetched: { calendar: null, revenue: null, sec: null }, flags: [], ...over,
 });
 
@@ -71,6 +71,16 @@ describe('EarningsTable', () => {
     expect(tr.className).toContain('s-amc');
     expect(within(tr).getByText('±7.5%')).toBeTruthy();
     expect((tr.querySelector('.move-range') as HTMLElement).style.width).toBe('50%');
+  });
+  test('separate symbol, name and date columns; previous move signed and coloured; options volume', () => {
+    render(<EarningsTable rows={[dto({ previousMove: { pct: -2.5, reportDate: '2026-07-16' },
+      expectedMove: { movePct: 4.05, illiquid: false, expiry: '2026-10-16', strike: 97, callMid: 1.9, putMid: 2.1, underlying: 97, optionsVolume: 29599, snapshotAt: '2026-10-14T20:20:00Z' } })]}
+      zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
+    const tr = screen.getByText('TSM').closest('tr')!;
+    expect(within(tr).getByText('Taiwan Semiconductor')).toBeTruthy();
+    expect(within(tr).getByText('15 Oct')).toBeTruthy();
+    expect(within(tr).getByText('−2.5%').className).toContain('down');
+    expect(within(tr).getByText('29,599')).toBeTruthy();
   });
   test('group header shows how many reports it holds', () => {
     renderTable();

@@ -57,6 +57,14 @@ describe('parseNasdaqCalendar', () => {
   test('weekend response yields no rows', () => {
     expect(parseNasdaqCalendar(weekend, '2026-10-18')).toEqual([]);
   });
+  test('"No record found" for a far-future date is an empty day', () => {
+    // Live 2027-01-13 response.
+    const json = { data: null, message: null, status: { rCode: 200, bCodeMessage: [{ code: 1002, errorMessage: 'Earnings Calendar: No record found.' }] } };
+    expect(parseNasdaqCalendar(json, '2027-01-13')).toEqual([]);
+  });
+  test('data null without an OK status is still a failure', () => {
+    expect(() => parseNasdaqCalendar({ data: null }, '2026-10-15')).toThrow(SourceFormatError);
+  });
   test('HTTP-200 error envelope is a failure, not an empty day', () => {
     expect(() => parseNasdaqCalendar({ data: null, message: 'error', status: { rCode: 400 } }, '2026-10-15')).toThrow(SourceFormatError);
     expect(() => parseNasdaqCalendar({ data: { rows: [] }, status: { rCode: 500 } }, '2026-10-15')).toThrow(SourceFormatError);

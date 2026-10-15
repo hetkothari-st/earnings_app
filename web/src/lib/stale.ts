@@ -10,10 +10,10 @@ export function staleSources(sources: SourceStatusDto[], nowMs: number): { sourc
     const err = s.lastErrorAt ? Date.parse(s.lastErrorAt) : null;
     if (err == null || (ok != null && ok >= err)) continue;
     if (ok == null) {
-      out.push({ source: s.source, message: `${name} data never loaded (${s.lastError})` });
+      out.push({ source: s.source, message: `${name} data has not loaded yet.` });
     } else {
       const hours = Math.max(1, Math.round((nowMs - ok) / 3_600_000));
-      out.push({ source: s.source, message: `${name} data last updated ${hours}h ago (latest attempt failed: ${s.lastError})` });
+      out.push({ source: s.source, message: `${name} could not be reached on the last update. Showing data from ${hours}h ago.` });
     }
   }
   return out;

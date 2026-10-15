@@ -1,6 +1,7 @@
 import { Fragment, type KeyboardEvent } from 'react';
 import type { Flag, ReportDto, ResultPart, Timing } from '../../../server/src/api/types';
-import { formatDateHeading, formatEps, formatPct, formatUsd } from '../lib/format';
+import { DateTime } from 'luxon';
+import { changeClass, formatChange, formatCount, formatDateHeading, formatEps, formatPct, formatUsd } from '../lib/format';
 import { describeTiming, zoneLabel } from '../lib/time';
 
 interface Props {
@@ -16,7 +17,7 @@ const ORDER: Timing[] = ['BMO', 'DMH', 'AMC', 'UNKNOWN'];
 const GROUP_LABEL: Record<Timing, string> = {
   BMO: 'Before open', DMH: 'During market', AMC: 'After close', UNKNOWN: 'Time not announced',
 };
-const COLS = 9;
+const COLS = 12;
 /** Expected move that fills the range bar completely. */
 const MOVE_SCALE = 15;
 
@@ -57,18 +58,22 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
   const tz = zoneLabel(zone, visible[0]!.reportDate);
 
   return (
+    <div className="table-wrap">
     <table className="earnings">
       <thead>
         <tr>
           <th scope="col" className="c-hide">Hide</th>
-          <th scope="col">Release (ET)</th>
+          <th scope="col">Symbol</th>
+          <th scope="col">Name</th>
+          <th scope="col">Date</th>
+          <th scope="col">Time (ET)</th>
           <th scope="col">Your time ({tz})</th>
-          <th scope="col">Company</th>
-          <th scope="col">Exchange</th>
+          <th scope="col" className="num">Previous move</th>
+          <th scope="col" className="num">Expected move</th>
+          <th scope="col" className="num">Options volume</th>
           <th scope="col" className="num">Market cap</th>
           <th scope="col" className="num">EPS est / act</th>
           <th scope="col" className="num">Revenue est / act</th>
-          <th scope="col" className="num">Implied move</th>
         </tr>
       </thead>
       {group(visible).map(([date, timings]) => (
@@ -90,6 +95,7 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
         </tbody>
       ))}
     </table>
+    </div>
   );
 }
 
@@ -105,25 +111,35 @@ function Row({ r, zone, isHidden, onToggleHidden, onSelect }: {
       <td data-label="Hide" className="c-hide" onClick={(e) => e.stopPropagation()}>
         <input type="checkbox" aria-label={`Hide ${r.symbol}`} checked={isHidden} onChange={() => onToggleHidden(r.symbol)} />
       </td>
-      <td data-label="Release (ET)">{t.et} <Warn flags={flags('timing')} /></td>
+      <td data-label="Symbol" className="symbol"><span className="ticker">{r.symbol}</span></td>
+      <td data-label="Name" className="name-cell">
+        <span className="name">{r.name}</span>
+        {r.exchange && <span className="exchange">{r.exchange}</span>}
+      </td>
+      <td data-label="Date" className="date">{DateTime.fromISO(r.reportDate).setLocale('en-US').toFormat('d LLL')}</td>
+      <td data-label="Time (ET)">{t.et} <Warn flags={flags('timing')} /></td>
       <td data-label="Your time">
         {t.local}{t.nextDay && <sup className="plus1" title="Next day in your time zone">+1</sup>}
       </td>
-      <td data-label="Company" className="company"><span className="ticker">{r.symbol}</span><span className="name">{r.name}</span></td>
-      <td data-label="Exchange">{r.exchange ?? '—'}</td>
-      <td data-label="Market cap" className="num">{formatUsd(r.marketCap)} <Warn flags={flags('marketCap')} /></td>
-      <td data-label="EPS est / act" className="num"><Result part={r.eps} format={formatEps} /> <Warn flags={flags('eps')} /></td>
-      <td data-label="Revenue est / act" className="num"><Result part={r.revenue} format={formatUsd} /></td>
-      <td data-label="Implied move" className="num move">
+      <td data-label="Previous move" className="num">
+        {r.previousMove
+          ? <span className={changeClass(r.previousMove.pct)} title={`Reaction to the ${formatDateHeading(r.previousMove.reportDate)} report`}>{formatChange(r.previousMove.pct, 1)}</span>
+          : '—'}
+      </td>
+      <td data-label="Expected move" className="num move">
         {r.expectedMove ? (
-          <>
+          <span className="move-inner">
             <span className="move-track" aria-hidden="true">
               <span className="move-range" style={{ width: `${Math.min(r.expectedMove.movePct / MOVE_SCALE, 1) * 100}%` }} />
             </span>
             <span>±{r.expectedMove.movePct.toFixed(1)}%</span>
-          </>
+          </span>
         ) : '—'} <Warn flags={flags('expectedMove')} />
       </td>
+      <td data-label="Options volume" className="num">{formatCount(r.expectedMove?.optionsVolume)}</td>
+      <td data-label="Market cap" className="num">{formatUsd(r.marketCap)} <Warn flags={flags('marketCap')} /></td>
+      <td data-label="EPS est / act" className="num"><Result part={r.eps} format={formatEps} /> <Warn flags={flags('eps')} /></td>
+      <td data-label="Revenue est / act" className="num"><Result part={r.revenue} format={formatUsd} /></td>
     </tr>
   );
 }
