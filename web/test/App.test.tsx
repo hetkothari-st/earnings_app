@@ -5,11 +5,13 @@ import App from '../src/App';
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 
 let signedIn: boolean;
+let admin: boolean;
 let earningsStatus: number;
 let calls: { url: string; method: string }[];
 
 beforeEach(() => {
   signedIn = false;
+  admin = false;
   earningsStatus = 200;
   calls = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -24,14 +26,18 @@ beforeEach(() => {
     }
     if (path === '/api/logout') { signedIn = false; return new Response(null, { status: 204 }); }
     if (!signedIn) return json(401, { error: 'Not signed in' });
-    if (path === '/api/me') return json(200, { id: '1A' });
+    if (path === '/api/me') return json(200, { id: '1A', isAdmin: admin });
+    if (path === '/api/admin/users') return json(200, [{ id: '1A', isAdmin: admin, createdAt: '2026-10-01T00:00:00Z', lastLoginAt: null }]);
     if (path === '/api/expanded') return json(200, { symbols: [] });
     if (path === '/api/markets') return json(200, { indices: [] });
     if (path === '/api/earnings') return earningsStatus === 200 ? json(200, { rows: [], sources: [] }) : json(earningsStatus, {});
     return json(404, {});
   }));
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.history.replaceState(null, '', '/');
+});
 
 async function signIn() {
   fireEvent.change(await screen.findByLabelText('User ID'), { target: { value: '1a' } });
@@ -78,4 +84,34 @@ test('a 401 while using the app returns to the login page', async () => {
     window.dispatchEvent(new Event('auth:unauthorized'));
   });
   expect(await screen.findByLabelText('User ID')).toBeTruthy();
+});
+
+test('admins get an Admin link next to Sign out; other users do not', async () => {
+  signedIn = true;
+  const { unmount } = render(<App />);
+  await screen.findByRole('button', { name: 'Sign out' });
+  expect(screen.queryByRole('link', { name: 'Admin' })).toBeNull();
+  unmount();
+
+  admin = true;
+  render(<App />);
+  await screen.findByRole('button', { name: 'Sign out' });
+  expect((await screen.findByRole('link', { name: 'Admin' })).getAttribute('href')).toBe('/admin');
+});
+
+test('/admin shows user management to admins', async () => {
+  signedIn = true;
+  admin = true;
+  window.history.replaceState(null, '', '/admin');
+  render(<App />);
+  expect(await screen.findByRole('heading', { name: 'Users' })).toBeTruthy();
+  expect(await screen.findByRole('rowheader', { name: '1A' })).toBeTruthy();
+});
+
+test('/admin tells non-admins it is for admins only', async () => {
+  signedIn = true;
+  window.history.replaceState(null, '', '/admin');
+  render(<App />);
+  expect(await screen.findByText('Admins only')).toBeTruthy();
+  expect(calls.some((c) => c.url.startsWith('/api/admin'))).toBe(false);
 });
