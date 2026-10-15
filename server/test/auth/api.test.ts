@@ -126,7 +126,7 @@ describe('session', () => {
 
 describe('protected routes', () => {
   test('data routes need a session when requireAuth is on', async () => {
-    for (const url of ['/api/status', '/api/markets', '/api/earnings?from=2026-10-15&to=2026-10-15', '/api/earnings/1', '/api/hidden', '/API/status']) {
+    for (const url of ['/api/status', '/api/markets', '/api/earnings?from=2026-10-15&to=2026-10-15', '/api/earnings/1', '/api/expanded', '/API/status']) {
       const res = await app.inject({ url });
       expect(res.statusCode, url).toBe(401);
     }
@@ -134,23 +134,23 @@ describe('protected routes', () => {
     expect((await app.inject({ url: '/api/status', headers: sessionHeader(res) })).statusCode).toBe(200);
   });
 
-  test('without requireAuth, data routes stay open but the hidden list still needs a user', async () => {
+  test('without requireAuth, data routes stay open but the expanded list still needs a user', async () => {
     const open = buildServer(db);
     expect((await open.inject({ url: '/api/status' })).statusCode).toBe(200);
-    expect((await open.inject({ url: '/api/hidden' })).statusCode).toBe(401);
+    expect((await open.inject({ url: '/api/expanded' })).statusCode).toBe(401);
   });
 });
 
-describe('hidden list', () => {
+describe('expanded list', () => {
   test('per-user GET and PUT', async () => {
     const a = sessionHeader(await login('1A', '00000000'));
     const b = sessionHeader(await login('2A', '00000000'));
-    expect((await app.inject({ url: '/api/hidden', headers: a })).json()).toEqual({ symbols: [] });
-    const put = await app.inject({ method: 'PUT', url: '/api/hidden', headers: a, payload: { symbols: ['TSM', 'BRK.B', 'TSM'] } });
+    expect((await app.inject({ url: '/api/expanded', headers: a })).json()).toEqual({ symbols: [] });
+    const put = await app.inject({ method: 'PUT', url: '/api/expanded', headers: a, payload: { symbols: ['TSM', 'BRK.B', 'TSM'] } });
     expect(put.statusCode).toBe(200);
     expect(put.json()).toEqual({ symbols: ['TSM', 'BRK.B'] });
-    expect((await app.inject({ url: '/api/hidden', headers: a })).json()).toEqual({ symbols: ['TSM', 'BRK.B'] });
-    expect((await app.inject({ url: '/api/hidden', headers: b })).json()).toEqual({ symbols: [] });
+    expect((await app.inject({ url: '/api/expanded', headers: a })).json()).toEqual({ symbols: ['TSM', 'BRK.B'] });
+    expect((await app.inject({ url: '/api/expanded', headers: b })).json()).toEqual({ symbols: [] });
   });
 
   test('PUT validates the payload', async () => {
@@ -159,10 +159,10 @@ describe('hidden list', () => {
       {}, { symbols: 'TSM' }, { symbols: [1] }, { symbols: ['A'.repeat(13)] }, { symbols: [''] },
       { symbols: Array.from({ length: 2001 }, (_, i) => `S${i}`) },
     ]) {
-      const res = await app.inject({ method: 'PUT', url: '/api/hidden', headers: a, payload });
+      const res = await app.inject({ method: 'PUT', url: '/api/expanded', headers: a, payload });
       expect(res.statusCode).toBe(400);
     }
-    const ok = await app.inject({ method: 'PUT', url: '/api/hidden', headers: a, payload: { symbols: Array.from({ length: 2000 }, (_, i) => `S${i}`) } });
+    const ok = await app.inject({ method: 'PUT', url: '/api/expanded', headers: a, payload: { symbols: Array.from({ length: 2000 }, (_, i) => `S${i}`) } });
     expect(ok.statusCode).toBe(200);
   });
 });

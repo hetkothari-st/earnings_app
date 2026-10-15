@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
-CREATE TABLE IF NOT EXISTS user_hidden (
+CREATE TABLE IF NOT EXISTS user_expanded (
   user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
   symbols TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -77,8 +77,8 @@ export function deleteSession(db: Db, token: string): void {
   db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha256(token));
 }
 
-export function getHidden(db: Db, userId: string): string[] {
-  const row = db.prepare('SELECT symbols FROM user_hidden WHERE user_id = ?').get(userId) as { symbols: string } | undefined;
+export function getExpanded(db: Db, userId: string): string[] {
+  const row = db.prepare('SELECT symbols FROM user_expanded WHERE user_id = ?').get(userId) as { symbols: string } | undefined;
   if (!row) return [];
   try {
     const v: unknown = JSON.parse(row.symbols);
@@ -88,8 +88,8 @@ export function getHidden(db: Db, userId: string): string[] {
   }
 }
 
-export function setHidden(db: Db, userId: string, symbols: string[], now: string): void {
-  db.prepare(`INSERT INTO user_hidden (user_id, symbols, updated_at) VALUES (?, ?, ?)
+export function setExpanded(db: Db, userId: string, symbols: string[], now: string): void {
+  db.prepare(`INSERT INTO user_expanded (user_id, symbols, updated_at) VALUES (?, ?, ?)
     ON CONFLICT (user_id) DO UPDATE SET symbols = excluded.symbols, updated_at = excluded.updated_at`)
     .run(userId, JSON.stringify(symbols), now);
 }

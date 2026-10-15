@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
-  createSession, deleteSession, ensureAuthSchema, findSessionUser, getHidden, getPasswordHash, listUsers,
-  normalizeUserId, SESSION_TTL_MS, setHidden, setUser,
+  createSession, deleteSession, ensureAuthSchema, findSessionUser, getExpanded, getPasswordHash, listUsers,
+  normalizeUserId, SESSION_TTL_MS, setExpanded, setUser,
 } from '../../src/auth/store.js';
 import { type Db, openDb } from '../../src/db/repo.js';
 
@@ -60,14 +60,14 @@ describe('sessions', () => {
   });
 });
 
-describe('hidden list', () => {
+describe('expanded list', () => {
   test('per user, empty by default, replaced on set', async () => {
     await setUser(db, '1A', 'pw', '2026-10-15T00:00:00Z');
     await setUser(db, '2A', 'pw', '2026-10-15T00:00:00Z');
-    expect(getHidden(db, '1A')).toEqual([]);
-    setHidden(db, '1A', ['TSM', 'AAPL'], '2026-10-15T00:00:00Z');
-    setHidden(db, '1A', ['NVDA'], '2026-10-15T00:00:01Z');
-    expect(getHidden(db, '1A')).toEqual(['NVDA']);
-    expect(getHidden(db, '2A')).toEqual([]);
+    expect(getExpanded(db, '1A')).toEqual([]);
+    setExpanded(db, '1A', ['TSM', 'AAPL'], '2026-10-15T00:00:00Z');
+    setExpanded(db, '1A', ['NVDA'], '2026-10-15T00:00:01Z');
+    expect(getExpanded(db, '1A')).toEqual(['NVDA']);
+    expect(getExpanded(db, '2A')).toEqual([]);
   });
 });

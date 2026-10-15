@@ -4,8 +4,8 @@ import { parseCookies, serializeCookie } from './cookies.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { LoginLimiter } from './rateLimit.js';
 import {
-  createSession, deleteSession, ensureAuthSchema, findSessionUser, getHidden, getPasswordHash, normalizeUserId,
-  SESSION_TTL_MS, setHidden,
+  createSession, deleteSession, ensureAuthSchema, findSessionUser, getExpanded, getPasswordHash, normalizeUserId,
+  SESSION_TTL_MS, setExpanded,
 } from './store.js';
 
 export const SESSION_COOKIE = 'session';
@@ -13,7 +13,7 @@ const WRONG = { error: 'Wrong user ID or password' };
 const NOT_SIGNED_IN = { error: 'Not signed in' };
 /** Reachable without a session. */
 const PUBLIC_PATHS = new Set(['/api/login', '/api/logout', '/api/me']);
-const MAX_HIDDEN = 2000;
+const MAX_EXPANDED = 2000;
 const MAX_SYMBOL_LEN = 12;
 
 export interface AuthOptions {
@@ -43,7 +43,7 @@ export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): v
     if (!path.startsWith('/api') || PUBLIC_PATHS.has(path)) return;
     const user = userOf(req);
     if (user) users.set(req, user);
-    else if (opts.requireAuth || path === '/api/hidden') return reply.code(401).send(NOT_SIGNED_IN);
+    else if (opts.requireAuth || path === '/api/expanded') return reply.code(401).send(NOT_SIGNED_IN);
   });
 
   app.post('/api/login', async (req, reply) => {
@@ -86,21 +86,21 @@ export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): v
     return user;
   };
 
-  app.get('/api/hidden', async (req, reply) => {
+  app.get('/api/expanded', async (req, reply) => {
     const user = requireUser(req, reply);
-    return user ? { symbols: getHidden(db, user) } : reply;
+    return user ? { symbols: getExpanded(db, user) } : reply;
   });
 
-  app.put('/api/hidden', async (req, reply) => {
+  app.put('/api/expanded', async (req, reply) => {
     const user = requireUser(req, reply);
     if (!user) return reply;
     const symbols = (req.body as { symbols?: unknown } | null)?.symbols;
-    if (!Array.isArray(symbols) || symbols.length > MAX_HIDDEN
+    if (!Array.isArray(symbols) || symbols.length > MAX_EXPANDED
       || !symbols.every((s) => typeof s === 'string' && s.length > 0 && s.length <= MAX_SYMBOL_LEN)) {
-      return reply.code(400).send({ error: `symbols must be an array of up to ${MAX_HIDDEN} strings of 1-${MAX_SYMBOL_LEN} characters` });
+      return reply.code(400).send({ error: `symbols must be an array of up to ${MAX_EXPANDED} strings of 1-${MAX_SYMBOL_LEN} characters` });
     }
     const unique = [...new Set(symbols as string[])];
-    setHidden(db, user, unique, new Date(now()).toISOString());
+    setExpanded(db, user, unique, new Date(now()).toISOString());
     return { symbols: unique };
   });
 }
