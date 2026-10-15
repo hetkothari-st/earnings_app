@@ -48,8 +48,8 @@ describe('EPS surprise and conflicts', () => {
     upsertCalendarRow(db, cal({ epsActual: 1.65, epsSurprisePct: -0.6 }), NOW, '2026-10-15');
     mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'BMO', revenueEstimate: null, revenueActual: null, epsActual: 1.71 }, NOW);
     const dto = toDto(listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!);
-    expect(dto.eps).toMatchObject({ actual: 1.71, surprisePct: 3, result: 'beat' });
-    expect(dto.flags).toContainEqual({ field: 'eps', message: 'Nasdaq reports EPS 1.65, Finnhub 1.71' });
+    expect(dto.eps).toMatchObject({ actual: 1.65, surprisePct: -0.6, result: 'miss' });
+    expect(dto.flags).toContainEqual({ field: 'eps', message: 'Nasdaq reports EPS 1.65, Finnhub 1.71 (often adjusted vs GAAP)' });
   });
 });
 

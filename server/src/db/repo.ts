@@ -157,16 +157,24 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
   }
   const capLive = row.reportDate >= today && row.marketCap != null;
   const fiscalQuarter = existing.fiscal_quarter.startsWith('date:') ? row.fiscalQuarter : existing.fiscal_quarter;
-  // Finnhub's actual outranks Nasdaq's (Nasdaq shows placeholder EPS around report day).
-  const nasdaqMayWrite = existing.eps_actual_source !== 'finnhub' && row.epsActual != null;
-  const epsActual = nasdaqMayWrite ? row.epsActual : existing.eps_actual;
-  const epsSource = nasdaqMayWrite ? 'nasdaq' : existing.eps_actual_source;
+  // A confirmed Nasdaq actual wins: it is on the same basis as Nasdaq's consensus estimate.
+  // (The parser already drops Nasdaq's placeholder EPS shown before results are recorded.)
+  let epsActual = existing.eps_actual;
+  let epsSource = existing.eps_actual_source;
+  let epsConflict = existing.eps_conflict;
+  if (row.epsActual != null) {
+    if (existing.eps_actual_source === 'finnhub' && existing.eps_actual != null) {
+      epsConflict = epsDisagreement(row.epsActual, existing.eps_actual);
+    }
+    epsActual = row.epsActual;
+    epsSource = 'nasdaq';
+  }
 
   db.prepare(`UPDATE reports SET name = ?, fiscal_quarter = ?, report_date = ?, rescheduled_from = ?, timing = ?, timing_source = ?,
       timing_conflict = CASE WHEN ? THEN NULL ELSE timing_conflict END,
       market_cap = ?, market_cap_as_of = ?,
       eps_estimate = COALESCE(?, eps_estimate),
-      eps_actual = ?, eps_actual_source = ?,
+      eps_actual = ?, eps_actual_source = ?, eps_conflict = ?,
       eps_surprise_pct = COALESCE(?, eps_surprise_pct), no_of_ests = COALESCE(?, no_of_ests),
       last_year_eps = COALESCE(?, last_year_eps), last_year_rpt_dt = COALESCE(?, last_year_rpt_dt),
       sec_check = CASE WHEN ? THEN NULL ELSE sec_check END,
@@ -176,12 +184,18 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
     row.name, fiscalQuarter, row.reportDate, rescheduled ? existing.report_date : existing.rescheduled_from, timing, timingSource,
     rescheduled ? 1 : 0,
     capLive ? row.marketCap : existing.market_cap, capLive ? today : existing.market_cap_as_of,
-    row.epsEstimate, epsActual, epsSource, row.epsSurprisePct, row.noOfEsts, row.lastYearEps, row.lastYearReportDate,
+    row.epsEstimate, epsActual, epsSource, epsConflict, row.epsSurprisePct, row.noOfEsts, row.lastYearEps, row.lastYearReportDate,
     rescheduled ? 1 : 0, rescheduled ? 1 : 0,
     now, existing.id);
 
   // A snapshot's expiry was chosen for the old date/timing; it may no longer capture the release.
   if (rescheduled || timing !== existing.timing) dropExpectedMove(db, existing.id);
+}
+
+function epsDisagreement(nasdaq: number, finnhub: number): string | null {
+  return Math.abs(nasdaq - finnhub) > 0.005
+    ? `Nasdaq reports EPS ${nasdaq}, Finnhub ${finnhub} (often adjusted vs GAAP)`
+    : null;
 }
 
 function dropExpectedMove(db: Db, reportId: number): void {
@@ -211,13 +225,12 @@ export function mergeFinnhubRow(db: Db, r: RevenueRow, now: string): boolean {
   let epsSource = existing.eps_actual_source;
   let epsConflict = existing.eps_conflict;
   if (r.epsActual != null) {
-    if (existing.eps_actual_source === 'nasdaq' && existing.eps_actual != null && Math.abs(existing.eps_actual - r.epsActual) > 0.005) {
-      epsConflict = `Nasdaq reports EPS ${existing.eps_actual}, Finnhub ${r.epsActual}`;
-    } else if (existing.eps_actual_source !== 'finnhub') {
-      epsConflict = null;
+    if (existing.eps_actual_source === 'nasdaq' && existing.eps_actual != null) {
+      epsConflict = epsDisagreement(existing.eps_actual, r.epsActual);
+    } else {
+      epsActual = r.epsActual;
+      epsSource = 'finnhub';
     }
-    epsActual = r.epsActual;
-    epsSource = 'finnhub';
   }
 
   db.prepare(`UPDATE reports SET revenue_estimate = COALESCE(?, revenue_estimate),

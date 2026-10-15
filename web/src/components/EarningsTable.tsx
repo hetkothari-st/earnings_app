@@ -17,6 +17,8 @@ const GROUP_LABEL: Record<Timing, string> = {
   BMO: 'Before open', DMH: 'During market', AMC: 'After close', UNKNOWN: 'Time not announced',
 };
 const COLS = 9;
+/** Expected move that fills the range bar completely. */
+const MOVE_SCALE = 15;
 
 function group(rows: ReportDto[]): [string, [Timing, ReportDto[]][]][] {
   const byDate = new Map<string, Map<Timing, ReportDto[]>>();
@@ -66,7 +68,7 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
           <th scope="col" className="num">Market cap</th>
           <th scope="col" className="num">EPS est / act</th>
           <th scope="col" className="num">Revenue est / act</th>
-          <th scope="col" className="num">Exp. move</th>
+          <th scope="col" className="num">Implied move</th>
         </tr>
       </thead>
       {group(visible).map(([date, timings]) => (
@@ -74,7 +76,12 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
           <tr className="date-row"><th colSpan={COLS} scope="colgroup">{formatDateHeading(date)}</th></tr>
           {timings.map(([timing, list]) => (
             <Fragment key={timing}>
-              <tr className="group-row"><th colSpan={COLS} scope="row">{GROUP_LABEL[timing]}</th></tr>
+              <tr className={`group-row g-${timing.toLowerCase()}`}>
+                <th colSpan={COLS} scope="row" id={`group-${date}-${timing}`}>
+                  <span className="group-name">{GROUP_LABEL[timing]}</span>
+                  <span className="group-count">{list.length} report{list.length === 1 ? '' : 's'}</span>
+                </th>
+              </tr>
               {list.map((r) => (
                 <Row key={r.id} r={r} zone={zone} isHidden={hidden.has(r.symbol)} onToggleHidden={onToggleHidden} onSelect={onSelect} />
               ))}
@@ -94,7 +101,7 @@ function Row({ r, zone, isHidden, onToggleHidden, onSelect }: {
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') onSelect(r); };
 
   return (
-    <tr className={isHidden ? 'row is-hidden' : 'row'} onClick={() => onSelect(r)} onKeyDown={onKey} tabIndex={0}>
+    <tr className={`row s-${r.timing.toLowerCase()}${isHidden ? ' is-hidden' : ''}`} onClick={() => onSelect(r)} onKeyDown={onKey} tabIndex={0}>
       <td data-label="Hide" className="c-hide" onClick={(e) => e.stopPropagation()}>
         <input type="checkbox" aria-label={`Hide ${r.symbol}`} checked={isHidden} onChange={() => onToggleHidden(r.symbol)} />
       </td>
@@ -102,13 +109,20 @@ function Row({ r, zone, isHidden, onToggleHidden, onSelect }: {
       <td data-label="Your time">
         {t.local}{t.nextDay && <sup className="plus1" title="Next day in your time zone">+1</sup>}
       </td>
-      <td data-label="Company"><strong>{r.symbol}</strong> <span className="name">{r.name}</span></td>
+      <td data-label="Company" className="company"><span className="ticker">{r.symbol}</span><span className="name">{r.name}</span></td>
       <td data-label="Exchange">{r.exchange ?? '—'}</td>
       <td data-label="Market cap" className="num">{formatUsd(r.marketCap)} <Warn flags={flags('marketCap')} /></td>
-      <td data-label="EPS est / act" className="num"><Result part={r.eps} format={formatEps} /></td>
+      <td data-label="EPS est / act" className="num"><Result part={r.eps} format={formatEps} /> <Warn flags={flags('eps')} /></td>
       <td data-label="Revenue est / act" className="num"><Result part={r.revenue} format={formatUsd} /></td>
-      <td data-label="Exp. move" className="num">
-        {r.expectedMove ? `±${r.expectedMove.movePct.toFixed(1)}%` : '—'} <Warn flags={flags('expectedMove')} />
+      <td data-label="Implied move" className="num move">
+        {r.expectedMove ? (
+          <>
+            <span className="move-track" aria-hidden="true">
+              <span className="move-range" style={{ width: `${Math.min(r.expectedMove.movePct / MOVE_SCALE, 1) * 100}%` }} />
+            </span>
+            <span>±{r.expectedMove.movePct.toFixed(1)}%</span>
+          </>
+        ) : '—'} <Warn flags={flags('expectedMove')} />
       </td>
     </tr>
   );

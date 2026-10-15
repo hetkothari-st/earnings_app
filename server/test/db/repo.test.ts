@@ -100,16 +100,22 @@ describe('EPS actual precedence', () => {
     mergeFinnhubRow(db, fh(1.71), NOW);
     expect(all(db)[0]).toMatchObject({ epsActual: 1.71, epsConflict: null });
   });
-  test('Finnhub wins over a differing Nasdaq actual and the disagreement is recorded', () => {
-    upsertCalendarRow(db, row({ epsActual: 1.65, epsSurprisePct: -0.6 }), NOW, TODAY);
-    mergeFinnhubRow(db, fh(1.71), NOW);
-    expect(all(db)[0]).toMatchObject({ epsActual: 1.71, epsConflict: 'Nasdaq reports EPS 1.65, Finnhub 1.71' });
+  test('confirmed Nasdaq actual wins (same basis as its estimate); disagreement is recorded', () => {
+    // Live JPM Q3 2026: Nasdaq 5.75 adjusted (estimate 5.94 adjusted), Finnhub 5.57 GAAP.
+    upsertCalendarRow(db, row({ epsActual: 5.75, epsSurprisePct: -3.2 }), NOW, TODAY);
+    mergeFinnhubRow(db, fh(5.57), NOW);
+    expect(all(db)[0]).toMatchObject({ epsActual: 5.75, epsConflict: 'Nasdaq reports EPS 5.75, Finnhub 5.57 (often adjusted vs GAAP)' });
   });
-  test('a later Nasdaq refresh does not overwrite the Finnhub actual', () => {
+  test('a confirmed Nasdaq actual arriving later replaces the Finnhub one and records the difference', () => {
     upsertCalendarRow(db, row(), NOW, TODAY);
+    mergeFinnhubRow(db, fh(5.57), NOW);
+    upsertCalendarRow(db, row({ epsActual: 5.75, epsSurprisePct: -3.2 }), NOW, TODAY);
+    expect(all(db)[0]).toMatchObject({ epsActual: 5.75, epsConflict: 'Nasdaq reports EPS 5.75, Finnhub 5.57 (often adjusted vs GAAP)' });
+  });
+  test('agreeing sources leave no conflict', () => {
+    upsertCalendarRow(db, row({ epsActual: 1.71, epsSurprisePct: 3 }), NOW, TODAY);
     mergeFinnhubRow(db, fh(1.71), NOW);
-    upsertCalendarRow(db, row({ epsActual: 1.65 }), NOW, TODAY);
-    expect(all(db)[0]!.epsActual).toBe(1.71);
+    expect(all(db)[0]!.epsConflict).toBeNull();
   });
 });
 

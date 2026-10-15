@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { EarningsResponse, ReportDto } from '../../../server/src/api/types';
+import type { EarningsResponse, ReportDto, Timing } from '../../../server/src/api/types';
 import { fetchEarnings } from '../api';
 import { useHidden } from '../hooks/useHidden';
 import { useZone } from '../hooks/useZone';
 import { rangeFor, shiftAnchor, type View } from '../lib/ranges';
+import { daySummary } from '../lib/session';
 import { todayEt, zoneLabel } from '../lib/time';
+import { DayStrip } from './DayStrip';
 import { DetailPanel } from './DetailPanel';
 import { EarningsTable } from './EarningsTable';
 import { Header } from './Header';
+import { SessionBand } from './SessionBand';
 import { StaleBanner } from './StaleBanner';
 
 type Load = { status: 'loading' } | { status: 'ok'; data: EarningsResponse } | { status: 'error'; error: string };
@@ -38,6 +41,13 @@ export function Calendar() {
     return () => ac.abort();
   }, [range.from, range.to, minCap, query, customInvalid]);
 
+  const zoneText = zoneLabel(zone, range.from);
+  const rows = load.status === 'ok' ? load.data.rows : [];
+  const days = daySummary(rows, showHidden ? new Set() : hidden);
+  const jump = (timing: Timing) =>
+    document.getElementById(`group-${range.from}-${timing}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const openDay = (date: string) => { setView('day'); setAnchor(date); };
+
   return (
     <div className="app">
       <Header
@@ -45,10 +55,15 @@ export function Calendar() {
         onShift={(dir) => setAnchor((a) => shiftAnchor(view, a, dir))} onToday={() => setAnchor(today)}
         minCap={minCap} onMinCap={setMinCap} query={query} onQuery={setQuery}
         showHidden={showHidden} hiddenCount={hidden.size} onShowHidden={setShowHidden}
-        zone={zone} zoneText={`${zoneLabel(zone, range.from)} (${zone})`} isOverride={isOverride} onZone={setZone}
+        zone={zone} zoneText={zoneText} isOverride={isOverride} onZone={setZone}
       />
       {load.status === 'ok' && <StaleBanner sources={load.data.sources} />}
       <main className="content">
+        {load.status === 'ok' && view === 'day' && rows.length > 0 && (
+          <SessionBand date={range.from} sessionClose={rows[0]!.sessionClose} zone={zone} zoneText={zoneText}
+            counts={days[0] ?? { bmo: 0, amc: 0, other: 0 }} onJump={jump} />
+        )}
+        {load.status === 'ok' && view !== 'day' && <DayStrip days={days} onPick={openDay} />}
         {customInvalid && <p className="warn-text">Pick a valid From and To date.</p>}
         {!customInvalid && load.status === 'loading' && <p className="muted">Loading…</p>}
         {load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
@@ -59,7 +74,8 @@ export function Calendar() {
       </main>
       {selected && <DetailPanel r={selected} zone={zone} onClose={() => setSelected(null)} />}
       <footer className="footer muted">
-        Data: Nasdaq, Finnhub, SEC EDGAR, Cboe (delayed). Prototype — not for trading decisions. <a href="/status">Data status</a>
+        <span>Data from Nasdaq, Finnhub, SEC EDGAR and Cboe (delayed). Prototype, not trading advice.</span>
+        <a href="/status">Data source status</a>
       </footer>
     </div>
   );

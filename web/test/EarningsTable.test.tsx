@@ -32,7 +32,7 @@ function renderTable(over: Partial<Parameters<typeof EarningsTable>[0]> = {}) {
 describe('EarningsTable', () => {
   test('groups BMO before AMC and shows ET and local time side by side', () => {
     renderTable();
-    const groups = screen.getAllByRole('rowheader').map((h) => h.textContent);
+    const groups = screen.getAllByRole('rowheader').map((h) => h.querySelector('.group-name')!.textContent);
     expect(groups).toEqual(['Before open', 'After close']);
     const tsm = screen.getByText('TSM').closest('tr')!;
     expect(within(tsm).getByText('BMO · before 9:30 AM')).toBeTruthy();
@@ -64,6 +64,18 @@ describe('EarningsTable', () => {
       zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
     expect(screen.getByLabelText('Time not announced').textContent).toBe('⚠');
   });
+  test('row carries its session edge and the move renders as a proportional range', () => {
+    render(<EarningsTable rows={[dto({ timing: 'AMC', expectedMove: { movePct: 7.5, illiquid: false, expiry: '2026-10-16', strike: 100, callMid: 4, putMid: 3.5, underlying: 100, snapshotAt: '2026-10-15T20:20:00Z' } })]}
+      zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
+    const tr = screen.getByText('TSM').closest('tr')!;
+    expect(tr.className).toContain('s-amc');
+    expect(within(tr).getByText('±7.5%')).toBeTruthy();
+    expect((tr.querySelector('.move-range') as HTMLElement).style.width).toBe('50%');
+  });
+  test('group header shows how many reports it holds', () => {
+    renderTable();
+    expect(document.getElementById('group-2026-10-15-BMO')!.textContent).toContain('2 reports');
+  });
   test('empty state', () => {
     renderTable({ rows: [] });
     expect(screen.getByText('No earnings reports match this range and filter.')).toBeTruthy();
@@ -73,6 +85,6 @@ describe('EarningsTable', () => {
 describe('DetailPanel', () => {
   test('shows last year same-quarter EPS', () => {
     render(<DetailPanel r={rows[2]!} zone="Asia/Kolkata" onClose={vi.fn()} />);
-    expect(screen.getByText('$1.31 (reported Thu, Oct 16, 2025)')).toBeTruthy();
+    expect(screen.getByText('reported Thu, Oct 16, 2025', { exact: false }).parentElement!.textContent).toBe('$1.31 reported Thu, Oct 16, 2025');
   });
 });
