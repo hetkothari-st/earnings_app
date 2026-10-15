@@ -17,7 +17,7 @@ const db = openDb(config.dbPath);
 const ctx: JobContext = { db, sources: createSources(config), now: () => new Date().toISOString(), today: () => todayET() };
 
 const yahoo = makeHttp({ minIntervalMs: 300, headers: { 'User-Agent': BROWSER_UA } });
-const app = buildServer(db, { indexQuote: (s) => fetchIndexQuote(yahoo, s) });
+const app = buildServer(db, { indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true });
 await app.listen({ port: config.port, host: '127.0.0.1' });
 console.log(`API listening on http://127.0.0.1:${config.port}`);
 
