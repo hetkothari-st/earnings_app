@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { DateTime } from 'luxon';
 import { counts, type Db, getReport, listRange, listSourceStatus } from '../db/repo.js';
+import { registerAuth } from '../auth/routes.js';
 import { toDto } from './dto.js';
 import type { IndexQuote } from '../sources/yahoo.js';
 import type { EarningsResponse, MarketIndexDto, MarketsResponse, StatusResponse } from './types.js';
@@ -17,6 +18,10 @@ const MARKETS_TTL_MS = 60_000;
 
 export interface ServerOptions {
   indexQuote?: (symbol: string) => Promise<IndexQuote>;
+  /** Require a signed-in session for data routes. Off by default so route tests need not log in. */
+  requireAuth?: boolean;
+  /** Clock for sessions and login rate limiting (ms since epoch). */
+  now?: () => number;
 }
 
 const MAX_RANGE_DAYS = 400;
@@ -26,7 +31,9 @@ function validDate(s: string | undefined): s is string {
 }
 
 export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: false });
+  // The API listens on loopback behind a proxy; trust its X-Forwarded-* headers for client IP and protocol.
+  const app = Fastify({ logger: false, trustProxy: 'loopback' });
+  registerAuth(app, db, { requireAuth: opts.requireAuth ?? false, now: opts.now });
   let marketsCache: { at: number; body: MarketsResponse } | null = null;
 
   app.get('/api/markets', async () => {
