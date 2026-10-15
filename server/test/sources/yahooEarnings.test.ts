@@ -48,7 +48,17 @@ describe('parseQuoteSummary', () => {
 describe('yahooFill', () => {
   test('matches the report by fiscal quarter end; revenue in the reporting currency', () => {
     expect(yahooFill(parseQuoteSummary(tsm), { reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026' }))
-      .toEqual({ epsActual: 4.31, revenueEstimate: null, revenueActual: 1270380000000, revenueCurrency: 'TWD' });
+      .toEqual({ epsActual: null, revenueEstimate: null, revenueActual: 1270380000000, revenueCurrency: 'TWD' });
+  });
+  test('EPS of a company reporting in another currency is never used, even when Yahoo shows it in USD (live ERIC: Yahoo 0.1956 vs about 0.177)', () => {
+    expect(yahooFill(parseQuoteSummary(tsm), { reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026' }).epsActual).toBeNull();
+  });
+  test('EPS of a company reporting in USD is used', () => {
+    const us = { quoteSummary: { result: [{
+      price: { currency: 'USD' }, earnings: { financialCurrency: 'USD', financialsChart: { quarterly: [] } },
+      earningsHistory: { history: [{ quarter: { fmt: '2026-09-30' }, epsActual: { raw: 2.34 }, currency: 'USD' }] },
+    }] } };
+    expect(yahooFill(parseQuoteSummary(us), { reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026' }).epsActual).toBe(2.34);
   });
   test('revenue estimate comes from the forecast for the same quarter', () => {
     expect(yahooFill(parseQuoteSummary(tsm), { reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026' }))

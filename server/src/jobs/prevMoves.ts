@@ -23,21 +23,21 @@ function resolveTiming(
 }
 
 /** For recent and upcoming reports: how the stock reacted to its previous report. */
-export async function computePrevMoves(ctx: JobContext): Promise<void> {
+export async function computePrevMoves(ctx: JobContext, window: { from?: string } = {}): Promise<void> {
   const today = ctx.today();
   const recheckBefore = new Date(Date.parse(ctx.now()) - 20 * 3_600_000).toISOString();
   const cache = new Map<string, Map<string, number>>();
-  for (const r of reportsNeedingPrevMove(ctx.db, addDays(today, -7), addDays(today, 30), recheckBefore)) {
+  for (const r of reportsNeedingPrevMove(ctx.db, window.from ?? addDays(today, -7), addDays(today, 30), recheckBefore)) {
     const prev = previousReport(ctx.db, r.symbolKey, r.reportDate);
     const resolved = prev ? resolveTiming(prev, r.timing) : null;
     if (!prev || !resolved) {
       setPrevMove(ctx.db, r.id, null, prev?.reportDate ?? null, null, ctx.now());
       continue;
     }
-    // Nasdaq's history endpoint returns nothing for short windows, so fetch a year once per symbol.
+    // Nasdaq's history endpoint returns nothing for short windows, so fetch ~2 years once per symbol.
     let closes = cache.get(r.symbolKey);
     if (!closes) {
-      closes = await track(ctx, 'nasdaq-prices', () => ctx.sources.dailyCloses(r.symbol, addDays(today, -400), today));
+      closes = await track(ctx, 'nasdaq-prices', () => ctx.sources.dailyCloses(r.symbol, addDays(today, -800), today));
       if (closes) cache.set(r.symbolKey, closes);
     }
     if (!closes) continue; // fetch failed: retry next run

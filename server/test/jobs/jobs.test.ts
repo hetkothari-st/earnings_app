@@ -246,8 +246,8 @@ describe('previous move', () => {
     await computePrevMoves(ctx);
     const next = all(ctx).find((r) => r.reportDate === '2026-10-16')!;
     expect(next).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-07-14' });
-    // Nasdaq's history endpoint returns nothing for short windows; ask for a full year ending today.
-    expect(dailyCloses).toHaveBeenCalledWith('SCHW', '2025-09-10', '2026-10-15');
+    // Nasdaq's history endpoint returns nothing for short windows; ask for ~2 years ending today.
+    expect(dailyCloses).toHaveBeenCalledWith('SCHW', '2024-08-06', '2026-10-15');
   });
   const closes = new Map([['2026-07-13', 100], ['2026-07-14', 97.5], ['2026-07-15', 102.4]]);
   test('known previous timing gives an exact move', async () => {
@@ -350,12 +350,26 @@ describe('6-K filings for foreign issuers', () => {
 describe('Yahoo backfill of missing values', () => {
   test('fills EPS actual and revenue in the reporting currency for a report missing them', async () => {
     const summary = { priceCurrency: 'USD', financialCurrency: 'TWD', epsHistory: [{ periodEnd: '2026-09-30', actual: 4.6, currency: 'USD' }],
+      // TWD reporter: EPS must not be taken; revenue (TWD) is.
       revenueQuarters: [{ label: '3Q2026', revenue: 1.5e12 }], revenueEstimates: [] };
     const yahooSummary = vi.fn(async () => summary);
     const ctx = makeCtx({ yahooSummary });
     upsertCalendarRow(ctx.db, cal({ symbol: 'TSM', reportDate: TODAY, fiscalQuarter: 'Sep/2026' }), NOW, TODAY);
     await refreshYahoo(ctx, TODAY, TODAY);
-    expect(all(ctx)[0]).toMatchObject({ epsActual: 4.6, revenueActual: 1.5e12, revenueCurrency: 'TWD' });
+    expect(all(ctx)[0]).toMatchObject({ epsActual: null, revenueActual: 1.5e12, revenueCurrency: 'TWD' });
     expect(yahooSummary).toHaveBeenCalledWith('TSM');
+  });
+});
+
+describe('previous moves for older reports', () => {
+  test('a wider window reaches reports dated before last week (live NKE 2026-10-01: should be +4.9%)', async () => {
+    const closes = new Map([['2026-06-30', 41.05], ['2026-07-01', 43.06]]);
+    const ctx = makeCtx({ dailyCloses: async () => closes });
+    upsertCalendarRow(ctx.db, cal({ symbol: 'NKE', reportDate: '2026-06-30', fiscalQuarter: 'May/2026', timing: 'AMC' }), NOW, '2026-06-01');
+    upsertCalendarRow(ctx.db, cal({ symbol: 'NKE', reportDate: '2026-10-01', fiscalQuarter: 'Aug/2026', timing: 'AMC' }), NOW, '2026-09-01');
+    await computePrevMoves(ctx);
+    expect(all(ctx).find((r) => r.reportDate === '2026-10-01')!.prevMovePct).toBeNull();
+    await computePrevMoves(ctx, { from: '2024-10-15' });
+    expect(all(ctx).find((r) => r.reportDate === '2026-10-01')).toMatchObject({ prevMovePct: 4.9, prevMoveBasis: 'known' });
   });
 });

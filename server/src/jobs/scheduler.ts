@@ -65,7 +65,7 @@ export function startScheduler(
   const live = job('live', () => refreshLiveMoves(ctx).then((ids) => { if (ids.length) onMoves(ids); }));
   schedule('*/3 9-15 * * 1-5', live, opts);
   schedule('0-15/3 16 * * 1-5', live, opts);
-  schedule('0 23 * * *', job('sec', () => secSync(ctx).then(() => refreshSectors(ctx)).then(() => computePrevMoves(ctx))), opts);
+  schedule('0 23 * * *', job('sec', () => secSync(ctx).then(() => refreshSectors(ctx)).then(() => computePrevMoves(ctx, { from: addDays(ctx.today(), -730) }))), opts);
   return job;
 }
 

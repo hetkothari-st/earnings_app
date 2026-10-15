@@ -77,7 +77,8 @@ export function yahooFill(s: YahooSummary, report: { reportDate: string; fiscalQ
   const end = fiscalQuarterEnd(report.fiscalQuarter);
   const ym = end ? `${end.year}-${String(end.month).padStart(2, '0')}` : null;
   const epsEntry = ym ? s.epsHistory.find((h) => h.periodEnd.slice(0, 7) === ym) : undefined;
-  const eps = epsEntry && epsEntry.currency === 'USD' ? epsEntry.actual : null;
+  // Only USD reporters: for foreign issuers Yahoo converts EPS at its own FX rate (live ERIC: 0.1956 vs ~0.177).
+  const eps = epsEntry && epsEntry.currency === 'USD' && s.financialCurrency === 'USD' ? epsEntry.actual : null;
   const calendarAligned = end != null && end.month % 3 === 0;
   const label = calendarAligned ? `${end!.month / 3}Q${end!.year}` : null;
   const revenueActual = label ? s.revenueQuarters.find((q) => q.label === label)?.revenue ?? null : null;
