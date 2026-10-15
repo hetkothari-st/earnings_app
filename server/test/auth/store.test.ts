@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, test } from 'vitest';
 import {
-  createSession, deleteSession, ensureAuthSchema, findSessionUser, getExpanded, getPasswordHash, listUsers,
-  normalizeUserId, SESSION_TTL_MS, setExpanded, setUser,
+  createSession, deleteSession, ensureAuthSchema, findSessionUser, getExpanded, getPasswordHash, isAdmin, listUsers,
+  normalizeUserId, recordLogin, SESSION_TTL_MS, setAdmin, setExpanded, setUser,
 } from '../../src/auth/store.js';
 import { type Db, openDb } from '../../src/db/repo.js';
 
@@ -14,7 +14,13 @@ describe('users', () => {
     expect(normalizeUserId(' 1a ')).toBe('1A');
     expect(normalizeUserId('')).toBeNull();
     expect(normalizeUserId('a b')).toBeNull();
-    expect(normalizeUserId('x'.repeat(33))).toBeNull();
+    expect(normalizeUserId('x'.repeat(65))).toBeNull();
+  });
+
+  test('ids may be up to 64 characters and may be email addresses', () => {
+    expect(normalizeUserId('x'.repeat(64))).toBe('X'.repeat(64));
+    expect(normalizeUserId(' Jane.Doe-1_x@Example.com ')).toBe('JANE.DOE-1_X@EXAMPLE.COM');
+    for (const bad of ['a+b@x.com', 'a/b', 'a"b', 'ä', 'a\nb']) expect(normalizeUserId(bad), bad).toBeNull();
   });
 
   test('setUser creates then updates, storing only a scrypt hash', async () => {
@@ -26,11 +32,42 @@ describe('users', () => {
     const raw = JSON.stringify(db.prepare('SELECT * FROM users').all());
     expect(raw).not.toContain('00000000');
     expect(raw).not.toContain('other-pass');
-    expect(listUsers(db)).toEqual([{ id: '1A', createdAt: '2026-10-15T00:00:00Z' }]);
+    expect(listUsers(db)).toEqual([{ id: '1A', isAdmin: false, createdAt: '2026-10-15T00:00:00Z', lastLoginAt: null }]);
   });
 
   test('ensureAuthSchema is idempotent', () => {
     expect(() => ensureAuthSchema(db)).not.toThrow();
+  });
+
+  test('ensureAuthSchema adds is_admin and last_login_at to an existing users table', () => {
+    const old = openDb(':memory:');
+    old.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+      INSERT INTO users VALUES ('1A', 'h', '2026-10-01T00:00:00Z');`);
+    ensureAuthSchema(old);
+    ensureAuthSchema(old);
+    expect(old.prepare('SELECT is_admin, last_login_at FROM users').get()).toEqual({ is_admin: 0, last_login_at: null });
+    expect(isAdmin(old, '1A')).toBe(false);
+  });
+
+  test('admin flag: off by default, set and cleared; unknown users are not admins', async () => {
+    await setUser(db, '1A', 'pw', '2026-10-15T00:00:00Z');
+    expect(isAdmin(db, '1A')).toBe(false);
+    expect(setAdmin(db, '1a', true)).toBe(true);
+    expect(isAdmin(db, '1A')).toBe(true);
+    expect(listUsers(db)[0]!.isAdmin).toBe(true);
+    // Changing the password keeps the role.
+    await setUser(db, '1A', 'pw2', '2026-10-16T00:00:00Z');
+    expect(isAdmin(db, '1A')).toBe(true);
+    expect(setAdmin(db, '1A', false)).toBe(true);
+    expect(isAdmin(db, '1A')).toBe(false);
+    expect(setAdmin(db, 'NOBODY', true)).toBe(false);
+    expect(isAdmin(db, 'NOBODY')).toBe(false);
+  });
+
+  test('recordLogin stores the last sign-in time', async () => {
+    await setUser(db, '1A', 'pw', '2026-10-15T00:00:00Z');
+    recordLogin(db, '1A', '2026-10-15T09:00:00.000Z');
+    expect(listUsers(db)[0]!.lastLoginAt).toBe('2026-10-15T09:00:00.000Z');
   });
 });
 
