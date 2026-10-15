@@ -1,0 +1,13 @@
+{
+  "name": "earnings-app",
+  "private": true,
+  "workspaces": ["server"],
+  "scripts": {
+    "dev": "npm run dev -w server",
+    "test": "npm test -w server",
+    "backfill": "npm run backfill -w server"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.6"
+  }
+}
