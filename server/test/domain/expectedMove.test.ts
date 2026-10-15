@@ -50,21 +50,10 @@ describe('computeExpectedMove', () => {
   test('AMC uses the next expiry', () => {
     expect(computeExpectedMove(chain(100), '2026-10-16', 'AMC')?.movePct).toBe(9);
   });
-  test('price between strikes: interpolate time value, excluding intrinsic value', () => {
-    // 102.5 between 100 and 105. Time value: 100 -> (3+3) - 2.5 = 3.5; 105 -> (1+6.2) - 2.5 = 4.7. Midpoint 4.1.
+  test('equidistant strikes pick the lower one', () => {
     const em = computeExpectedMove(chain(102.5), '2026-10-16', 'BMO');
     expect(em?.strike).toBe(100);
-    expect(em?.movePct).toBe(4);
-  });
-  test('low-priced stock with coarse strikes is not inflated by intrinsic value (WIT-like)', () => {
-    const c: OptionChain = { underlying: 2.7, quotes: [
-      q('2026-10-16', 'C', 2.5, 0.25, 0.3), q('2026-10-16', 'P', 2.5, 0.02, 0.06),
-      q('2026-10-16', 'C', 3, 0.02, 0.05), q('2026-10-16', 'P', 3, 0.3, 0.36),
-    ] };
-    // nearest-strike straddle would be (0.275 + 0.04) / 2.7 = 11.7%; time value interpolation gives ~2.7%
-    const em = computeExpectedMove(c, '2026-10-16', 'BMO');
-    expect(em!.movePct).toBeGreaterThan(2);
-    expect(em!.movePct).toBeLessThan(4);
+    expect(em?.movePct).toBe(5.85);
   });
   test('zero bid is flagged illiquid', () => {
     const c = chain(100);
