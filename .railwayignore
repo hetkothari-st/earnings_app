@@ -1,0 +1,8 @@
+.claude/
+.playwright-mcp/
+.superpowers/
+data/
+.env
+node_modules/
+**/node_modules/
+web/dist/
