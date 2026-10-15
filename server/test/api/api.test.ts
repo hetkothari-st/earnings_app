@@ -136,3 +136,15 @@ describe('previous move in DTO', () => {
     expect(toDto({ ...r, prevMovePct: null, prevMoveDate: null }).previousMove).toBeNull();
   });
 });
+
+describe('prices route', () => {
+  test('GET /api/prices returns the live price snapshot', async () => {
+    const snap = { TSM: { price: 422.55, prevClose: 430, changePct: -1.73, time: 1 } };
+    const res = await buildServer(db, { prices: () => snap }).inject({ method: 'GET', url: '/api/prices' });
+    expect(res.json()).toEqual({ prices: snap });
+  });
+  test('without a live feed the snapshot is empty', async () => {
+    const res = await buildServer(db).inject({ method: 'GET', url: '/api/prices' });
+    expect(res.json()).toEqual({ prices: {} });
+  });
+});

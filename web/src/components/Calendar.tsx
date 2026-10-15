@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EarningsResponse, Timing } from '../../../server/src/api/types';
-import { fetchEarnings, fetchNotes, type Note, saveNote } from '../api';
+import { fetchEarnings, fetchNotes, fetchPrices, type LivePrice, type Note, saveNote } from '../api';
 import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
 import { useZone } from '../hooks/useZone';
@@ -26,6 +26,7 @@ export function Calendar() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('date');
   const [notes, setNotes] = useState<Map<number, Note>>(new Map());
+  const [prices, setPrices] = useState<Record<string, LivePrice>>({});
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
@@ -33,10 +34,13 @@ export function Calendar() {
     setHighlight(new Set(ids));
     setReloadKey((k) => k + 1);
     window.setTimeout(() => setHighlight(new Set()), 6000);
-  }, () => setReloadKey((k) => k + 1));
+  }, () => setReloadKey((k) => k + 1), (p) => setPrices((prev) => ({ ...prev, ...p })));
   const { expanded, toggle } = useExpanded();
   const { zone, isOverride, setZone } = useZone();
 
+  useEffect(() => {
+    fetchPrices().then(setPrices).catch(() => {});
+  }, []);
   useEffect(() => {
     fetchNotes().then((list) => setNotes(new Map(list.map((n) => [n.reportId, n])))).catch(() => {});
   }, []);
@@ -93,7 +97,7 @@ export function Calendar() {
         {load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
         {load.status === 'ok' && (
           <StockList rows={load.data.rows} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
-            notes={notes} onSaveNote={onSaveNote} highlight={highlight} />
+            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={prices} />
         )}
       </main>
       <footer className="footer muted">

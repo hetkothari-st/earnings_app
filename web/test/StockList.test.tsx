@@ -81,6 +81,14 @@ describe('StockList', () => {
     const item = screen.getByRole('button', { name: /TSM/ }).closest('li')!;
     expect(within(item).getByText('Revenue estimate / actual').nextElementSibling!.textContent).toBe('NT$1.46T / —');
   });
+  test('live price and change on the stock line and in the details', () => {
+    renderList({ expanded: new Set(['TSM']), prices: { TSM: { price: 422.55, prevClose: 430, changePct: -1.73, time: 1792070000000 } } });
+    const head = screen.getByRole('button', { name: /TSM/ });
+    expect(within(head).getByText('$422.55')).toBeTruthy();
+    expect(within(head).getByText('−1.73%').className).toContain('down');
+    const item = head.closest('li')!;
+    expect(within(item).getByText('Price').nextElementSibling!.textContent).toContain('$422.55');
+  });
   test('stocks whose results just arrived are highlighted', () => {
     renderList({ highlight: new Set([2]) });
     expect(screen.getByRole('button', { name: /SCHW/ }).closest('li')!.className).toContain('just-updated');

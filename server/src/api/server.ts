@@ -32,6 +32,8 @@ export interface ServerOptions {
   webRoot?: string;
   /** Trust X-Forwarded-* from any proxy (hosted behind a platform proxy) instead of loopback only. */
   trustProxy?: boolean;
+  /** Live price snapshot (real-time stream). */
+  prices?: () => Record<string, unknown>;
 }
 
 const MAX_RANGE_DAYS = 400;
@@ -64,6 +66,8 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
     marketsCache = { at: Date.now(), body };
     return body;
   });
+
+  app.get('/api/prices', async () => ({ prices: opts.prices?.() ?? {} }));
 
   app.get('/api/earnings', async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;

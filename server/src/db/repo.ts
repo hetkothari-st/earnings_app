@@ -499,3 +499,10 @@ export function mergeYahooFill(
     .run(takeEps ? 1 : 0, f.epsActual, takeEps ? 1 : 0, takeEst ? 1 : 0, f.revenueEstimate, takeAct ? 1 : 0, f.revenueActual,
       takeEst ? 1 : 0, takeAct ? 1 : 0, f.revenueCurrency, now, id);
 }
+
+/** Symbols to stream live prices for: reporters dated in [from, to], nearest date then largest first. */
+export function liveSymbols(db: Db, from: string, to: string, limit: number): string[] {
+  return (db.prepare(`SELECT symbol FROM reports WHERE report_date BETWEEN ? AND ?
+      GROUP BY symbol_key ORDER BY MIN(report_date), MAX(market_cap) DESC LIMIT ?`)
+    .all(from, to, limit) as unknown as { symbol: string }[]).map((r) => r.symbol);
+}

@@ -33,6 +33,14 @@ test('live expected-move updates call the second callback', () => {
   expect(onMoves).toHaveBeenCalledWith([2]);
 });
 
+test('live prices reach the third callback', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  const onPrices = vi.fn();
+  renderHook(() => useLiveResults(vi.fn(), vi.fn(), onPrices));
+  FakeSource.last!.emit('prices', { prices: { TSM: { price: 422.55, prevClose: 430, changePct: -1.73, time: 1 } } });
+  expect(onPrices).toHaveBeenCalledWith({ TSM: { price: 422.55, prevClose: 430, changePct: -1.73, time: 1 } });
+});
+
 test('does nothing where EventSource is unavailable', () => {
   vi.stubGlobal('EventSource', undefined);
   expect(() => renderHook(() => useLiveResults(vi.fn()))).not.toThrow();

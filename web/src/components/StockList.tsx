@@ -1,5 +1,5 @@
 import type { Flag, ReportDto, ResultPart } from '../../../server/src/api/types';
-import type { Note } from '../api';
+import type { LivePrice, Note } from '../api';
 import { changeClass, formatChange, formatDateHeading, formatEps, formatMoney, formatPct, formatUsd } from '../lib/format';
 import { type SortKey, sortRows } from '../lib/sort';
 import { describeTiming, zoneLabel } from '../lib/time';
@@ -16,6 +16,8 @@ interface Props {
   onSaveNote: (reportId: number, text: string) => Promise<void>;
   /** Report ids whose results just arrived; flashed once. */
   highlight?: Set<number>;
+  /** Real-time prices by symbol. */
+  prices?: Record<string, LivePrice>;
 }
 
 const TIMING_SHORT = { BMO: 'Before open', AMC: 'After close', DMH: 'During market', UNKNOWN: 'Time not announced' } as const;
@@ -56,7 +58,7 @@ function byDate(rows: ReportDto[], sort: SortKey): [string, ReportDto[]][] {
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([d, list]) => [d, sortRows(list, sort)]);
 }
 
-export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveNote, highlight }: Props) {
+export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveNote, highlight, prices = {} }: Props) {
   if (rows.length === 0) return <p className="empty">No earnings reports match this range and filter.</p>;
   return (
     <div className="stock-days">
@@ -71,7 +73,7 @@ export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveN
             <ul className="stocks">
               {list.map((r) => (
                 <Stock key={r.id} r={r} zone={zone} open={expanded.has(r.symbol)} isNew={highlight?.has(r.id) ?? false}
-                  onToggle={onToggle} note={notes.get(r.id)} onSaveNote={onSaveNote} />
+                  onToggle={onToggle} note={notes.get(r.id)} onSaveNote={onSaveNote} price={prices[r.symbol]} />
               ))}
             </ul>
           </section>
@@ -81,9 +83,9 @@ export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveN
   );
 }
 
-function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote }: {
+function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote, price }: {
   r: ReportDto; zone: string; open: boolean; isNew: boolean; onToggle: (s: string) => void;
-  note: Note | undefined; onSaveNote: (reportId: number, text: string) => Promise<void>;
+  note: Note | undefined; onSaveNote: (reportId: number, text: string) => Promise<void>; price: LivePrice | undefined;
 }) {
   return (
     <li className={`stock s-${r.timing.toLowerCase()}${open ? ' open' : ''}${isNew ? ' just-updated' : ''}`}
@@ -92,16 +94,25 @@ function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote }: {
         <span className="dot" aria-hidden="true" />
         <span className="ticker">{r.symbol}</span>
         <span className="name">{r.name}</span>
+        <span className="stock-price">
+          {price ? (
+            <>
+              <span>${price.price.toFixed(2)}</span>
+              {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}
+            </>
+          ) : null}
+        </span>
         <span className="stock-when">{TIMING_SHORT[r.timing]}</span>
         <span className="chevron" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
-      {open && <Details r={r} zone={zone} note={note} onSaveNote={onSaveNote} />}
+      {open && <Details r={r} zone={zone} note={note} onSaveNote={onSaveNote} price={price} />}
     </li>
   );
 }
 
-function Details({ r, zone, note, onSaveNote }: {
+function Details({ r, zone, note, onSaveNote, price }: {
   r: ReportDto; zone: string; note: Note | undefined; onSaveNote: (reportId: number, text: string) => Promise<void>;
+  price: LivePrice | undefined;
 }) {
   const t = describeTiming(r.reportDate, r.timing, r.sessionClose, zone);
   const flags = (field: Flag['field']) => r.flags.filter((f) => f.field === field);
@@ -112,6 +123,16 @@ function Details({ r, zone, note, onSaveNote }: {
       <dl className="lines">
         <dt>Stock</dt>
         <dd><strong>{r.symbol}</strong> {r.name}{r.exchange ? `, ${r.exchange}` : ''}</dd>
+        <dt>Price</dt>
+        <dd>
+          {price ? (
+            <>
+              ${price.price.toFixed(2)}
+              {price.changePct != null && <span className={changeClass(price.changePct)}> {formatChange(price.changePct)}</span>}
+              <span className="muted"> real time, last trade {new Date(price.time).toLocaleTimeString('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', second: '2-digit' })}</span>
+            </>
+          ) : '—'}
+        </dd>
         <dt>Sector</dt>
         <dd>{r.sector ? `${r.sector}${r.industry ? ` (${r.industry})` : ''}` : '—'}</dd>
         <dt>Release</dt>

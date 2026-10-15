@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
   type Db, getReport, isBackfilled, listRange, listSourceStatus, markBackfilled, mergeFinnhubRow, openDb,
   recordSourceError, recordSourceSuccess, reportsForSnapshot, reportsNeedingSec, saveExpectedMove,
-  setExchange, setSecResult, upsertCalendarRow, reportsNeedingPrevMove, mergeYahooFill,
+  setExchange, setSecResult, upsertCalendarRow, reportsNeedingPrevMove, mergeYahooFill, liveSymbols,
 } from '../../src/db/repo.js';
 import type { CalendarRow } from '../../src/types.js';
 import { mkdtempSync } from 'node:fs';
@@ -277,5 +277,16 @@ describe('revenue currency guard', () => {
     mergeYahooFill(db, id, { epsActual: null, revenueEstimate: null, revenueActual: 1.1662e10, revenueCurrency: 'EUR' }, NOW);
     mergeFinnhubRow(db, { symbol: 'ASML', reportDate: '2026-10-14', timing: 'BMO', revenueEstimate: 1.3e10, revenueActual: 1.36e10, epsActual: null }, NOW);
     expect(all(db)[0]).toMatchObject({ revenueEstimate: null, revenueActual: 1.1662e10, revenueCurrency: 'EUR' });
+  });
+});
+
+describe('liveSymbols', () => {
+  test('reporters in the window, nearest date first then largest, capped', () => {
+    upsertCalendarRow(db, row({ symbol: 'LATE', reportDate: '2026-10-16', marketCap: 9e11 }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'BIG', reportDate: TODAY, marketCap: 5e11 }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'SMALL', reportDate: TODAY, marketCap: 1e9 }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'FAR', reportDate: '2026-10-30', marketCap: 1e12 }), NOW, TODAY);
+    expect(liveSymbols(db, TODAY, '2026-10-16', 3)).toEqual(['BIG', 'SMALL', 'LATE']);
+    expect(liveSymbols(db, TODAY, '2026-10-16', 2)).toEqual(['BIG', 'SMALL']);
   });
 });

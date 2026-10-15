@@ -1,5 +1,6 @@
 import { buildServer } from './api/server.js';
 import { Broadcaster, registerStream } from './api/stream.js';
+import { LivePrices } from './live/livePrices.js';
 import { config } from './config.js';
 import { openDb } from './db/repo.js';
 import { todayET } from './domain/marketCalendar.js';
@@ -13,10 +14,13 @@ const db = openDb(config.dbPath);
 const ctx: JobContext = { db, sources: createSources(config), now: () => new Date().toISOString(), today: () => todayET() };
 
 const yahoo = makeHttp({ minIntervalMs: 300, headers: { 'User-Agent': BROWSER_UA } });
+const live = new Broadcaster();
+const finnhubQuotes = makeHttp({ minIntervalMs: 1100, headers: { 'X-Finnhub-Token': config.finnhubToken } });
+const prices = new LivePrices(db, config.finnhubToken, finnhubQuotes, () => todayET(), (p) => live.publish('prices', { prices: p }));
 const app = buildServer(db, {
   indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true, webRoot: config.webRoot, trustProxy: config.trustProxy,
+  prices: () => prices.snapshot(),
 });
-const live = new Broadcaster();
 registerStream(app, live);
 await app.listen({ port: config.port, host: config.host });
 console.log(`API listening on http://${config.host}:${config.port}`);
@@ -24,3 +28,4 @@ console.log(`API listening on http://${config.host}:${config.port}`);
 const job = startScheduler(ctx, (ids) => live.publish('results', { ids }), (ids) => live.publish('moves', { ids }));
 // Warm the cache on start, under the scheduler's overlap guard; failures are recorded in /api/status.
 void warmUp(ctx, job);
+if (config.finnhubToken) prices.start();

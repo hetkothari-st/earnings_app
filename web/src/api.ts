@@ -94,3 +94,16 @@ export async function saveNote(reportId: number, text: string): Promise<Note | n
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return (await res.json()) as Note;
 }
+
+export interface LivePrice {
+  price: number;
+  prevClose: number | null;
+  changePct: number | null;
+  time: number;
+}
+
+export async function fetchPrices(): Promise<Record<string, LivePrice>> {
+  const res = await apiFetch('/api/prices');
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { prices: Record<string, LivePrice> }).prices;
+}

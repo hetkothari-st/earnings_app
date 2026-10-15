@@ -288,7 +288,7 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 .stock.s-bmo { --edge: var(--dawn); }
 .stock.s-amc { --edge: var(--dusk); }
 .stock.s-dmh, .stock.s-unknown { --edge: var(--amber); }
-.stock-head { width: 100%; display: grid; grid-template-columns: auto 72px 1fr auto 20px; align-items: center; gap: 10px;
+.stock-head { width: 100%; display: grid; grid-template-columns: auto 72px 1fr auto auto 20px; align-items: center; gap: 10px;
   padding: 11px 14px; border: 0; border-radius: 0; background: transparent; text-align: left; }
 .stock-head:hover { background: var(--raised); }
 .stock-head .dot { margin-right: 0; }
@@ -313,4 +313,11 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
   .stock-body { padding-left: 14px; }
   .lines { grid-template-columns: 1fr; gap: 0; }
   .lines dd { margin-bottom: 8px; }
+}
+
+.stock-price { display: inline-flex; gap: 8px; justify-content: flex-end; min-width: 150px; font-variant-numeric: tabular-nums; }
+.price-change { font-size: 12px; }
+@media (max-width: 780px) {
+  .stock-head { grid-template-columns: auto 60px 1fr auto 20px; }
+  .stock-price { min-width: 0; }
 }
