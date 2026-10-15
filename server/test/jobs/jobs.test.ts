@@ -113,6 +113,17 @@ describe('refreshCalendar', () => {
 });
 
 describe('refreshResults', () => {
+  test('returns the ids whose EPS or revenue actual changed', async () => {
+    let eps: number | null = null;
+    const ctx = makeCtx({
+      calendar: async (date) => (date === TODAY ? [cal({ epsActual: eps, epsSurprisePct: eps == null ? null : 3 })] : []),
+    });
+    expect(await refreshResults(ctx)).toEqual([]);
+    eps = 1.71;
+    const changed = await refreshResults(ctx);
+    expect(changed).toEqual([all(ctx)[0]!.id]);
+    expect(await refreshResults(ctx)).toEqual([]);
+  });
   test('re-reads previous and current day and merges Finnhub revenue', async () => {
     const calendar = vi.fn(async (date: string) => (date === TODAY ? [cal({ epsActual: 1.71, epsSurprisePct: 3 })] : []));
     const earningsDetails = vi.fn(async () => [

@@ -11,6 +11,8 @@ interface Props {
   showHidden: boolean;
   onToggleHidden: (symbol: string) => void;
   onSelect: (row: ReportDto) => void;
+  /** Report ids whose results just arrived; flashed once. */
+  highlight?: Set<number>;
 }
 
 const ORDER: Timing[] = ['BMO', 'DMH', 'AMC', 'UNKNOWN'];
@@ -57,7 +59,7 @@ function Result({ part, format }: { part: ResultPart; format: (n: number | null)
   );
 }
 
-export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, onSelect }: Props) {
+export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, onSelect, highlight }: Props) {
   const visible = rows.filter((r) => showHidden || !hidden.has(r.symbol));
   if (visible.length === 0) return <p className="empty">No earnings reports match this range and filter.</p>;
   const tz = zoneLabel(zone, visible[0]!.reportDate);
@@ -93,7 +95,8 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
                 </th>
               </tr>
               {list.map((r) => (
-                <Row key={r.id} r={r} zone={zone} isHidden={hidden.has(r.symbol)} onToggleHidden={onToggleHidden} onSelect={onSelect} />
+                <Row key={r.id} r={r} zone={zone} isHidden={hidden.has(r.symbol)} isNew={highlight?.has(r.id) ?? false}
+                  onToggleHidden={onToggleHidden} onSelect={onSelect} />
               ))}
             </Fragment>
           ))}
@@ -104,15 +107,15 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
   );
 }
 
-function Row({ r, zone, isHidden, onToggleHidden, onSelect }: {
-  r: ReportDto; zone: string; isHidden: boolean; onToggleHidden: (s: string) => void; onSelect: (r: ReportDto) => void;
+function Row({ r, zone, isHidden, isNew, onToggleHidden, onSelect }: {
+  r: ReportDto; zone: string; isHidden: boolean; isNew: boolean; onToggleHidden: (s: string) => void; onSelect: (r: ReportDto) => void;
 }) {
   const t = describeTiming(r.reportDate, r.timing, r.sessionClose, zone);
   const flags = (field: Flag['field']) => r.flags.filter((f) => f.field === field);
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') onSelect(r); };
 
   return (
-    <tr className={`row s-${r.timing.toLowerCase()}${isHidden ? ' is-hidden' : ''}`} onClick={() => onSelect(r)} onKeyDown={onKey} tabIndex={0}>
+    <tr className={`row s-${r.timing.toLowerCase()}${isHidden ? ' is-hidden' : ''}${isNew ? ' just-updated' : ''}`} onClick={() => onSelect(r)} onKeyDown={onKey} tabIndex={0}>
       <td data-label="Hide" className="c-hide" onClick={(e) => e.stopPropagation()}>
         <input type="checkbox" aria-label={`Hide ${r.symbol}`} checked={isHidden} onChange={() => onToggleHidden(r.symbol)} />
       </td>

@@ -423,3 +423,10 @@ export function setSectors(db: Db, sectors: Map<string, { sector: string | null;
     if (s) update.run(s.sector, s.industry, key);
   }
 }
+
+/** EPS and revenue actuals per report dated in [from, to], as comparable strings. */
+export function actualsByReport(db: Db, from: string, to: string): Map<number, string> {
+  const rows = db.prepare(`SELECT id, eps_actual AS e, revenue_actual AS r FROM reports WHERE report_date BETWEEN ? AND ?`)
+    .all(from, to) as unknown as { id: number; e: number | null; r: number | null }[];
+  return new Map(rows.map((x) => [x.id, `${x.e}|${x.r}`]));
+}

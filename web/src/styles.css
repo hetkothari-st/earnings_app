@@ -252,3 +252,13 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 .sector { color: var(--muted); }
 .provisional { color: var(--muted); }
 .basis { color: var(--amber); margin-left: 1px; }
+
+/* Results just arrived: one flash, so the eye finds the changed row */
+.row.just-updated { animation: result-in 2.4s ease-out 1; }
+@keyframes result-in {
+  0%, 30% { background: color-mix(in srgb, var(--amber) 22%, var(--surface)); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row.just-updated { animation: none; outline: 1px solid var(--amber); outline-offset: -1px; }
+}

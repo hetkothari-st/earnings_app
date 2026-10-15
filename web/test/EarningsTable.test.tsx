@@ -90,6 +90,11 @@ describe('EarningsTable', () => {
     renderTable();
     expect(document.getElementById('group-2026-10-15-BMO')!.textContent).toContain('2 reports');
   });
+  test('rows whose results just arrived are highlighted', () => {
+    renderTable({ highlight: new Set([3]) });
+    expect(screen.getByText('SCHW').closest('tr')!.className).toContain('just-updated');
+    expect(screen.getByText('TSM').closest('tr')!.className).not.toContain('just-updated');
+  });
   test('empty state', () => {
     renderTable({ rows: [] });
     expect(screen.getByText('No earnings reports match this range and filter.')).toBeTruthy();

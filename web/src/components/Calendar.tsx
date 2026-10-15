@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { EarningsResponse, ReportDto, Timing } from '../../../server/src/api/types';
 import { fetchEarnings } from '../api';
 import { useHidden } from '../hooks/useHidden';
+import { useLiveResults } from '../hooks/useLiveResults';
 import { useZone } from '../hooks/useZone';
 import { rangeFor, shiftAnchor, type View } from '../lib/ranges';
 import { daySummary } from '../lib/session';
@@ -26,6 +27,13 @@ export function Calendar() {
   const [showHidden, setShowHidden] = useState(false);
   const [selected, setSelected] = useState<ReportDto | null>(null);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
+  const [reloadKey, setReloadKey] = useState(0);
+  const [highlight, setHighlight] = useState<Set<number>>(new Set());
+  useLiveResults((ids) => {
+    setHighlight(new Set(ids));
+    setReloadKey((k) => k + 1);
+    window.setTimeout(() => setHighlight(new Set()), 6000);
+  });
   const { hidden, toggle } = useHidden();
   const { zone, isOverride, setZone } = useZone();
 
@@ -35,12 +43,13 @@ export function Calendar() {
   useEffect(() => {
     if (customInvalid) return;
     const ac = new AbortController();
-    setLoad({ status: 'loading' });
+    // Live refreshes keep showing the current table until fresh data arrives.
+    if (reloadKey === 0) setLoad({ status: 'loading' });
     fetchEarnings({ ...range, minCap, q: query }, ac.signal)
       .then((data) => setLoad({ status: 'ok', data }))
       .catch((e: Error) => { if (!ac.signal.aborted) setLoad({ status: 'error', error: e.message }); });
     return () => ac.abort();
-  }, [range.from, range.to, minCap, query, customInvalid]);
+  }, [range.from, range.to, minCap, query, customInvalid, reloadKey]);
 
   const zoneText = zoneLabel(zone, range.from);
   const rows = load.status === 'ok' ? load.data.rows : [];
@@ -71,7 +80,7 @@ export function Calendar() {
         {load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
         {load.status === 'ok' && (
           <EarningsTable rows={load.data.rows} zone={zone} hidden={hidden} showHidden={showHidden}
-            onToggleHidden={toggle} onSelect={setSelected} />
+            onToggleHidden={toggle} onSelect={setSelected} highlight={highlight} />
         )}
       </main>
       {selected && <DetailPanel r={selected} zone={zone} onClose={() => setSelected(null)} />}

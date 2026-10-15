@@ -32,14 +32,16 @@ export function createJobRunner(ctx: JobContext): JobRunner {
 }
 
 /** Spec section 7. All cron expressions are evaluated in America/New_York. */
-export function startScheduler(ctx: JobContext): JobRunner {
+export function startScheduler(ctx: JobContext, onResults: (ids: number[]) => void = () => {}): JobRunner {
   const job = createJobRunner(ctx);
   const opts = { timezone: ET };
-  const results = job('results', () => refreshResults(ctx));
+  const results = job('results', () => refreshResults(ctx).then((ids) => { if (ids.length) onResults(ids); }));
 
   schedule('0 */2 * * *', job('calendar', () => refreshCalendar(ctx).then(() => snapshotMoves(ctx))), opts);
-  schedule('*/30 6-10 * * 1-5', results, opts);
-  schedule('*/30 16-19 * * 1-5', results, opts);
+  // Every minute while releases land (BMO 6:00-10:59, AMC 16:00-19:59 ET), every 30 minutes in between.
+  schedule('* 6-10 * * 1-5', results, opts);
+  schedule('*/30 11-15 * * 1-5', results, opts);
+  schedule('* 16-19 * * 1-5', results, opts);
   schedule('0 20 * * 1-5', results, opts);
   schedule('20 16 * * 1-5', job('moves', () => snapshotMoves(ctx)), opts);
   schedule('0 23 * * *', job('sec', () => secSync(ctx).then(() => refreshSectors(ctx)).then(() => computePrevMoves(ctx))), opts);
@@ -51,7 +53,7 @@ export function startScheduler(ctx: JobContext): JobRunner {
  * skipped (not run concurrently) while the scheduled job of that name is still going.
  */
 export async function warmUp(ctx: JobContext, job: JobRunner): Promise<void> {
-  await job('results', () => refreshResults(ctx))();
+  await job('results', () => refreshResults(ctx).then(() => undefined))();
   await job('calendar', () => refreshCalendar(ctx))();
   await job('sectors', () => refreshSectors(ctx))();
   await job('moves', () => snapshotMoves(ctx))();
