@@ -339,7 +339,8 @@ export function reportsForSnapshot(
 ): { id: number; symbol: string; reportDate: string; timing: Timing; quoteDate: string | null }[] {
   return db.prepare(`SELECT r.id, r.symbol, r.report_date AS reportDate, r.timing, m.quote_date AS quoteDate
       FROM reports r LEFT JOIN expected_moves m ON m.report_id = r.id
-      WHERE r.report_date BETWEEN ? AND ? AND (m.report_id IS NULL OR m.provisional = 1)`)
+      WHERE r.report_date BETWEEN ? AND ? AND (m.report_id IS NULL OR m.provisional = 1)
+      ORDER BY r.report_date, r.market_cap DESC`)
     .all(from, to) as unknown as { id: number; symbol: string; reportDate: string; timing: Timing; quoteDate: string | null }[];
 }
 
@@ -399,7 +400,8 @@ export function reportsNeedingPrevMove(
 ): { id: number; symbol: string; symbolKey: string; reportDate: string; timing: Timing }[] {
   return db.prepare(`SELECT id, symbol, symbol_key AS symbolKey, report_date AS reportDate, timing FROM reports
       WHERE report_date BETWEEN ? AND ? AND prev_move_pct IS NULL
-        AND (prev_move_checked_at IS NULL OR prev_move_checked_at < ?)`)
+        AND (prev_move_checked_at IS NULL OR prev_move_checked_at < ?)
+      ORDER BY report_date, market_cap DESC`)
     .all(from, to, recheckBefore) as unknown as { id: number; symbol: string; symbolKey: string; reportDate: string; timing: Timing }[];
 }
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
   type Db, getReport, isBackfilled, listRange, listSourceStatus, markBackfilled, mergeFinnhubRow, openDb,
   recordSourceError, recordSourceSuccess, reportsForSnapshot, reportsNeedingSec, saveExpectedMove,
-  setExchange, setSecResult, upsertCalendarRow,
+  setExchange, setSecResult, upsertCalendarRow, reportsNeedingPrevMove,
 } from '../../src/db/repo.js';
 import type { CalendarRow } from '../../src/types.js';
 import { mkdtempSync } from 'node:fs';
@@ -215,5 +215,14 @@ describe('schema migration', () => {
     upsertCalendarRow(migrated, row(), NOW, TODAY);
     expect(all(migrated)[0]).toMatchObject({ symbol: 'SCHW', prevMovePct: null, lastYearEps: null });
     migrated.close();
+  });
+});
+
+describe('reportsNeedingPrevMove order', () => {
+  test('nearest date first, then largest company', () => {
+    upsertCalendarRow(db, row({ symbol: 'LATE', reportDate: '2026-10-20', marketCap: 9e11 }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'SMALL', reportDate: '2026-10-16', marketCap: 1e9 }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'BIG', reportDate: '2026-10-16', marketCap: 5e11 }), NOW, TODAY);
+    expect(reportsNeedingPrevMove(db, '2026-10-15', '2026-10-30', NOW).map((r) => r.symbol)).toEqual(['BIG', 'SMALL', 'LATE']);
   });
 });

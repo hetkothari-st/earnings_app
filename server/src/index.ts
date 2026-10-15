@@ -26,5 +26,5 @@ startScheduler(ctx);
 void refreshResults(ctx)
   .then(() => refreshCalendar(ctx))
   .then(() => refreshSectors(ctx))
-  .then(() => computePrevMoves(ctx))
-  .then(() => snapshotMoves(ctx));
+  .then(() => snapshotMoves(ctx))
+  .then(() => computePrevMoves(ctx));
