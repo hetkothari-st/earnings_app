@@ -46,7 +46,7 @@ export interface ReportDto {
     quoteDate?: string | null;
     snapshotAt: string;
   } | null;
-  previousMove: { pct: number; reportDate: string } | null;
+  previousMove: { pct: number; reportDate: string; basis: 'known' | 'sec-inferred' | 'assumed' } | null;
   sec: { check: SecCheck | null; acceptedAt: string | null; docUrl: string | null; indexUrl: string | null };
   fetched: { calendar: string | null; revenue: string | null; sec: string | null };
   flags: Flag[];

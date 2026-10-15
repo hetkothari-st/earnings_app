@@ -8,7 +8,7 @@ import { fetchAcceptance, fetchEarningsFilings, fetchSecTickers } from './sec.js
 
 export function createSources(cfg: Config): Sources {
   const nasdaq = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' } });
-  const cboe = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' } });
+  const cboe = makeHttp({ minIntervalMs: 2500, backoffMs: 15_000, headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' } });
   const finnhub = makeHttp({ minIntervalMs: 1100, headers: { 'X-Finnhub-Token': cfg.finnhubToken } });
   const sec = makeHttp({ minIntervalMs: 150, headers: { 'User-Agent': cfg.secUserAgent } });
 

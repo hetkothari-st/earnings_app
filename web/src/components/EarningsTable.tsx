@@ -18,6 +18,11 @@ const GROUP_LABEL: Record<Timing, string> = {
   BMO: 'Before open', DMH: 'During market', AMC: 'After close', UNKNOWN: 'Time not announced',
 };
 const COLS = 12;
+const BASIS_NOTE: Record<'known' | 'sec-inferred' | 'assumed', string> = {
+  known: '',
+  'sec-inferred': ' Release time inferred as after the close from the SEC filing time.',
+  assumed: ' Release time not on record; assumed same as this quarter.',
+};
 /** Expected move that fills the range bar completely. */
 const MOVE_SCALE = 15;
 
@@ -123,9 +128,15 @@ function Row({ r, zone, isHidden, onToggleHidden, onSelect }: {
         {t.local}{t.nextDay && <sup className="plus1" title="Next day in your time zone">+1</sup>}
       </td>
       <td data-label="Previous move" className="num">
-        {r.previousMove
-          ? <span className={changeClass(r.previousMove.pct)} title={`Reaction to the ${formatDateHeading(r.previousMove.reportDate)} report`}>{formatChange(r.previousMove.pct, 1)}</span>
-          : '—'}
+        {r.previousMove ? (
+          <>
+            <span className={changeClass(r.previousMove.pct)}
+              title={`Reaction to the ${formatDateHeading(r.previousMove.reportDate)} report.${BASIS_NOTE[r.previousMove.basis]}`}>
+              {formatChange(r.previousMove.pct, 1)}
+            </span>
+            {r.previousMove.basis !== 'known' && <span className="basis" aria-hidden="true">*</span>}
+          </>
+        ) : '—'}
       </td>
       <td data-label="Expected move" className="num move">
         {r.expectedMove ? (

@@ -73,13 +73,15 @@ describe('EarningsTable', () => {
     expect((tr.querySelector('.move-range') as HTMLElement).style.width).toBe('50%');
   });
   test('separate symbol, name, sector and date columns; previous move signed and coloured; provisional move marked', () => {
-    render(<EarningsTable rows={[dto({ previousMove: { pct: -2.5, reportDate: '2026-07-16' },
+    render(<EarningsTable rows={[dto({ previousMove: { pct: -2.5, reportDate: '2026-07-16', basis: 'assumed' },
       expectedMove: { movePct: 4.05, illiquid: false, expiry: '2026-10-16', strike: 97, callMid: 1.9, putMid: 2.1, underlying: 97, optionsVolume: 29599, provisional: true, quoteDate: '2026-10-14', snapshotAt: '2026-10-14T20:20:00Z' } })]}
       zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
     const tr = screen.getByText('TSM').closest('tr')!;
     expect(within(tr).getByText('Taiwan Semiconductor')).toBeTruthy();
     expect(within(tr).getByText('15 Oct')).toBeTruthy();
     expect(within(tr).getByText('−2.5%').className).toContain('down');
+    expect(within(tr).getByText('−2.5%').getAttribute('title')).toMatch(/assumed/i);
+    expect(within(tr).getByText('*')).toBeTruthy();
     expect(within(tr).getByText('Technology').getAttribute('title')).toBe('Semiconductors');
     expect(within(tr).getByText('≈±4.1%')).toBeTruthy();
     expect(within(tr).queryByText('29,599')).toBeNull();

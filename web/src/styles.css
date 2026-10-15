@@ -223,3 +223,4 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 
 .sector { color: var(--muted); }
 .provisional { color: var(--muted); }
+.basis { color: var(--amber); margin-left: 1px; }

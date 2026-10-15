@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { listRange, listSourceStatus, openDb, upsertCalendarRow } from '../../src/db/repo.js';
+import { listRange, listSourceStatus, openDb, setSecResult, upsertCalendarRow } from '../../src/db/repo.js';
 import { backfill } from '../../src/jobs/backfill.js';
 import type { JobContext, Sources } from '../../src/jobs/context.js';
 import { refreshCalendar } from '../../src/jobs/refreshCalendar.js';
@@ -234,10 +234,34 @@ describe('previous move', () => {
     expect(next).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-07-14' });
     expect(dailyCloses).toHaveBeenCalledWith('SCHW', '2026-07-04', '2026-07-24');
   });
-  test('previous report with unknown timing gives no move', async () => {
-    const ctx = makeCtx({ dailyCloses: async () => new Map([['2026-07-13', 100], ['2026-07-14', 97.5], ['2026-07-15', 102.4]]) });
+  const closes = new Map([['2026-07-13', 100], ['2026-07-14', 97.5], ['2026-07-15', 102.4]]);
+  test('known previous timing gives an exact move', async () => {
+    const ctx = makeCtx({ dailyCloses: async () => closes });
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-07-14', fiscalQuarter: 'Jun/2026', timing: 'BMO' }), NOW, '2026-07-01');
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026', timing: 'AMC' }), NOW, TODAY);
+    await computePrevMoves(ctx);
+    expect(all(ctx).find((r) => r.reportDate === '2026-10-16')).toMatchObject({ prevMovePct: -2.5, prevMoveBasis: 'known' });
+  });
+  test('unknown previous timing with an SEC filing after that close is treated as AMC, marked inferred', async () => {
+    const ctx = makeCtx({ dailyCloses: async () => closes });
     upsertCalendarRow(ctx.db, cal({ reportDate: '2026-07-14', fiscalQuarter: 'Jun/2026', timing: 'UNKNOWN' }), NOW, '2026-07-01');
-    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026' }), NOW, TODAY);
+    const prevId = all(ctx)[0]!.id;
+    setSecResult(ctx.db, prevId, { check: 'unverifiable', timing: 'UNKNOWN', timingSource: null, acceptedAt: '2026-07-14T16:12:00', docUrl: null, indexUrl: null }, NOW);
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026', timing: 'BMO' }), NOW, TODAY);
+    await computePrevMoves(ctx);
+    expect(all(ctx).find((r) => r.reportDate === '2026-10-16')).toMatchObject({ prevMovePct: 5, prevMoveBasis: 'sec-inferred' });
+  });
+  test('otherwise the current quarter timing is assumed, marked assumed', async () => {
+    const ctx = makeCtx({ dailyCloses: async () => closes });
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-07-14', fiscalQuarter: 'Jun/2026', timing: 'UNKNOWN' }), NOW, '2026-07-01');
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026', timing: 'BMO' }), NOW, TODAY);
+    await computePrevMoves(ctx);
+    expect(all(ctx).find((r) => r.reportDate === '2026-10-16')).toMatchObject({ prevMovePct: -2.5, prevMoveBasis: 'assumed' });
+  });
+  test('no timing anywhere gives no move', async () => {
+    const ctx = makeCtx({ dailyCloses: async () => closes });
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-07-14', fiscalQuarter: 'Jun/2026', timing: 'UNKNOWN' }), NOW, '2026-07-01');
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026', timing: 'UNKNOWN' }), NOW, TODAY);
     await computePrevMoves(ctx);
     expect(all(ctx).find((r) => r.reportDate === '2026-10-16')).toMatchObject({ prevMovePct: null, prevMoveDate: '2026-07-14' });
   });

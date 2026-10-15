@@ -119,7 +119,8 @@ describe('previous move in DTO', () => {
   test('carries the move and the report date it came from', () => {
     upsertCalendarRow(db, cal(), NOW, '2026-10-15');
     const r = listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!;
-    expect(toDto({ ...r, prevMovePct: -2.5, prevMoveDate: '2026-07-16' }).previousMove).toEqual({ pct: -2.5, reportDate: '2026-07-16' });
+    expect(toDto({ ...r, prevMovePct: -2.5, prevMoveDate: '2026-07-16', prevMoveBasis: 'sec-inferred' }).previousMove)
+      .toEqual({ pct: -2.5, reportDate: '2026-07-16', basis: 'sec-inferred' });
     expect(toDto({ ...r, prevMovePct: null, prevMoveDate: null }).previousMove).toBeNull();
   });
 });

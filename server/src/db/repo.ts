@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { SourceStatusDto } from '../api/types.js';
 import { normalizeTicker } from '../domain/ticker.js';
 import type {
-  CalendarRow, ExpectedMove, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
+  CalendarRow, ExpectedMove, PrevMoveBasis, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
 } from '../types.js';
 
 export type Db = DatabaseSync;
@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS reports (
   prev_move_pct REAL,
   prev_move_date TEXT,
   prev_move_checked_at TEXT,
+  prev_move_basis TEXT,
   sector TEXT,
   industry TEXT,
   UNIQUE (symbol_key, fiscal_quarter)
@@ -119,7 +120,7 @@ interface ReportRow {
   eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null;
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
   sec_index_url: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
-  prev_move_pct: number | null; prev_move_date: string | null; sector: string | null; industry: string | null;
+  prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: PrevMoveBasis | null; sector: string | null; industry: string | null;
 }
 
 interface JoinedRow extends ReportRow {
@@ -147,7 +148,7 @@ function toRecord(r: JoinedRow): ReportRecord {
       underlying: r.em_underlying!, movePct: r.em_move_pct!, illiquid: r.em_illiquid === 1, optionsVolume: r.em_options_volume, provisional: r.em_provisional === 1, quoteDate: r.em_quote_date,
       snapshotAt: r.em_snapshot_at,
     },
-    prevMovePct: r.prev_move_pct, prevMoveDate: r.prev_move_date, sector: r.sector, industry: r.industry,
+    prevMovePct: r.prev_move_pct, prevMoveDate: r.prev_move_date, prevMoveBasis: r.prev_move_basis, sector: r.sector, industry: r.industry,
   };
 }
 
@@ -384,25 +385,29 @@ export function counts(db: Db): { reports: number; withExpectedMove: number; sec
 }
 
 /** The symbol's most recent report before `before`. */
-export function previousReport(db: Db, symbolKey: string, before: string): { reportDate: string; timing: Timing } | undefined {
-  return db.prepare(`SELECT report_date AS reportDate, timing FROM reports
+export function previousReport(
+  db: Db, symbolKey: string, before: string,
+): { reportDate: string; timing: Timing; secAcceptedAt: string | null } | undefined {
+  return db.prepare(`SELECT report_date AS reportDate, timing, sec_accepted_at AS secAcceptedAt FROM reports
       WHERE symbol_key = ? AND report_date < ? ORDER BY report_date DESC LIMIT 1`)
-    .get(symbolKey, before) as unknown as { reportDate: string; timing: Timing } | undefined;
+    .get(symbolKey, before) as unknown as { reportDate: string; timing: Timing; secAcceptedAt: string | null } | undefined;
 }
 
 /** Reports in [from, to] with no previous move yet, not re-checked since `recheckBefore`. */
 export function reportsNeedingPrevMove(
   db: Db, from: string, to: string, recheckBefore: string,
-): { id: number; symbol: string; symbolKey: string; reportDate: string }[] {
-  return db.prepare(`SELECT id, symbol, symbol_key AS symbolKey, report_date AS reportDate FROM reports
+): { id: number; symbol: string; symbolKey: string; reportDate: string; timing: Timing }[] {
+  return db.prepare(`SELECT id, symbol, symbol_key AS symbolKey, report_date AS reportDate, timing FROM reports
       WHERE report_date BETWEEN ? AND ? AND prev_move_pct IS NULL
         AND (prev_move_checked_at IS NULL OR prev_move_checked_at < ?)`)
-    .all(from, to, recheckBefore) as unknown as { id: number; symbol: string; symbolKey: string; reportDate: string }[];
+    .all(from, to, recheckBefore) as unknown as { id: number; symbol: string; symbolKey: string; reportDate: string; timing: Timing }[];
 }
 
-export function setPrevMove(db: Db, id: number, pct: number | null, prevDate: string | null, now: string): void {
-  db.prepare('UPDATE reports SET prev_move_pct = ?, prev_move_date = ?, prev_move_checked_at = ? WHERE id = ?')
-    .run(pct, prevDate, now, id);
+export function setPrevMove(
+  db: Db, id: number, pct: number | null, prevDate: string | null, basis: PrevMoveBasis | null, now: string,
+): void {
+  db.prepare('UPDATE reports SET prev_move_pct = ?, prev_move_date = ?, prev_move_basis = ?, prev_move_checked_at = ? WHERE id = ?')
+    .run(pct, prevDate, basis, now, id);
 }
 
 export function setSectors(db: Db, sectors: Map<string, { sector: string | null; industry: string | null }>): void {

@@ -66,7 +66,9 @@ export function toDto(r: ReportRecord): ReportDto {
       result: beatMiss(r.revenueActual, r.revenueEstimate),
     },
     expectedMove: em,
-    previousMove: r.prevMovePct != null && r.prevMoveDate ? { pct: r.prevMovePct, reportDate: r.prevMoveDate } : null,
+    previousMove: r.prevMovePct != null && r.prevMoveDate
+      ? { pct: r.prevMovePct, reportDate: r.prevMoveDate, basis: r.prevMoveBasis ?? 'known' }
+      : null,
     sec: { check: r.secCheck, acceptedAt: r.secAcceptedAt, docUrl: r.secDocUrl, indexUrl: r.secIndexUrl },
     fetched: { calendar: r.calendarFetchedAt, revenue: r.revenueFetchedAt, sec: r.secCheckedAt },
     flags,

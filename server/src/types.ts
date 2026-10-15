@@ -1,5 +1,7 @@
 import type { SecCheck, Timing, TimingSource } from './api/types.js';
 export type { SecCheck, Timing, TimingSource } from './api/types.js';
+/** How the previous report's timing was known: stored, inferred from the SEC filing time, or assumed from this quarter. */
+export type PrevMoveBasis = 'known' | 'sec-inferred' | 'assumed';
 
 /** One row of the Nasdaq earnings calendar for one date. */
 export interface CalendarRow {
@@ -96,6 +98,7 @@ export interface ReportRecord {
   expectedMove: (ExpectedMove & { snapshotAt: string }) | null;
   prevMovePct: number | null;     // stock reaction to the previous report, %
   prevMoveDate: string | null;    // that previous report's date
+  prevMoveBasis: PrevMoveBasis | null;
   sector: string | null;
   industry: string | null;
 }
