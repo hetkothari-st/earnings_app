@@ -65,7 +65,7 @@
 }
 .login-seg-pre { color: var(--dawn); }
 .login-seg-pre::before { background: var(--dawn); }
-.login-seg-open { color: var(--ink); }
+.login-seg-open { color: var(--ink); text-align: center; }
 .login-seg-open::before { background: color-mix(in srgb, var(--ink) 55%, transparent); }
 .login-seg-after { color: var(--dusk); text-align: right; }
 .login-seg-after::before { background: var(--dusk); }
@@ -221,7 +221,6 @@
 }
 @media (max-width: 420px) {
   .login-seg { font-size: 11px; }
-  .login-seg-open { text-align: center; }
   .login-kicker { font-size: 12px; }
 }
 
