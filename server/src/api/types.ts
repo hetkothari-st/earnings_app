@@ -29,7 +29,7 @@ export interface ReportDto {
   exchange: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
-  eps: ResultPart & { noOfEsts: number | null };
+  eps: ResultPart & { noOfEsts: number | null; lastYear: number | null; lastYearReportDate: string | null };
   revenue: ResultPart;
   expectedMove: {
     movePct: number;

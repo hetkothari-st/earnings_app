@@ -38,6 +38,7 @@ describe('parseNasdaqCalendar', () => {
     expect(rows[0]).toEqual({
       symbol: 'SCHW', name: 'The Charles Schwab Corporation', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
       timing: 'BMO', marketCap: 165912461000, epsEstimate: 1.66, noOfEsts: 10, epsActual: null, epsSurprisePct: null,
+      lastYearEps: 1.31, lastYearReportDate: '2025-10-16',
     });
     expect(rows[1]).toMatchObject({
       symbol: 'BRK/B', name: 'Berkshire', timing: 'AMC', marketCap: null, epsEstimate: null, noOfEsts: null,
@@ -49,6 +50,13 @@ describe('parseNasdaqCalendar', () => {
   });
   test('weekend response yields no rows', () => {
     expect(parseNasdaqCalendar(weekend, '2026-10-18')).toEqual([]);
+  });
+  test('HTTP-200 error envelope is a failure, not an empty day', () => {
+    expect(() => parseNasdaqCalendar({ data: null, message: 'error', status: { rCode: 400 } }, '2026-10-15')).toThrow(SourceFormatError);
+    expect(() => parseNasdaqCalendar({ data: { rows: [] }, status: { rCode: 500 } }, '2026-10-15')).toThrow(SourceFormatError);
+  });
+  test('last-year EPS and report date', () => {
+    expect(parseNasdaqCalendar(upcoming, '2026-10-15')[1]).toMatchObject({ lastYearEps: null, lastYearReportDate: null });
   });
   test('unexpected shape throws SourceFormatError', () => {
     expect(() => parseNasdaqCalendar({ data: { rows: [{ symbol: 5 }] } }, '2026-10-15')).toThrow(SourceFormatError);

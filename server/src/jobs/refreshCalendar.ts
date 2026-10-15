@@ -1,4 +1,4 @@
-import { inTransaction, upsertCalendarRow } from '../db/repo.js';
+import { inTransaction, mergeFinnhubRow, upsertCalendarRow } from '../db/repo.js';
 import { addDays, isWeekend } from '../domain/marketCalendar.js';
 import type { CalendarRow } from '../types.js';
 import { type JobContext, track } from './context.js';
@@ -19,5 +19,13 @@ export async function refreshCalendar(ctx: JobContext, days = 90): Promise<void>
     if (isWeekend(date)) continue;
     const rows = await track(ctx, 'nasdaq', () => ctx.sources.calendar(date));
     if (rows) storeCalendarRows(ctx, rows);
+  }
+  // Revenue consensus and timing hints for upcoming reports (spec 6.3, 6.6a).
+  const details = await track(ctx, 'finnhub', () => ctx.sources.earningsDetails(today, addDays(today, 14)));
+  if (details) {
+    const now = ctx.now();
+    inTransaction(ctx.db, () => {
+      for (const d of details) mergeFinnhubRow(ctx.db, d, now);
+    });
   }
 }

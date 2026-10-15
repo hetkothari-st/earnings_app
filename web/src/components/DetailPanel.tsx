@@ -37,6 +37,8 @@ export function DetailPanel({ r, zone, onClose }: { r: ReportDto; zone: string; 
           <dt>EPS</dt>
           <dd>Est {formatEps(r.eps.estimate)} · Actual {formatEps(r.eps.actual)} · Surprise {formatPct(r.eps.surprisePct)}
             {r.eps.noOfEsts != null && ` · ${r.eps.noOfEsts} estimates`}</dd>
+          <dt>Last year</dt>
+          <dd>{r.eps.lastYear == null ? '—' : `${formatEps(r.eps.lastYear)}${r.eps.lastYearReportDate ? ` (reported ${formatDateHeading(r.eps.lastYearReportDate)})` : ''}`}</dd>
           <dt>Revenue</dt>
           <dd>Est {formatUsdFull(r.revenue.estimate)} · Actual {formatUsdFull(r.revenue.actual)} · Surprise {formatPct(r.revenue.surprisePct)}</dd>
           <dt>Market cap</dt>

@@ -27,9 +27,47 @@ function makeCtx(over: Partial<Sources> = {}): JobContext {
 
 const cal = (over: Partial<CalendarRow> = {}): CalendarRow => ({
   symbol: 'SCHW', name: 'Charles Schwab', reportDate: TODAY, fiscalQuarter: 'Sep/2026', timing: 'BMO',
-  marketCap: 1.6e11, epsEstimate: 1.66, noOfEsts: 10, epsActual: null, epsSurprisePct: null, ...over,
+  marketCap: 1.6e11, epsEstimate: 1.66, noOfEsts: 10, epsActual: null, epsSurprisePct: null,
+  lastYearEps: null, lastYearReportDate: null, ...over,
 });
 const all = (ctx: JobContext) => listRange(ctx.db, { from: '2000-01-01', to: '2100-01-01', minCap: null, q: null });
+
+describe('review fixes', () => {
+  test('calendar refresh also merges Finnhub revenue for the next two weeks', async () => {
+    const earningsDetails = vi.fn(async () => [
+      { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'BMO' as const, revenueEstimate: 6e9, revenueActual: null },
+    ]);
+    const ctx = makeCtx({ calendar: async (d) => (d === '2026-10-16' ? [cal({ reportDate: d })] : []), earningsDetails });
+    await refreshCalendar(ctx, 1);
+    expect(earningsDetails).toHaveBeenCalledWith('2026-10-15', '2026-10-29');
+    expect(all(ctx)[0]!.revenueEstimate).toBe(6e9);
+  });
+  test('snapshot refuses quotes that are not from today', async () => {
+    const chain: OptionChain = {
+      underlying: 100, asOfDate: '2026-10-14',
+      quotes: [
+        { expiry: '2026-10-16', type: 'C', strike: 100, bid: 2.9, ask: 3.1 },
+        { expiry: '2026-10-16', type: 'P', strike: 100, bid: 2.9, ask: 3.1 },
+      ],
+    };
+    const ctx = makeCtx({ optionChain: async () => chain });
+    upsertCalendarRow(ctx.db, cal({ timing: 'AMC' }), NOW, TODAY);
+    await snapshotMoves(ctx);
+    expect(all(ctx)[0]!.expectedMove).toBeNull();
+    expect(listSourceStatus(ctx.db).find((s) => s.source === 'cboe')?.lastError).toMatch(/not from 2026-10-15/);
+  });
+  test('any failed header fetch leaves the report pending, even if another candidate succeeded', async () => {
+    const f = (accession: string) => ({ accession, filingDate: '2026-10-13', docUrl: 'd', indexUrl: 'i' });
+    const ctx = makeCtx({
+      secTickers: async () => new Map([['JPM', { cik: 19617, exchange: 'NYSE' }]]),
+      secEarningsFilings: async () => [f('a'), f('b')],
+      secAcceptance: async (_cik, acc) => { if (acc === 'a') throw new Error('HTTP 503'); return '2026-10-13T16:30:00'; },
+    });
+    upsertCalendarRow(ctx.db, cal({ symbol: 'JPM', reportDate: '2026-10-13', timing: 'AMC' }), NOW, '2026-10-12');
+    await secSync(ctx);
+    expect(all(ctx)[0]!.secCheck).toBeNull();
+  });
+});
 
 describe('refreshCalendar', () => {
   test('fetches weekdays only and stores rows', async () => {
@@ -38,7 +76,7 @@ describe('refreshCalendar', () => {
     await refreshCalendar(ctx, 3); // Thu..Sun
     expect(calendar.mock.calls.map((c) => c[0])).toEqual(['2026-10-15', '2026-10-16']);
     expect(all(ctx)).toHaveLength(1);
-    expect(listSourceStatus(ctx.db)[0]).toMatchObject({ source: 'nasdaq', lastSuccessAt: NOW, lastError: null });
+    expect(listSourceStatus(ctx.db).find((x) => x.source === 'nasdaq')).toMatchObject({ source: 'nasdaq', lastSuccessAt: NOW, lastError: null });
   });
   test('format error records status and keeps stored data', async () => {
     const ctx = makeCtx();
@@ -46,7 +84,7 @@ describe('refreshCalendar', () => {
     ctx.sources.calendar = async () => { throw new SourceFormatError('Nasdaq calendar: bad shape'); };
     await refreshCalendar(ctx, 0);
     expect(all(ctx)[0]).toMatchObject({ symbol: 'SCHW', timing: 'BMO', marketCap: 1.6e11 });
-    expect(listSourceStatus(ctx.db)[0]).toMatchObject({ source: 'nasdaq', lastError: 'Nasdaq calendar: bad shape', lastErrorAt: NOW });
+    expect(listSourceStatus(ctx.db).find((x) => x.source === 'nasdaq')).toMatchObject({ source: 'nasdaq', lastError: 'Nasdaq calendar: bad shape', lastErrorAt: NOW });
   });
 });
 
@@ -67,7 +105,7 @@ describe('refreshResults', () => {
 describe('snapshotMoves', () => {
   test('computes for AMC today and BMO next trading day', async () => {
     const chain: OptionChain = {
-      underlying: 100,
+      underlying: 100, asOfDate: TODAY,
       quotes: [
         { expiry: '2026-10-16', type: 'C', strike: 100, bid: 2.9, ask: 3.1 },
         { expiry: '2026-10-16', type: 'P', strike: 100, bid: 2.9, ask: 3.1 },

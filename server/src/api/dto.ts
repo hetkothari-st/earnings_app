@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { ET, sessionClose } from '../domain/marketCalendar.js';
+import { chooseExpiry } from '../domain/expectedMove.js';
 import { beatMiss, surprisePct } from '../domain/surprise.js';
 import type { ReportRecord } from '../types.js';
 import type { Flag, ReportDto } from './types.js';
@@ -16,6 +17,8 @@ const etClock = (wallClock: string) => DateTime.fromISO(wallClock, { zone: ET })
 
 export function toDto(r: ReportRecord): ReportDto {
   const flags: Flag[] = [];
+  // Safety net: never show a move whose expiry would not capture the release under the current timing.
+  const em = r.expectedMove && chooseExpiry([r.expectedMove.expiry], r.reportDate, r.timing) ? r.expectedMove : null;
   const { close, flag: closeFlag } = closeFor(r.reportDate);
 
   if (r.secCheck === 'contradicted' && r.secAcceptedAt) {
@@ -27,7 +30,7 @@ export function toDto(r: ReportRecord): ReportDto {
   if (r.marketCapAsOf && r.marketCapAsOf > r.reportDate) {
     flags.push({ field: 'marketCap', message: 'Market cap is current, not at report time' });
   }
-  if (r.expectedMove?.illiquid) {
+  if (em?.illiquid) {
     flags.push({ field: 'expectedMove', message: 'Illiquid options: zero bid or spread over 30% of mid' });
   }
 
@@ -50,6 +53,8 @@ export function toDto(r: ReportRecord): ReportDto {
       surprisePct: r.epsSurprisePct ?? surprisePct(r.epsActual, r.epsEstimate),
       result: beatMiss(r.epsActual, r.epsEstimate),
       noOfEsts: r.noOfEsts,
+      lastYear: r.lastYearEps,
+      lastYearReportDate: r.lastYearReportDate,
     },
     revenue: {
       estimate: r.revenueEstimate,
@@ -57,7 +62,7 @@ export function toDto(r: ReportRecord): ReportDto {
       surprisePct: surprisePct(r.revenueActual, r.revenueEstimate),
       result: beatMiss(r.revenueActual, r.revenueEstimate),
     },
-    expectedMove: r.expectedMove,
+    expectedMove: em,
     sec: { check: r.secCheck, acceptedAt: r.secAcceptedAt, docUrl: r.secDocUrl, indexUrl: r.secIndexUrl },
     fetched: { calendar: r.calendarFetchedAt, revenue: r.revenueFetchedAt, sec: r.secCheckedAt },
     flags,

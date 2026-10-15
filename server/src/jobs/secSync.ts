@@ -36,7 +36,7 @@ export async function secSync(ctx: JobContext): Promise<void> {
       if (acceptedAt.slice(0, 10) !== p.reportDate) continue;
       if (!best || acceptedAt < best.acceptedAt) best = { acceptedAt, filing: f };
     }
-    if (fetchFailed && !best) continue; // retry next run rather than record a false "unverifiable"
+    if (fetchFailed) continue; // retry next run: a missing header could be the earliest filing
 
     const derived = best ? deriveFromAcceptance(p.reportDate, best.acceptedAt) : null;
     const result = checkTiming(p.timing, derived);

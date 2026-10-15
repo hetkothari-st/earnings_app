@@ -11,7 +11,8 @@ const TODAY = '2026-10-15';
 
 const row = (over: Partial<CalendarRow> = {}): CalendarRow => ({
   symbol: 'SCHW', name: 'Charles Schwab', reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026', timing: 'BMO',
-  marketCap: 165_900_000_000, epsEstimate: 1.66, noOfEsts: 10, epsActual: null, epsSurprisePct: null, ...over,
+  marketCap: 165_900_000_000, epsEstimate: 1.66, noOfEsts: 10, epsActual: null, epsSurprisePct: null,
+  lastYearEps: null, lastYearReportDate: null, ...over,
 });
 
 const all = (db: Db) => listRange(db, { from: '2000-01-01', to: '2100-01-01', minCap: null, q: null });
@@ -50,6 +51,45 @@ describe('upsertCalendarRow', () => {
     expect(getReport(db, id)).toMatchObject({
       reportDate: '2026-10-21', rescheduledFrom: '2026-10-16', timing: 'UNKNOWN', timingSource: null, expectedMove: null,
     });
+  });
+});
+
+describe('review fixes', () => {
+  const em = { expiry: '2026-10-16', strike: 100, callMid: 3, putMid: 3, underlying: 100, movePct: 6, illiquid: false };
+  test('timing change on the same date drops the expected-move snapshot', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    const id = all(db)[0]!.id;
+    saveExpectedMove(db, id, em, NOW);
+    upsertCalendarRow(db, row({ timing: 'AMC' }), NOW, TODAY);
+    expect(getReport(db, id)!.expectedMove).toBeNull();
+  });
+  test('unchanged timing keeps the snapshot', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    const id = all(db)[0]!.id;
+    saveExpectedMove(db, id, em, NOW);
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    expect(getReport(db, id)!.expectedMove).not.toBeNull();
+  });
+  test('Finnhub filling timing drops the snapshot', () => {
+    upsertCalendarRow(db, row({ timing: 'UNKNOWN' }), NOW, TODAY);
+    const id = all(db)[0]!.id;
+    saveExpectedMove(db, id, em, NOW);
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: null, revenueActual: null }, NOW);
+    expect(getReport(db, id)!.expectedMove).toBeNull();
+  });
+  test('row without fiscal quarter merges with the real-quarter row on the same date', () => {
+    upsertCalendarRow(db, row({ fiscalQuarter: 'date:2026-10-16', timing: 'UNKNOWN' }), NOW, TODAY);
+    upsertCalendarRow(db, row({ fiscalQuarter: 'Sep/2026', timing: 'BMO' }), NOW, TODAY);
+    expect(all(db).map((r) => [r.fiscalQuarter, r.timing])).toEqual([['Sep/2026', 'BMO']]);
+  });
+  test('missing fiscal quarter later reuses the existing row on the same date', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    upsertCalendarRow(db, row({ fiscalQuarter: 'date:2026-10-16', timing: 'UNKNOWN' }), NOW, TODAY);
+    expect(all(db).map((r) => [r.fiscalQuarter, r.timing])).toEqual([['Sep/2026', 'BMO']]);
+  });
+  test('last-year EPS is stored', () => {
+    upsertCalendarRow(db, row({ lastYearEps: 1.31, lastYearReportDate: '2025-10-16' }), NOW, TODAY);
+    expect(all(db)[0]).toMatchObject({ lastYearEps: 1.31, lastYearReportDate: '2025-10-16' });
   });
 });
 

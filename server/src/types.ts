@@ -13,6 +13,8 @@ export interface CalendarRow {
   noOfEsts: number | null;
   epsActual: number | null;
   epsSurprisePct: number | null;
+  lastYearEps: number | null;
+  lastYearReportDate: string | null; // YYYY-MM-DD
 }
 
 /** One Finnhub earnings-calendar item (revenue + timing hint). */
@@ -33,8 +35,9 @@ export interface OptionQuote {
 }
 
 export interface OptionChain {
-  underlying: number;
+  underlying: number;        // regular-session close
   quotes: OptionQuote[];
+  asOfDate?: string | null;  // date of the underlying's last regular trade (YYYY-MM-DD)
 }
 
 export interface ExpectedMove {
@@ -72,6 +75,8 @@ export interface ReportRecord {
   epsActual: number | null;
   epsSurprisePct: number | null;
   noOfEsts: number | null;
+  lastYearEps: number | null;
+  lastYearReportDate: string | null;
   revenueEstimate: number | null;
   revenueActual: number | null;
   exchange: string | null;

@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import type { ReportDto } from '../../server/src/api/types';
+import { DetailPanel } from '../src/components/DetailPanel';
 import { EarningsTable } from '../src/components/EarningsTable';
 
 const dto = (over: Partial<ReportDto>): ReportDto => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
   timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
   marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
-  eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6 },
+  eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6, lastYear: null, lastYearReportDate: null },
   revenue: { estimate: null, actual: null, surprisePct: null, result: null },
   expectedMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
   fetched: { calendar: null, revenue: null, sec: null }, flags: [], ...over,
@@ -16,7 +17,7 @@ const dto = (over: Partial<ReportDto>): ReportDto => ({
 const rows = [
   dto({ id: 1, symbol: 'AMCCO', name: 'After Co', timing: 'AMC' }),
   dto({ id: 2, symbol: 'TSM' }),
-  dto({ id: 3, symbol: 'SCHW', name: 'Schwab', eps: { estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10 } }),
+  dto({ id: 3, symbol: 'SCHW', name: 'Schwab', eps: { estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10, lastYear: 1.31, lastYearReportDate: '2025-10-16' } }),
 ];
 
 function renderTable(over: Partial<Parameters<typeof EarningsTable>[0]> = {}) {
@@ -66,5 +67,12 @@ describe('EarningsTable', () => {
   test('empty state', () => {
     renderTable({ rows: [] });
     expect(screen.getByText('No earnings reports match this range and filter.')).toBeTruthy();
+  });
+});
+
+describe('DetailPanel', () => {
+  test('shows last year same-quarter EPS', () => {
+    render(<DetailPanel r={rows[2]!} zone="Asia/Kolkata" onClose={vi.fn()} />);
+    expect(screen.getByText('$1.31 (reported Thu, Oct 16, 2025)')).toBeTruthy();
   });
 });

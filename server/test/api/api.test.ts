@@ -9,7 +9,8 @@ import type { CalendarRow } from '../../src/types.js';
 const NOW = '2026-10-15T20:00:00.000Z';
 const cal = (over: Partial<CalendarRow> = {}): CalendarRow => ({
   symbol: 'SCHW', name: 'Charles Schwab', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026', timing: 'BMO',
-  marketCap: 1.659e11, epsEstimate: 1.66, noOfEsts: 10, epsActual: 1.71, epsSurprisePct: 3, ...over,
+  marketCap: 1.659e11, epsEstimate: 1.66, noOfEsts: 10, epsActual: 1.71, epsSurprisePct: 3,
+  lastYearEps: 1.31, lastYearReportDate: '2025-10-16', ...over,
 });
 
 let db: Db;
@@ -20,7 +21,7 @@ describe('toDto', () => {
     upsertCalendarRow(db, cal(), NOW, '2026-10-15');
     mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'BMO', revenueEstimate: 6e9, revenueActual: 5.7e9 }, NOW);
     const dto = toDto(listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!);
-    expect(dto.eps).toEqual({ estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10 });
+    expect(dto.eps).toEqual({ estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10, lastYear: 1.31, lastYearReportDate: '2025-10-16' });
     expect(dto.revenue).toEqual({ estimate: 6e9, actual: 5.7e9, surprisePct: -5, result: 'miss' });
     expect(dto.sessionClose).toBe('16:00');
     expect(dto.flags).toEqual([]);
@@ -39,6 +40,15 @@ describe('toDto', () => {
     setSecResult(db, r0.id, { check: 'contradicted', timing: 'AMC', timingSource: 'nasdaq', acceptedAt: '2026-10-13T06:30:38', docUrl: null, indexUrl: null }, NOW);
     const flags = toDto(listRange(db, { from: '2026-10-13', to: '2026-10-13', minCap: null, q: null })[0]!).flags;
     expect(flags[0]).toEqual({ field: 'timing', message: 'SEC 8-K accepted 6:30 AM ET, which contradicts AMC' });
+  });
+});
+
+describe('expected-move guard', () => {
+  test('a snapshot whose expiry no longer fits the timing is not shown', () => {
+    upsertCalendarRow(db, cal({ timing: 'AMC', reportDate: '2026-10-16' }), NOW, '2026-10-15');
+    const r = listRange(db, { from: '2026-10-16', to: '2026-10-16', minCap: null, q: null })[0]!;
+    // expiry on the report date is valid for BMO only
+    expect(toDto({ ...r, expectedMove: { expiry: '2026-10-16', strike: 100, callMid: 3, putMid: 3, underlying: 100, movePct: 6, illiquid: false, snapshotAt: NOW } }).expectedMove).toBeNull();
   });
 });
 
