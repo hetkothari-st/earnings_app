@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { useAccount } from '../lib/account';
 import type { View } from '../lib/ranges';
 import type { SortKey } from '../lib/sort';
 
@@ -43,6 +44,7 @@ function title(view: View, from: string, to: string): { main: string; sub: strin
 
 export function Header(p: Props) {
   const t = title(p.view, p.range.from, p.range.to);
+  const account = useAccount();
   return (
     <header className="header">
       <div className="masthead">
@@ -54,6 +56,12 @@ export function Header(p: Props) {
             {ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
           </select>
         </label>
+        {account && (
+          <div className="zone">
+            <span>{account.userId}</span>
+            <button onClick={account.signOut}>Sign out</button>
+          </div>
+        )}
       </div>
 
       <div className="headline">

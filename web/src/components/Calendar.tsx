@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { EarningsResponse, ReportDto, Timing } from '../../../server/src/api/types';
 import { fetchEarnings } from '../api';
-import { useHidden } from '../hooks/useHidden';
+import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
 import { useZone } from '../hooks/useZone';
 import { rangeFor, shiftAnchor, type View } from '../lib/ranges';
@@ -35,8 +35,7 @@ export function Calendar() {
     setReloadKey((k) => k + 1);
     window.setTimeout(() => setHighlight(new Set()), 6000);
   });
-  // Interim: the stored set now means 'expanded rows' (switches to useExpanded once per-user storage lands).
-  const { hidden: expanded, toggle } = useHidden();
+  const { expanded, toggle } = useExpanded();
   const { zone, isOverride, setZone } = useZone();
 
   const range = useMemo(() => (view === 'custom' ? custom : rangeFor(view, anchor)), [view, anchor, custom]);
