@@ -3,6 +3,7 @@ import { fetchMe, logout, UNAUTHORIZED_EVENT } from './api';
 import { Calendar } from './components/Calendar';
 import { LoginPage } from './components/LoginPage';
 import { StatusPage } from './components/StatusPage';
+import { AccountContext } from './lib/account';
 
 type Auth = { status: 'checking' } | { status: 'out' } | { status: 'in'; id: string } | { status: 'error' };
 
@@ -36,8 +37,10 @@ export default function App() {
     );
   }
   if (auth.status === 'out') return <LoginPage onSignedIn={check} />;
-  // Keyed by user so per-user state (hidden list) reloads after switching accounts.
-  return window.location.pathname === '/status'
-    ? <StatusPage />
-    : <Calendar key={auth.id} userId={auth.id} onSignOut={signOut} />;
+  // Keyed by user so per-user state (expanded list) reloads after switching accounts.
+  return (
+    <AccountContext.Provider value={{ userId: auth.id, signOut }}>
+      {window.location.pathname === '/status' ? <StatusPage /> : <Calendar key={auth.id} />}
+    </AccountContext.Provider>
+  );
 }

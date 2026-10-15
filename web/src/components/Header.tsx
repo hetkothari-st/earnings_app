@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { useAccount } from '../lib/account';
 import type { View } from '../lib/ranges';
 
 export const CAP_OPTIONS: { label: string; value: number | null }[] = [
@@ -23,7 +24,6 @@ interface Props {
   query: string; onQuery: (q: string) => void;
   showHidden: boolean; hiddenCount: number; onShowHidden: (v: boolean) => void;
   zone: string; zoneText: string; isOverride: boolean; onZone: (z: string | null) => void;
-  userId?: string; onSignOut?: () => void;
 }
 
 const ZONES: string[] = (() => {
@@ -43,6 +43,7 @@ function title(view: View, from: string, to: string): { main: string; sub: strin
 
 export function Header(p: Props) {
   const t = title(p.view, p.range.from, p.range.to);
+  const account = useAccount();
   return (
     <header className="header">
       <div className="masthead">
@@ -54,10 +55,10 @@ export function Header(p: Props) {
             {ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
           </select>
         </label>
-        {p.onSignOut && (
+        {account && (
           <div className="zone">
-            {p.userId && <span>{p.userId}</span>}
-            <button onClick={p.onSignOut}>Sign out</button>
+            <span>{account.userId}</span>
+            <button onClick={account.signOut}>Sign out</button>
           </div>
         )}
       </div>

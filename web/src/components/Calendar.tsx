@@ -16,7 +16,7 @@ import { StaleBanner } from './StaleBanner';
 
 type Load = { status: 'loading' } | { status: 'ok'; data: EarningsResponse } | { status: 'error'; error: string };
 
-export function Calendar({ userId, onSignOut }: { userId?: string; onSignOut?: () => void } = {}) {
+export function Calendar() {
   const today = todayEt();
   const [view, setView] = useState<View>('day');
   const [anchor, setAnchor] = useState(today);
@@ -58,7 +58,6 @@ export function Calendar({ userId, onSignOut }: { userId?: string; onSignOut?: (
         minCap={minCap} onMinCap={setMinCap} query={query} onQuery={setQuery}
         showHidden={showHidden} hiddenCount={hidden.size} onShowHidden={setShowHidden}
         zone={zone} zoneText={zoneText} isOverride={isOverride} onZone={setZone}
-        userId={userId} onSignOut={onSignOut}
       />
       {load.status === 'ok' && <StaleBanner sources={load.data.sources} />}
       <main className="content">
