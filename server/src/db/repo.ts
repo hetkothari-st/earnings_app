@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS reports (
   last_year_rpt_dt TEXT,
   revenue_estimate REAL,
   revenue_actual REAL,
+  revenue_currency TEXT,
   exchange TEXT,
   sec_check TEXT,
   sec_accepted_at TEXT,
@@ -124,7 +125,7 @@ interface ReportRow {
   id: number; symbol: string; symbol_key: string; name: string; fiscal_quarter: string; report_date: string;
   rescheduled_from: string | null; timing: Timing; timing_source: TimingSource; timing_conflict: string | null;
   market_cap: number | null; market_cap_as_of: string | null; eps_estimate: number | null; eps_actual: number | null;
-  eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null;
+  eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null; revenue_currency: string | null;
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
   sec_index_url: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
   prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: PrevMoveBasis | null; sector: string | null; industry: string | null;
@@ -149,7 +150,7 @@ function toRecord(r: JoinedRow): ReportRecord {
     timingConflict: r.timing_conflict, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of,
     epsEstimate: r.eps_estimate, epsActual: r.eps_actual, epsSurprisePct: r.eps_surprise_pct, epsConflict: r.eps_conflict, noOfEsts: r.no_of_ests,
     lastYearEps: r.last_year_eps, lastYearReportDate: r.last_year_rpt_dt,
-    revenueEstimate: r.revenue_estimate, revenueActual: r.revenue_actual, exchange: r.exchange,
+    revenueEstimate: r.revenue_estimate, revenueActual: r.revenue_actual, revenueCurrency: r.revenue_currency, exchange: r.exchange,
     secCheck: r.sec_check, secAcceptedAt: r.sec_accepted_at, secDocUrl: r.sec_doc_url, secIndexUrl: r.sec_index_url,
     calendarFetchedAt: r.calendar_fetched_at, revenueFetchedAt: r.revenue_fetched_at, secCheckedAt: r.sec_checked_at,
     expectedMove: r.em_snapshot_at == null ? null : {
@@ -204,8 +205,8 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
   let epsSource = existing.eps_actual_source;
   let epsConflict = existing.eps_conflict;
   if (row.epsActual != null) {
-    if (existing.eps_actual_source === 'finnhub' && existing.eps_actual != null) {
-      epsConflict = epsDisagreement(row.epsActual, existing.eps_actual);
+    if ((existing.eps_actual_source === 'finnhub' || existing.eps_actual_source === 'yahoo') && existing.eps_actual != null) {
+      epsConflict = epsDisagreement(row.epsActual, existing.eps_actual, existing.eps_actual_source === 'yahoo' ? 'Yahoo' : 'Finnhub');
     }
     epsActual = row.epsActual;
     epsSource = 'nasdaq';
@@ -237,9 +238,9 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
   if (rescheduled || timing !== existing.timing) dropExpectedMove(db, existing.id);
 }
 
-function epsDisagreement(nasdaq: number, finnhub: number): string | null {
-  return Math.abs(nasdaq - finnhub) > 0.005
-    ? `Nasdaq reports EPS ${nasdaq}, Finnhub ${finnhub} (often adjusted vs GAAP)`
+function epsDisagreement(nasdaq: number, other: number, otherName = 'Finnhub'): string | null {
+  return Math.abs(nasdaq - other) > 0.005
+    ? `Nasdaq reports EPS ${nasdaq}, ${otherName} ${other} (often adjusted vs GAAP)`
     : null;
 }
 
@@ -456,4 +457,43 @@ export function saveLiveMove(db: Db, reportId: number, m: Omit<LiveMove, 'fetche
   db.prepare(`INSERT OR REPLACE INTO live_moves (report_id, move_pct, illiquid, quote_time, fetched_at) VALUES (?, ?, ?, ?, ?)`)
     .run(reportId, m.movePct, m.illiquid ? 1 : 0, m.quoteTime, now);
   return prev?.p !== m.movePct;
+}
+
+/** Reports in [from, to] still missing an EPS actual (if already reported), a revenue estimate or actual. */
+export function reportsMissingValues(
+  db: Db, from: string, to: string, today: string,
+): { id: number; symbol: string; reportDate: string; fiscalQuarter: string }[] {
+  return db.prepare(`SELECT id, symbol, report_date AS reportDate, fiscal_quarter AS fiscalQuarter FROM reports
+      WHERE report_date BETWEEN ? AND ?
+        AND (revenue_estimate IS NULL OR (report_date <= ? AND (eps_actual IS NULL OR revenue_actual IS NULL)))
+      ORDER BY report_date, market_cap DESC`)
+    .all(from, to, today) as unknown as { id: number; symbol: string; reportDate: string; fiscalQuarter: string }[];
+}
+
+/** Yahoo as a backup: fills only empty fields, never overwrites. */
+export function mergeYahooFill(
+  db: Db, id: number,
+  f: { epsActual: number | null; revenueEstimate: number | null; revenueActual: number | null; revenueCurrency: string | null },
+  now: string,
+): void {
+  const r = db.prepare('SELECT eps_actual, revenue_estimate, revenue_actual, revenue_currency FROM reports WHERE id = ?')
+    .get(id) as unknown as { eps_actual: number | null; revenue_estimate: number | null; revenue_actual: number | null; revenue_currency: string | null } | undefined;
+  if (!r) return;
+  const takeEps = r.eps_actual == null && f.epsActual != null;
+  // Revenue figures are only combined when they are in the same currency.
+  const sameCurrency = (r.revenue_currency ?? (r.revenue_estimate != null || r.revenue_actual != null ? 'USD' : null)) ?? f.revenueCurrency;
+  const revOk = f.revenueCurrency != null && sameCurrency === f.revenueCurrency;
+  const takeEst = revOk && r.revenue_estimate == null && f.revenueEstimate != null;
+  const takeAct = revOk && r.revenue_actual == null && f.revenueActual != null;
+  if (!takeEps && !takeEst && !takeAct) return;
+  db.prepare(`UPDATE reports SET
+      eps_actual = CASE WHEN ? THEN ? ELSE eps_actual END,
+      eps_actual_source = CASE WHEN ? THEN 'yahoo' ELSE eps_actual_source END,
+      revenue_estimate = CASE WHEN ? THEN ? ELSE revenue_estimate END,
+      revenue_actual = CASE WHEN ? THEN ? ELSE revenue_actual END,
+      revenue_currency = CASE WHEN ? OR ? THEN ? ELSE revenue_currency END,
+      revenue_fetched_at = ?
+    WHERE id = ?`)
+    .run(takeEps ? 1 : 0, f.epsActual, takeEps ? 1 : 0, takeEst ? 1 : 0, f.revenueEstimate, takeAct ? 1 : 0, f.revenueActual,
+      takeEst ? 1 : 0, takeAct ? 1 : 0, f.revenueCurrency, now, id);
 }

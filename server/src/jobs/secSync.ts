@@ -27,7 +27,10 @@ export async function secSync(ctx: JobContext): Promise<void> {
       filingsByCik.set(t.cik, filings);
     }
 
-    const candidates = filings.filter((f) => f.filingDate >= p.reportDate && f.filingDate <= addDays(p.reportDate, 4));
+    const inWindow = filings.filter((f) => f.filingDate >= p.reportDate && f.filingDate <= addDays(p.reportDate, 4));
+    const candidates = inWindow.filter((f) => f.form === '8-K');
+    // Foreign issuers file 6-Ks, which say nothing about their contents: link it, never use it for timing.
+    const sixK = inWindow.find((f) => f.form === '6-K' && f.filingDate <= addDays(p.reportDate, 1));
     let best: { acceptedAt: string; filing: Filing } | null = null;
     let fetchFailed = false;
     for (const f of candidates) {
@@ -45,8 +48,8 @@ export async function secSync(ctx: JobContext): Promise<void> {
       timing: result.timing,
       timingSource: result.timing !== p.timing ? 'sec' : p.timingSource,
       acceptedAt: best?.acceptedAt ?? null,
-      docUrl: best?.filing.docUrl ?? null,
-      indexUrl: best?.filing.indexUrl ?? null,
+      docUrl: best?.filing.docUrl ?? sixK?.docUrl ?? null,
+      indexUrl: best?.filing.indexUrl ?? sixK?.indexUrl ?? null,
     }, ctx.now());
   }
 }

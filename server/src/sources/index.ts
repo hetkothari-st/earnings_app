@@ -5,6 +5,7 @@ import { fetchFinnhubEarnings } from './finnhub.js';
 import { BROWSER_UA, makeHttp } from './http.js';
 import { fetchDailyCloses, fetchNasdaqCalendar, fetchSectors } from './nasdaq.js';
 import { fetchAcceptance, fetchEarningsFilings, fetchSecTickers } from './sec.js';
+import { createYahooSummaryFetcher } from './yahooEarnings.js';
 
 export function createSources(cfg: Config): Sources {
   const nasdaq = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' } });
@@ -28,5 +29,6 @@ export function createSources(cfg: Config): Sources {
     secAcceptance: async (cik, accession) => { requireSecUa(); return fetchAcceptance(sec, cik, accession); },
     dailyCloses: (symbol, from, to) => fetchDailyCloses(nasdaq, symbol, from, to),
     sectors: () => fetchSectors(nasdaq),
+    yahooSummary: createYahooSummaryFetcher(),
   };
 }

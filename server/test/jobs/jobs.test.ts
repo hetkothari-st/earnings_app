@@ -6,6 +6,7 @@ import { refreshCalendar } from '../../src/jobs/refreshCalendar.js';
 import { computePrevMoves } from '../../src/jobs/prevMoves.js';
 import { refreshLiveMoves } from '../../src/jobs/liveMoves.js';
 import { refreshSectors } from '../../src/jobs/sectors.js';
+import { refreshYahoo } from '../../src/jobs/yahooFill.js';
 import { refreshResults } from '../../src/jobs/refreshResults.js';
 import { secSync } from '../../src/jobs/secSync.js';
 import { snapshotMoves } from '../../src/jobs/snapshotMoves.js';
@@ -25,6 +26,7 @@ function makeCtx(over: Partial<Sources> = {}): JobContext {
     secAcceptance: async () => '',
     dailyCloses: async () => new Map(),
     sectors: async () => new Map(),
+    yahooSummary: async () => null,
     ...over,
   };
   return { db: openDb(':memory:'), sources, now: () => NOW, today: () => TODAY };
@@ -82,7 +84,7 @@ describe('review fixes', () => {
     expect(all(ctx)[0]!.expectedMove).toMatchObject({ provisional: false, quoteDate: '2026-10-15' });
   });
   test('any failed header fetch leaves the report pending, even if another candidate succeeded', async () => {
-    const f = (accession: string) => ({ accession, filingDate: '2026-10-13', docUrl: 'd', indexUrl: 'i' });
+    const f = (accession: string) => ({ accession, filingDate: '2026-10-13', form: '8-K' as const, docUrl: 'd', indexUrl: 'i' });
     const ctx = makeCtx({
       secTickers: async () => new Map([['JPM', { cik: 19617, exchange: 'NYSE' }]]),
       secEarningsFilings: async () => [f('a'), f('b')],
@@ -171,7 +173,7 @@ describe('secSync', () => {
     ['BRK-B', { cik: 1067983, exchange: 'NYSE' }],
   ]);
   const filing = {
-    accession: '0001628280-26-065582', filingDate: '2026-10-13',
+    accession: '0001628280-26-065582', filingDate: '2026-10-13', form: '8-K' as const,
     docUrl: 'https://www.sec.gov/doc.htm', indexUrl: 'https://www.sec.gov/index.htm',
   };
 
@@ -329,5 +331,31 @@ describe('live expected move', () => {
     bid = 3.4;
     expect(await refreshLiveMoves(ctx)).toHaveLength(1);
     expect(all(ctx)[0]!.liveMove?.movePct).toBe(7);
+  });
+});
+
+describe('6-K filings for foreign issuers', () => {
+  test('a 6-K on the report day is linked, but never used to check timing', async () => {
+    const ctx = makeCtx({
+      secTickers: async () => new Map([['TSM', { cik: 1046179, exchange: 'NYSE' }]]),
+      secEarningsFilings: async () => [{ accession: 'a', filingDate: '2026-10-13', form: '6-K' as const, docUrl: 'doc6k', indexUrl: 'idx6k' }],
+      secAcceptance: async () => '2026-10-13T06:00:00',
+    });
+    upsertCalendarRow(ctx.db, cal({ symbol: 'TSM', reportDate: '2026-10-13', timing: 'UNKNOWN' }), NOW, '2026-10-12');
+    await secSync(ctx);
+    expect(all(ctx)[0]).toMatchObject({ secDocUrl: 'doc6k', secIndexUrl: 'idx6k', secCheck: 'unverifiable', timing: 'UNKNOWN' });
+  });
+});
+
+describe('Yahoo backfill of missing values', () => {
+  test('fills EPS actual and revenue in the reporting currency for a report missing them', async () => {
+    const summary = { priceCurrency: 'USD', financialCurrency: 'TWD', epsHistory: [{ periodEnd: '2026-09-30', actual: 4.6 }],
+      revenueQuarters: [{ label: '3Q2026', revenue: 1.5e12 }], nextReportDate: null, nextRevenueEstimate: null };
+    const yahooSummary = vi.fn(async () => summary);
+    const ctx = makeCtx({ yahooSummary });
+    upsertCalendarRow(ctx.db, cal({ symbol: 'TSM', reportDate: TODAY, fiscalQuarter: 'Sep/2026' }), NOW, TODAY);
+    await refreshYahoo(ctx, TODAY, TODAY);
+    expect(all(ctx)[0]).toMatchObject({ epsActual: 4.6, revenueActual: 1.5e12, revenueCurrency: 'TWD' });
+    expect(yahooSummary).toHaveBeenCalledWith('TSM');
   });
 });

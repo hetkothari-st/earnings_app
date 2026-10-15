@@ -8,7 +8,7 @@ const dto = (over: Partial<ReportDto>): ReportDto => ({
   timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
   sector: 'Technology', industry: 'Semiconductors', marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
   eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6, lastYear: 2.92, lastYearReportDate: '2025-10-16' },
-  revenue: { estimate: 3.3e10, actual: null, surprisePct: null, result: null },
+  revenue: { estimate: 3.3e10, actual: null, surprisePct: null, result: null, currency: 'USD' },
   expectedMove: null, liveMove: null, previousMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
   fetched: { calendar: null, revenue: null, sec: null }, flags: [], ...over,
 });
@@ -75,6 +75,11 @@ describe('StockList', () => {
     renderList({ sort: 'cap', rows: [rows[1]!, rows[0]!, rows[2]!] });
     const oct15 = screen.getByRole('region', { name: 'Thu, Oct 15, 2026' });
     expect(within(oct15).getAllByRole('button').map((b) => b.querySelector('.ticker')!.textContent)).toEqual(['TSM', 'SCHW']);
+  });
+  test('revenue in a non-USD reporting currency is labelled, never shown as dollars', () => {
+    renderList({ expanded: new Set(['TSM']), rows: [dto({ revenue: { estimate: 1.46e12, actual: null, surprisePct: null, result: null, currency: 'TWD' } })] });
+    const item = screen.getByRole('button', { name: /TSM/ }).closest('li')!;
+    expect(within(item).getByText('Revenue estimate / actual').nextElementSibling!.textContent).toBe('NT$1.46T / —');
   });
   test('stocks whose results just arrived are highlighted', () => {
     renderList({ highlight: new Set([2]) });

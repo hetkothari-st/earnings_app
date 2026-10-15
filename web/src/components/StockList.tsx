@@ -1,6 +1,6 @@
 import type { Flag, ReportDto, ResultPart } from '../../../server/src/api/types';
 import type { Note } from '../api';
-import { changeClass, formatChange, formatDateHeading, formatEps, formatPct, formatUsd } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatEps, formatMoney, formatPct, formatUsd } from '../lib/format';
 import { type SortKey, sortRows } from '../lib/sort';
 import { describeTiming, zoneLabel } from '../lib/time';
 import { NoteEditor } from './NoteEditor';
@@ -158,7 +158,7 @@ function Details({ r, zone, note, onSaveNote }: {
         <dt>EPS estimate / actual</dt>
         <dd><Result part={r.eps} format={formatEps} /><Warn flags={flags('eps')} /></dd>
         <dt>Revenue estimate / actual</dt>
-        <dd><Result part={r.revenue} format={formatUsd} /></dd>
+        <dd><Result part={r.revenue} format={(n) => formatMoney(n, r.revenue.currency)} /></dd>
         <dt>Same quarter last year</dt>
         <dd>{r.eps.lastYear == null ? '—' : `EPS ${formatEps(r.eps.lastYear)}`}</dd>
         <dt>Official release</dt>

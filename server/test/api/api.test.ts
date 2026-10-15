@@ -22,7 +22,7 @@ describe('toDto', () => {
     mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'BMO', revenueEstimate: 6e9, revenueActual: 5.7e9, epsActual: null }, NOW);
     const dto = toDto(listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!);
     expect(dto.eps).toEqual({ estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10, lastYear: 1.31, lastYearReportDate: '2025-10-16' });
-    expect(dto.revenue).toEqual({ estimate: 6e9, actual: 5.7e9, surprisePct: -5, result: 'miss' });
+    expect(dto.revenue).toEqual({ estimate: 6e9, actual: 5.7e9, surprisePct: -5, result: 'miss', currency: 'USD' });
     expect(dto.sessionClose).toBe('16:00');
     expect(dto.flags).toEqual([]);
   });

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
   type Db, getReport, isBackfilled, listRange, listSourceStatus, markBackfilled, mergeFinnhubRow, openDb,
   recordSourceError, recordSourceSuccess, reportsForSnapshot, reportsNeedingSec, saveExpectedMove,
-  setExchange, setSecResult, upsertCalendarRow, reportsNeedingPrevMove,
+  setExchange, setSecResult, upsertCalendarRow, reportsNeedingPrevMove, mergeYahooFill,
 } from '../../src/db/repo.js';
 import type { CalendarRow } from '../../src/types.js';
 import { mkdtempSync } from 'node:fs';
@@ -249,5 +249,23 @@ describe('reportsNeedingPrevMove order', () => {
     upsertCalendarRow(db, row({ symbol: 'SMALL', reportDate: '2026-10-16', marketCap: 1e9 }), NOW, TODAY);
     upsertCalendarRow(db, row({ symbol: 'BIG', reportDate: '2026-10-16', marketCap: 5e11 }), NOW, TODAY);
     expect(reportsNeedingPrevMove(db, '2026-10-15', '2026-10-30', NOW).map((r) => r.symbol)).toEqual(['BIG', 'SMALL', 'LATE']);
+  });
+});
+
+describe('mergeYahooFill', () => {
+  test('fills only empty fields and records the revenue currency', () => {
+    upsertCalendarRow(db, row({ symbol: 'TSM', reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026' }), NOW, TODAY);
+    const id = all(db)[0]!.id;
+    mergeYahooFill(db, id, { epsActual: 4.31, revenueEstimate: 1.2e12, revenueActual: 1.27e12, revenueCurrency: 'TWD' }, NOW);
+    expect(all(db)[0]).toMatchObject({ epsActual: 4.31, revenueEstimate: 1.2e12, revenueActual: 1.27e12, revenueCurrency: 'TWD' });
+    mergeYahooFill(db, id, { epsActual: 9, revenueEstimate: 9, revenueActual: 9, revenueCurrency: 'TWD' }, NOW);
+    expect(all(db)[0]).toMatchObject({ epsActual: 4.31, revenueActual: 1.27e12 });
+  });
+  test('a later confirmed Nasdaq actual wins and the difference is flagged', () => {
+    upsertCalendarRow(db, row({ symbol: 'TSM', reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026' }), NOW, TODAY);
+    const id = all(db)[0]!.id;
+    mergeYahooFill(db, id, { epsActual: 4.31, revenueEstimate: null, revenueActual: null, revenueCurrency: null }, NOW);
+    upsertCalendarRow(db, row({ symbol: 'TSM', reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026', epsActual: 4.35, epsSurprisePct: 1 }), NOW, TODAY);
+    expect(all(db)[0]).toMatchObject({ epsActual: 4.35, epsConflict: 'Nasdaq reports EPS 4.35, Yahoo 4.31 (often adjusted vs GAAP)' });
   });
 });

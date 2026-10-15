@@ -32,7 +32,7 @@ export interface ReportDto {
   marketCap: number | null;
   marketCapAsOf: string | null;
   eps: ResultPart & { noOfEsts: number | null; lastYear: number | null; lastYearReportDate: string | null };
-  revenue: ResultPart;
+  revenue: ResultPart & { currency: string };
   expectedMove: {
     movePct: number;
     illiquid: boolean;

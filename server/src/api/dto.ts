@@ -64,6 +64,7 @@ export function toDto(r: ReportRecord): ReportDto {
       actual: r.revenueActual,
       surprisePct: surprisePct(r.revenueActual, r.revenueEstimate),
       result: beatMiss(r.revenueActual, r.revenueEstimate),
+      currency: r.revenueCurrency ?? 'USD',
     },
     expectedMove: em,
     liveMove: r.liveMove ? {

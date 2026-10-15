@@ -41,3 +41,13 @@ export const changeClass = (n: number | null) => (n == null || n === 0 ? '' : n 
 export function formatCount(n: number | null | undefined): string {
   return n == null ? '—' : n.toLocaleString('en-US');
 }
+
+const CURRENCY_PREFIX: Record<string, string> = { USD: '$', TWD: 'NT$', EUR: '€', GBP: '£', JPY: '¥', INR: '₹', CNY: 'CN¥', CAD: 'C$', HKD: 'HK$' };
+
+/** Compact amount in its own currency: "$1.2B", "NT$1.46T", "SEK 61.2B". Never converted. */
+export function formatMoney(n: number | null, currency: string): string {
+  const usd = formatUsd(n);
+  if (n == null || currency === 'USD') return usd;
+  const prefix = CURRENCY_PREFIX[currency] ?? `${currency} `;
+  return usd.replace('$', prefix);
+}

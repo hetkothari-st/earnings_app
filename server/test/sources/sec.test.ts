@@ -45,16 +45,26 @@ describe('sec', () => {
   test('only 8-K with item 2.02, with document and index URLs', () => {
     expect(parseEarningsFilings(submissions, 19617)).toEqual([
       {
-        accession: '0001628280-26-065582', filingDate: '2026-10-13',
+        accession: '0001628280-26-065582', filingDate: '2026-10-13', form: '8-K',
         docUrl: 'https://www.sec.gov/Archives/edgar/data/19617/000162828026065582/jpm-20261013.htm',
         indexUrl: 'https://www.sec.gov/Archives/edgar/data/19617/000162828026065582/0001628280-26-065582-index.htm',
       },
       {
-        accession: '0001628280-26-048078', filingDate: '2026-07-14',
+        accession: '0001628280-26-048078', filingDate: '2026-07-14', form: '8-K',
         docUrl: 'https://www.sec.gov/Archives/edgar/data/19617/000162828026048078/jpm-20260714.htm',
         indexUrl: 'https://www.sec.gov/Archives/edgar/data/19617/000162828026048078/0001628280-26-048078-index.htm',
       },
     ]);
+  });
+  test('foreign issuers: 6-K filings are listed too, marked by form', () => {
+    const sub6k = { filings: { recent: {
+      accessionNumber: ['0001046179-26-000123'], filingDate: ['2026-10-15'], form: ['6-K'], items: [''], primaryDocument: ['tsm6k.htm'],
+    } } };
+    expect(parseEarningsFilings(sub6k, 1046179)).toEqual([{
+      accession: '0001046179-26-000123', filingDate: '2026-10-15', form: '6-K',
+      docUrl: 'https://www.sec.gov/Archives/edgar/data/1046179/000104617926000123/tsm6k.htm',
+      indexUrl: 'https://www.sec.gov/Archives/edgar/data/1046179/000104617926000123/0001046179-26-000123-index.htm',
+    }]);
   });
   test('acceptance comes from the SGML header as ET wall clock', () => {
     expect(parseAcceptance(header)).toBe('2026-10-13T06:30:38');

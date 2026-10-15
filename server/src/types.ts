@@ -69,6 +69,7 @@ export interface ExpectedMove {
 /** An 8-K containing Item 2.02 (results of operations). */
 export interface Filing {
   accession: string;         // e.g. 0001628280-26-065582
+  form: '8-K' | '6-K';       // 6-K: foreign issuers' reports (no item codes)
   filingDate: string;        // YYYY-MM-DD
   docUrl: string;
   indexUrl: string;
@@ -96,6 +97,7 @@ export interface ReportRecord {
   lastYearReportDate: string | null;
   revenueEstimate: number | null;
   revenueActual: number | null;
+  revenueCurrency: string | null; // null = USD
   exchange: string | null;
   secCheck: SecCheck | null;
   secAcceptedAt: string | null;   // ET wall clock, YYYY-MM-DDTHH:mm:ss

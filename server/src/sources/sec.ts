@@ -51,13 +51,15 @@ export function parseEarningsFilings(json: unknown, cik: number): Filing[] {
   const r = parsed.data.filings.recent;
   const out: Filing[] = [];
   r.form.forEach((form, i) => {
-    if (form !== '8-K') return;
+    if (form !== '8-K' && form !== '6-K') return;
+    // 8-K: only Item 2.02 (results). 6-K (foreign issuers) has no item codes, so all are listed.
     const items = (r.items[i] ?? '').split(',').map((s) => s.trim());
-    if (!items.includes('2.02')) return;
+    if (form === '8-K' && !items.includes('2.02')) return;
     const accession = r.accessionNumber[i] ?? '';
     const base = `https://www.sec.gov/Archives/edgar/data/${cik}/${accession.replace(/-/g, '')}`;
     out.push({
       accession,
+      form,
       filingDate: r.filingDate[i] ?? '',
       docUrl: `${base}/${r.primaryDocument[i] ?? ''}`,
       indexUrl: `${base}/${accession}-index.htm`,

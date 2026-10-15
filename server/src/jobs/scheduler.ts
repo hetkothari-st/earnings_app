@@ -7,6 +7,8 @@ import { refreshLiveMoves } from './liveMoves.js';
 import { refreshResults } from './refreshResults.js';
 import { computePrevMoves } from './prevMoves.js';
 import { refreshSectors } from './sectors.js';
+import { refreshYahoo } from './yahooFill.js';
+import { addDays, prevTradingDay } from '../domain/marketCalendar.js';
 import { secSync } from './secSync.js';
 import { snapshotMoves } from './snapshotMoves.js';
 import { purgeExpiredNotes } from '../notes/store.js';
@@ -41,9 +43,16 @@ export function startScheduler(
 ): JobRunner {
   const job = createJobRunner(ctx);
   const opts = { timezone: ET };
-  const results = job('results', () => refreshResults(ctx).then((ids) => { if (ids.length) onResults(ids); }));
+  const results = job('results', async () => {
+    const ids = await refreshResults(ctx);
+    if (ids.length) onResults(ids);
+    // Backup values (foreign listings, lagging sources) for yesterday and today.
+    await refreshYahoo(ctx, prevTradingDay(ctx.today()), ctx.today());
+  });
 
-  schedule('0 */2 * * *', job('calendar', () => refreshCalendar(ctx).then(() => snapshotMoves(ctx))), opts);
+  schedule('0 */2 * * *', job('calendar', () => refreshCalendar(ctx)
+    .then(() => refreshYahoo(ctx, ctx.today(), addDays(ctx.today(), 7)))
+    .then(() => snapshotMoves(ctx))), opts);
   // Every minute while releases land (BMO 6:00-10:59, AMC 16:00-19:59 ET), every 30 minutes in between.
   schedule('* 6-10 * * 1-5', results, opts);
   schedule('*/30 11-15 * * 1-5', results, opts);
