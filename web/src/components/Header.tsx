@@ -23,6 +23,7 @@ interface Props {
   query: string; onQuery: (q: string) => void;
   showHidden: boolean; hiddenCount: number; onShowHidden: (v: boolean) => void;
   zone: string; zoneText: string; isOverride: boolean; onZone: (z: string | null) => void;
+  userId?: string; onSignOut?: () => void;
 }
 
 const ZONES: string[] = (() => {
@@ -53,6 +54,12 @@ export function Header(p: Props) {
             {ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
           </select>
         </label>
+        {p.onSignOut && (
+          <div className="zone">
+            {p.userId && <span>{p.userId}</span>}
+            <button onClick={p.onSignOut}>Sign out</button>
+          </div>
+        )}
       </div>
 
       <div className="headline">
