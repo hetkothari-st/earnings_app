@@ -23,7 +23,8 @@ export interface AuthOptions {
   limiter?: LoginLimiter;
 }
 
-export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): void {
+/** Returns a lookup for the signed-in user of a request (set by the session hook). */
+export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): (req: FastifyRequest) => string | null {
   ensureAuthSchema(db);
   const now = opts.now ?? Date.now;
   const limiter = opts.limiter ?? new LoginLimiter();
@@ -43,7 +44,8 @@ export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): v
     if (!path.startsWith('/api') || PUBLIC_PATHS.has(path)) return;
     const user = userOf(req);
     if (user) users.set(req, user);
-    else if (opts.requireAuth || path === '/api/expanded') return reply.code(401).send(NOT_SIGNED_IN);
+    // Per-user data always needs a session, even when the rest of the API is open (tests).
+    else if (opts.requireAuth || path === '/api/expanded' || path.startsWith('/api/notes')) return reply.code(401).send(NOT_SIGNED_IN);
   });
 
   app.post('/api/login', async (req, reply) => {
@@ -103,4 +105,5 @@ export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): v
     setExpanded(db, user, unique, new Date(now()).toISOString());
     return { symbols: unique };
   });
+  return (req) => users.get(req) ?? null;
 }

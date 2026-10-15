@@ -9,6 +9,7 @@ import { computePrevMoves } from './prevMoves.js';
 import { refreshSectors } from './sectors.js';
 import { secSync } from './secSync.js';
 import { snapshotMoves } from './snapshotMoves.js';
+import { purgeExpiredNotes } from '../notes/store.js';
 
 export type JobRunner = (name: string, fn: () => Promise<void>) => () => Promise<void>;
 
@@ -49,6 +50,8 @@ export function startScheduler(
   schedule('* 16-19 * * 1-5', results, opts);
   schedule('0 20 * * 1-5', results, opts);
   schedule('20 16 * * 1-5', job('moves', () => snapshotMoves(ctx)), opts);
+  // Notes are permanently deleted 24 hours after the results; checked every 5 minutes.
+  schedule('*/5 * * * *', job('notes', async () => { purgeExpiredNotes(ctx.db, Date.parse(ctx.now())); }), opts);
   // Intraday expected move every 3 minutes through the session (quotes are 15 minutes delayed).
   const live = job('live', () => refreshLiveMoves(ctx).then((ids) => { if (ids.length) onMoves(ids); }));
   schedule('*/3 9-15 * * 1-5', live, opts);

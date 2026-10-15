@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../../src/api/server.js';
 import { ensureAuthSchema, setUser } from '../../src/auth/store.js';
-import { type Db, openDb } from '../../src/db/repo.js';
+import { type Db, listRange, openDb, upsertCalendarRow } from '../../src/db/repo.js';
 
 let template: Db;
 let db: Db;
@@ -164,5 +164,34 @@ describe('expanded list', () => {
     }
     const ok = await app.inject({ method: 'PUT', url: '/api/expanded', headers: a, payload: { symbols: Array.from({ length: 2000 }, (_, i) => `S${i}`) } });
     expect(ok.statusCode).toBe(200);
+  });
+});
+
+describe('notes routes', () => {
+  const addReport = () => {
+    upsertCalendarRow(db, { symbol: 'SCHW', name: 'Charles Schwab', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026', timing: 'BMO',
+      marketCap: 1, epsEstimate: null, noOfEsts: null, epsActual: null, epsSurprisePct: null, lastYearEps: null, lastYearReportDate: null },
+      '2026-10-15T00:00:00Z', '2026-10-15');
+    return listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!.id;
+  };
+  test('save, list and clear a note for the signed-in user only', async () => {
+    const id = addReport();
+    const one = sessionHeader(await login('1A', '00000000'));
+    const two = sessionHeader(await login('2A', '00000000'));
+    const put = await app.inject({ method: 'PUT', url: `/api/notes/${id}`, payload: { text: 'watch NIM' }, headers: one });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toMatchObject({ reportId: id, text: 'watch NIM', deleteAt: '2026-10-16T13:30:00.000Z' });
+    expect((await app.inject({ method: 'GET', url: '/api/notes', headers: one })).json().notes).toHaveLength(1);
+    expect((await app.inject({ method: 'GET', url: '/api/notes', headers: two })).json().notes).toEqual([]);
+    const cleared = await app.inject({ method: 'PUT', url: `/api/notes/${id}`, payload: { text: '' }, headers: one });
+    expect(cleared.statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: '/api/notes', headers: one })).json().notes).toEqual([]);
+  });
+  test('unknown report 404, too long 400, no session 401', async () => {
+    const id = addReport();
+    const one = sessionHeader(await login('1A', '00000000'));
+    expect((await app.inject({ method: 'PUT', url: '/api/notes/99999', payload: { text: 'x' }, headers: one })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'PUT', url: `/api/notes/${id}`, payload: { text: 'x'.repeat(5001) }, headers: one })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/api/notes' })).statusCode).toBe(401);
   });
 });

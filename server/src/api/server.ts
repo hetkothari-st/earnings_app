@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { DateTime } from 'luxon';
 import { counts, type Db, getReport, listRange, listSourceStatus } from '../db/repo.js';
 import { registerAuth } from '../auth/routes.js';
+import { registerNotes } from '../notes/routes.js';
 import { toDto } from './dto.js';
 import type { IndexQuote } from '../sources/yahoo.js';
 import type { EarningsResponse, MarketIndexDto, MarketsResponse, StatusResponse } from './types.js';
@@ -33,7 +34,8 @@ function validDate(s: string | undefined): s is string {
 export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   // The API listens on loopback behind a proxy; trust its X-Forwarded-* headers for client IP and protocol.
   const app = Fastify({ logger: false, trustProxy: 'loopback' });
-  registerAuth(app, db, { requireAuth: opts.requireAuth ?? false, now: opts.now });
+  const currentUser = registerAuth(app, db, { requireAuth: opts.requireAuth ?? false, now: opts.now });
+  registerNotes(app, db, currentUser, opts.now ?? Date.now);
   let marketsCache: { at: number; body: MarketsResponse } | null = null;
 
   app.get('/api/markets', async () => {
