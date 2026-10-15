@@ -191,29 +191,57 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
   html { scroll-behavior: auto; }
 }
 
-/* Phone: rows become stacked records */
+/* Phone: each report is a compact card */
 @media (max-width: 780px) {
-  .app { padding: 14px 16px 32px; }
-  .filters input[type='search'] { width: 100%; }
-  .filters { width: 100%; }
+  .app { padding: 12px 12px 32px; }
+  .filters, .filters input[type='search'] { width: 100%; }
   .seg { width: 100%; overflow-x: auto; }
   .seg button { flex: 1; }
-  .band-track .seg-pre span, .band-track .seg-after span { display: none; }
-  .mark { font-size: 12px; }
-  .mark-amc { transform: translateX(-100%); border-left: 0; border-right: 3px solid var(--dusk); padding: 4px 10px 4px 0; text-align: right; }
-  .earnings thead { display: none; }
-  .earnings, .earnings tbody, .earnings tr, .earnings td, .earnings th { display: block; width: 100%; }
-  .earnings tr.row { padding: 10px 0; border-bottom: 1px solid var(--line); }
-  .earnings td { border: 0; padding: 3px 14px; text-align: left; }
-  .row td:first-child { box-shadow: none; }
-  .earnings tr.row { box-shadow: inset 3px 0 0 var(--edge, transparent); }
-  .earnings td[data-label]::before { content: attr(data-label); display: inline-block; width: 120px; color: var(--muted); font-size: 12px; }
-  .earnings td.symbol::before, .earnings td.c-hide::before { display: none; }
+  h1 { font-size: 24px; }
+  .markets { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; }
+  .market { flex: 0 0 46%; scroll-snap-align: start; }
+
+  /* Session band: markers stack under the bar instead of colliding */
+  .band { padding: 12px; }
+  .seg-pre span, .seg-after span { display: none; }
+  .seg-open { font-size: 11px; }
+  .band-marks { height: auto; display: grid; gap: 8px; margin-top: 6px; }
+  .mark, .mark-amc { position: static; left: auto !important; transform: none; text-align: left;
+    border-right: 0; padding: 2px 0 2px 10px; }
+  .mark-amc { border-left: 3px solid var(--dusk); }
+
+  /* Table becomes a list of cards */
   .table-wrap { overflow: visible; border: 0; background: transparent; }
   .table-wrap table.earnings { min-width: 0; border: 1px solid var(--line); border-radius: 10px; }
-  .markets { grid-template-columns: repeat(5, minmax(150px, 1fr)); overflow-x: auto; }
-  .name { max-width: none; }
+  .earnings thead { display: none; }
+  .earnings, .earnings tbody { display: block; width: 100%; }
+  .earnings tr.date-row, .earnings tr.group-row { display: block; }
+  .earnings tr.date-row th, .earnings tr.group-row th { display: block; width: 100%; }
+  .earnings tr.row {
+    position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px;
+    padding: 12px 14px 12px 16px; border-bottom: 1px solid var(--line);
+    box-shadow: inset 3px 0 0 var(--edge, transparent);
+  }
+  .row td:first-child { box-shadow: none; }
+  .earnings tr.row td { display: flex; justify-content: space-between; gap: 8px; border: 0; padding: 1px 0; font-size: 12.5px; white-space: nowrap; }
+  .earnings tr.row td::before { content: attr(data-label); color: var(--muted); font-size: 11.5px; margin-right: auto; }
+  .earnings tr.row td { justify-content: flex-start; }
+  .earnings tr.row td.c-hide { position: absolute; top: 10px; right: 12px; width: auto; padding: 0; }
+  .earnings tr.row td.symbol { grid-column: 1 / -1; padding-right: 36px; }
+  .earnings tr.row td.name-cell { grid-column: 1 / -1; display: block; white-space: normal; margin-bottom: 6px; }
+  .earnings tr.row td.c-hide::before, .earnings tr.row td.symbol::before,
+  .earnings tr.row td.name-cell::before { display: none; }
+  .earnings tr.row td.date { display: none; }
+  .earnings tr.row td { min-width: 0; }
+  .earnings tr.row td[data-label='Time (ET)'], .earnings tr.row td[data-label='Your time'],
+  .earnings tr.row td[data-label='EPS est / act'], .earnings tr.row td[data-label='Revenue est / act'] { grid-column: 1 / -1; }
+  .ticker { font-size: 16px; }
+  .name { display: inline; max-width: none; white-space: normal; }
+  .exchange { display: inline; margin-left: 6px; }
+  .num, .earnings .num { text-align: right; }
   .panel { padding: 20px 18px 32px; }
+  .panel dl { grid-template-columns: 1fr; gap: 0 0; }
+  .panel dd { margin-bottom: 8px; }
 }
 
 /* Terminal details */

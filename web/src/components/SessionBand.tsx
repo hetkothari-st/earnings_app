@@ -19,9 +19,9 @@ export function SessionBand({ date, sessionClose, zone, zoneText, counts, onJump
   return (
     <section className="band" aria-label={`US trading day in your time (${zoneText})`}>
       <div className="band-track">
-        <div className="seg seg-pre" style={{ left: 0, width: pct(b.open) }}><span>Pre-market</span></div>
-        <div className="seg seg-open" style={{ left: pct(b.open), width: pct(b.close - b.open) }}><span>US market open</span></div>
-        <div className="seg seg-after" style={{ left: pct(b.close), right: 0 }}><span>After hours</span></div>
+        <div className="band-seg seg-pre" style={{ left: 0, width: pct(b.open) }}><span>Pre-market</span></div>
+        <div className="band-seg seg-open" style={{ left: pct(b.open), width: pct(b.close - b.open) }}><span>US market open</span></div>
+        <div className="band-seg seg-after" style={{ left: pct(b.close), right: 0 }}><span>After hours</span></div>
         {b.ticks.map((t) => (
           <span key={t.at} className="tick" style={{ left: pct(t.at) }}>{t.label}</span>
         ))}
