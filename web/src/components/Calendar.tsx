@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { EarningsResponse, ReportDto, Timing } from '../../../server/src/api/types';
-import { fetchEarnings } from '../api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { EarningsResponse, Timing } from '../../../server/src/api/types';
+import { fetchEarnings, fetchNotes, type Note, saveNote } from '../api';
 import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
 import { useZone } from '../hooks/useZone';
@@ -9,12 +9,11 @@ import { daySummary } from '../lib/session';
 import type { SortKey } from '../lib/sort';
 import { todayEt, zoneLabel } from '../lib/time';
 import { DayStrip } from './DayStrip';
-import { DetailPanel } from './DetailPanel';
-import { EarningsTable } from './EarningsTable';
 import { Header } from './Header';
 import { LiveMarketBar } from './MarketBar';
 import { SessionBand } from './SessionBand';
 import { StaleBanner } from './StaleBanner';
+import { StockList } from './StockList';
 
 type Load = { status: 'loading' } | { status: 'ok'; data: EarningsResponse } | { status: 'error'; error: string };
 
@@ -26,7 +25,7 @@ export function Calendar() {
   const [minCap, setMinCap] = useState<number | null>(2e9);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('date');
-  const [selected, setSelected] = useState<ReportDto | null>(null);
+  const [notes, setNotes] = useState<Map<number, Note>>(new Map());
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
@@ -37,6 +36,19 @@ export function Calendar() {
   }, () => setReloadKey((k) => k + 1));
   const { expanded, toggle } = useExpanded();
   const { zone, isOverride, setZone } = useZone();
+
+  useEffect(() => {
+    fetchNotes().then((list) => setNotes(new Map(list.map((n) => [n.reportId, n])))).catch(() => {});
+  }, []);
+  const onSaveNote = useCallback(async (reportId: number, text: string) => {
+    const saved = await saveNote(reportId, text);
+    setNotes((prev) => {
+      const next = new Map(prev);
+      if (saved) next.set(reportId, saved);
+      else next.delete(reportId);
+      return next;
+    });
+  }, []);
 
   const range = useMemo(() => (view === 'custom' ? custom : rangeFor(view, anchor)), [view, anchor, custom]);
   const customInvalid = view === 'custom' && (!custom.from || !custom.to || custom.from > custom.to);
@@ -56,7 +68,7 @@ export function Calendar() {
   const rows = load.status === 'ok' ? load.data.rows : [];
   const days = daySummary(rows, new Set());
   const jump = (timing: Timing) =>
-    document.getElementById(`group-${range.from}-${timing}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelector(`[data-date="${range.from}"][data-timing="${timing}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const openDay = (date: string) => { setView('day'); setAnchor(date); };
 
   return (
@@ -80,11 +92,10 @@ export function Calendar() {
         {!customInvalid && load.status === 'loading' && <p className="muted">Loading…</p>}
         {load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
         {load.status === 'ok' && (
-          <EarningsTable rows={load.data.rows} zone={zone} expanded={expanded} sort={sort}
-            onToggle={toggle} onSelect={setSelected} highlight={highlight} />
+          <StockList rows={load.data.rows} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
+            notes={notes} onSaveNote={onSaveNote} highlight={highlight} />
         )}
       </main>
-      {selected && <DetailPanel r={selected} zone={zone} onClose={() => setSelected(null)} />}
       <footer className="footer muted">
         <span>Data from Nasdaq, Finnhub, SEC EDGAR and Cboe (delayed). Prototype, not trading advice.</span>
         <a href="/status">Data source status</a>

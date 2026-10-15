@@ -71,3 +71,26 @@ export async function saveExpanded(symbols: string[]): Promise<void> {
   });
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
 }
+
+export interface Note {
+  reportId: number;
+  text: string;
+  updatedAt: string;
+  deleteAt: string;
+}
+
+export async function fetchNotes(): Promise<Note[]> {
+  const res = await apiFetch('/api/notes');
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { notes: Note[] }).notes;
+}
+
+/** Saves a note; blank text deletes it. Returns the saved note, or null when deleted. */
+export async function saveNote(reportId: number, text: string): Promise<Note | null> {
+  const res = await apiFetch(`/api/notes/${reportId}`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+  });
+  if (res.status === 204) return null;
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return (await res.json()) as Note;
+}
