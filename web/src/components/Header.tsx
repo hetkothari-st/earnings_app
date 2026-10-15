@@ -59,6 +59,7 @@ export function Header(p: Props) {
         {account && (
           <div className="zone">
             <span>{account.userId}</span>
+            {account.isAdmin && <a href="/admin">Admin</a>}
             <button onClick={account.signOut}>Sign out</button>
           </div>
         )}

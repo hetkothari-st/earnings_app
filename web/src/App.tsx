@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchMe, logout, UNAUTHORIZED_EVENT } from './api';
+import { fetchAccount } from './adminApi';
+import { logout, UNAUTHORIZED_EVENT } from './api';
+import { AdminPage } from './components/AdminPage';
 import { Calendar } from './components/Calendar';
 import { LoginPage } from './components/LoginPage';
 import { StatusPage } from './components/StatusPage';
 import { AccountContext } from './lib/account';
 
-type Auth = { status: 'checking' } | { status: 'out' } | { status: 'in'; id: string } | { status: 'error' };
+type Auth = { status: 'checking' } | { status: 'out' } | { status: 'in'; id: string; isAdmin: boolean } | { status: 'error' };
 
 export default function App() {
   const [auth, setAuth] = useState<Auth>({ status: 'checking' });
 
   const check = useCallback(() => {
-    fetchMe()
-      .then((me) => setAuth(me ? { status: 'in', id: me.id } : { status: 'out' }))
+    fetchAccount()
+      .then((me) => setAuth(me ? { status: 'in', id: me.id, isAdmin: me.isAdmin } : { status: 'out' }))
       .catch(() => setAuth({ status: 'error' }));
   }, []);
 
@@ -38,9 +40,10 @@ export default function App() {
   }
   if (auth.status === 'out') return <LoginPage onSignedIn={check} />;
   // Keyed by user so per-user state (expanded list) reloads after switching accounts.
+  const path = window.location.pathname;
   return (
-    <AccountContext.Provider value={{ userId: auth.id, signOut }}>
-      {window.location.pathname === '/status' ? <StatusPage /> : <Calendar key={auth.id} />}
+    <AccountContext.Provider value={{ userId: auth.id, isAdmin: auth.isAdmin, signOut }}>
+      {path === '/status' ? <StatusPage /> : path === '/admin' ? <AdminPage key={auth.id} /> : <Calendar key={auth.id} />}
     </AccountContext.Provider>
   );
 }
