@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS reports (
   eps_estimate REAL,
   eps_actual REAL,
   eps_surprise_pct REAL,
+  eps_actual_source TEXT,
+  eps_conflict TEXT,
   no_of_ests INTEGER,
   last_year_eps REAL,
   last_year_rpt_dt TEXT,
@@ -89,7 +91,7 @@ interface ReportRow {
   id: number; symbol: string; symbol_key: string; name: string; fiscal_quarter: string; report_date: string;
   rescheduled_from: string | null; timing: Timing; timing_source: TimingSource; timing_conflict: string | null;
   market_cap: number | null; market_cap_as_of: string | null; eps_estimate: number | null; eps_actual: number | null;
-  eps_surprise_pct: number | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null;
+  eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null;
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
   sec_index_url: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
 }
@@ -109,7 +111,7 @@ function toRecord(r: JoinedRow): ReportRecord {
     id: r.id, symbol: r.symbol, symbolKey: r.symbol_key, name: r.name, fiscalQuarter: r.fiscal_quarter,
     reportDate: r.report_date, rescheduledFrom: r.rescheduled_from, timing: r.timing, timingSource: r.timing_source,
     timingConflict: r.timing_conflict, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of,
-    epsEstimate: r.eps_estimate, epsActual: r.eps_actual, epsSurprisePct: r.eps_surprise_pct, noOfEsts: r.no_of_ests,
+    epsEstimate: r.eps_estimate, epsActual: r.eps_actual, epsSurprisePct: r.eps_surprise_pct, epsConflict: r.eps_conflict, noOfEsts: r.no_of_ests,
     lastYearEps: r.last_year_eps, lastYearReportDate: r.last_year_rpt_dt,
     revenueEstimate: r.revenue_estimate, revenueActual: r.revenue_actual, exchange: r.exchange,
     secCheck: r.sec_check, secAcceptedAt: r.sec_accepted_at, secDocUrl: r.sec_doc_url, secIndexUrl: r.sec_index_url,
@@ -132,13 +134,14 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
 
   if (!existing) {
     db.prepare(`INSERT INTO reports (symbol, symbol_key, name, fiscal_quarter, report_date, timing, timing_source,
-      market_cap, market_cap_as_of, eps_estimate, eps_actual, eps_surprise_pct, no_of_ests, last_year_eps, last_year_rpt_dt,
-      calendar_fetched_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      market_cap, market_cap_as_of, eps_estimate, eps_actual, eps_surprise_pct, eps_actual_source, no_of_ests, last_year_eps,
+      last_year_rpt_dt, calendar_fetched_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       row.symbol, key, row.name, row.fiscalQuarter, row.reportDate, row.timing,
       row.timing === 'UNKNOWN' ? null : 'nasdaq',
       row.marketCap, row.marketCap == null ? null : today,
-      row.epsEstimate, row.epsActual, row.epsSurprisePct, row.noOfEsts, row.lastYearEps, row.lastYearReportDate, now);
+      row.epsEstimate, row.epsActual, row.epsSurprisePct, row.epsActual == null ? null : 'nasdaq', row.noOfEsts,
+      row.lastYearEps, row.lastYearReportDate, now);
     return;
   }
 
@@ -154,11 +157,16 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
   }
   const capLive = row.reportDate >= today && row.marketCap != null;
   const fiscalQuarter = existing.fiscal_quarter.startsWith('date:') ? row.fiscalQuarter : existing.fiscal_quarter;
+  // Finnhub's actual outranks Nasdaq's (Nasdaq shows placeholder EPS around report day).
+  const nasdaqMayWrite = existing.eps_actual_source !== 'finnhub' && row.epsActual != null;
+  const epsActual = nasdaqMayWrite ? row.epsActual : existing.eps_actual;
+  const epsSource = nasdaqMayWrite ? 'nasdaq' : existing.eps_actual_source;
 
   db.prepare(`UPDATE reports SET name = ?, fiscal_quarter = ?, report_date = ?, rescheduled_from = ?, timing = ?, timing_source = ?,
       timing_conflict = CASE WHEN ? THEN NULL ELSE timing_conflict END,
       market_cap = ?, market_cap_as_of = ?,
-      eps_estimate = COALESCE(?, eps_estimate), eps_actual = COALESCE(?, eps_actual),
+      eps_estimate = COALESCE(?, eps_estimate),
+      eps_actual = ?, eps_actual_source = ?,
       eps_surprise_pct = COALESCE(?, eps_surprise_pct), no_of_ests = COALESCE(?, no_of_ests),
       last_year_eps = COALESCE(?, last_year_eps), last_year_rpt_dt = COALESCE(?, last_year_rpt_dt),
       sec_check = CASE WHEN ? THEN NULL ELSE sec_check END,
@@ -168,7 +176,7 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
     row.name, fiscalQuarter, row.reportDate, rescheduled ? existing.report_date : existing.rescheduled_from, timing, timingSource,
     rescheduled ? 1 : 0,
     capLive ? row.marketCap : existing.market_cap, capLive ? today : existing.market_cap_as_of,
-    row.epsEstimate, row.epsActual, row.epsSurprisePct, row.noOfEsts, row.lastYearEps, row.lastYearReportDate,
+    row.epsEstimate, epsActual, epsSource, row.epsSurprisePct, row.noOfEsts, row.lastYearEps, row.lastYearReportDate,
     rescheduled ? 1 : 0, rescheduled ? 1 : 0,
     now, existing.id);
 
@@ -199,10 +207,23 @@ export function mergeFinnhubRow(db: Db, r: RevenueRow, now: string): boolean {
     }
   }
 
+  let epsActual = existing.eps_actual;
+  let epsSource = existing.eps_actual_source;
+  let epsConflict = existing.eps_conflict;
+  if (r.epsActual != null) {
+    if (existing.eps_actual_source === 'nasdaq' && existing.eps_actual != null && Math.abs(existing.eps_actual - r.epsActual) > 0.005) {
+      epsConflict = `Nasdaq reports EPS ${existing.eps_actual}, Finnhub ${r.epsActual}`;
+    } else if (existing.eps_actual_source !== 'finnhub') {
+      epsConflict = null;
+    }
+    epsActual = r.epsActual;
+    epsSource = 'finnhub';
+  }
+
   db.prepare(`UPDATE reports SET revenue_estimate = COALESCE(?, revenue_estimate),
       revenue_actual = COALESCE(?, revenue_actual), timing = ?, timing_source = ?, timing_conflict = ?,
-      revenue_fetched_at = ? WHERE id = ?`)
-    .run(r.revenueEstimate, r.revenueActual, timing, source, conflict, now, existing.id);
+      eps_actual = ?, eps_actual_source = ?, eps_conflict = ?, revenue_fetched_at = ? WHERE id = ?`)
+    .run(r.revenueEstimate, r.revenueActual, timing, source, conflict, epsActual, epsSource, epsConflict, now, existing.id);
   if (timing !== existing.timing) dropExpectedMove(db, existing.id);
   return true;
 }

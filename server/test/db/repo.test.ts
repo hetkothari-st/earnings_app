@@ -74,7 +74,7 @@ describe('review fixes', () => {
     upsertCalendarRow(db, row({ timing: 'UNKNOWN' }), NOW, TODAY);
     const id = all(db)[0]!.id;
     saveExpectedMove(db, id, em, NOW);
-    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: null, revenueActual: null }, NOW);
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: null, revenueActual: null, epsActual: null }, NOW);
     expect(getReport(db, id)!.expectedMove).toBeNull();
   });
   test('row without fiscal quarter merges with the real-quarter row on the same date', () => {
@@ -93,22 +93,42 @@ describe('review fixes', () => {
   });
 });
 
+describe('EPS actual precedence', () => {
+  const fh = (epsActual: number | null) => ({ symbol: 'SCHW', reportDate: '2026-10-16', timing: 'BMO' as const, revenueEstimate: null, revenueActual: null, epsActual });
+  test('Finnhub actual fills a missing one', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    mergeFinnhubRow(db, fh(1.71), NOW);
+    expect(all(db)[0]).toMatchObject({ epsActual: 1.71, epsConflict: null });
+  });
+  test('Finnhub wins over a differing Nasdaq actual and the disagreement is recorded', () => {
+    upsertCalendarRow(db, row({ epsActual: 1.65, epsSurprisePct: -0.6 }), NOW, TODAY);
+    mergeFinnhubRow(db, fh(1.71), NOW);
+    expect(all(db)[0]).toMatchObject({ epsActual: 1.71, epsConflict: 'Nasdaq reports EPS 1.65, Finnhub 1.71' });
+  });
+  test('a later Nasdaq refresh does not overwrite the Finnhub actual', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    mergeFinnhubRow(db, fh(1.71), NOW);
+    upsertCalendarRow(db, row({ epsActual: 1.65 }), NOW, TODAY);
+    expect(all(db)[0]!.epsActual).toBe(1.71);
+  });
+});
+
 describe('mergeFinnhubRow', () => {
   test('merges Finnhub row across ticker spellings', () => {
     upsertCalendarRow(db, row({ symbol: 'BRK/B', timing: 'UNKNOWN' }), NOW, TODAY);
-    const ok = mergeFinnhubRow(db, { symbol: 'BRK.B', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: 9e10, revenueActual: null }, NOW);
+    const ok = mergeFinnhubRow(db, { symbol: 'BRK.B', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: 9e10, revenueActual: null, epsActual: null }, NOW);
     expect(ok).toBe(true);
     expect(all(db)[0]).toMatchObject({ revenueEstimate: 9e10, timing: 'AMC', timingSource: 'finnhub', revenueFetchedAt: NOW });
   });
   test('nasdaq timing wins; disagreement is recorded as a conflict', () => {
     upsertCalendarRow(db, row(), NOW, TODAY);
-    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: null, revenueActual: null }, NOW);
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: null, revenueActual: null, epsActual: null }, NOW);
     expect(all(db)[0]).toMatchObject({ timing: 'BMO', timingSource: 'nasdaq', timingConflict: 'Nasdaq says BMO, Finnhub says AMC' });
-    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'BMO', revenueEstimate: null, revenueActual: null }, NOW);
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'BMO', revenueEstimate: null, revenueActual: null, epsActual: null }, NOW);
     expect(all(db)[0]!.timingConflict).toBeNull();
   });
   test('no matching report -> false', () => {
-    expect(mergeFinnhubRow(db, { symbol: 'NONE', reportDate: '2026-10-16', timing: 'BMO', revenueEstimate: 1, revenueActual: 1 }, NOW)).toBe(false);
+    expect(mergeFinnhubRow(db, { symbol: 'NONE', reportDate: '2026-10-16', timing: 'BMO', revenueEstimate: 1, revenueActual: 1, epsActual: null }, NOW)).toBe(false);
   });
 });
 

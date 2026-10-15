@@ -44,7 +44,10 @@ export function parseNasdaqCalendar(json: unknown, date: string): CalendarRow[] 
   if (rCode != null && rCode !== 200) throw new SourceFormatError(`Nasdaq calendar ${date}: status rCode ${rCode}`);
   return (parsed.data.data.rows ?? [])
     .filter((r) => r.symbol.trim() !== '')
-    .map((r) => ({
+    .map((r) => {
+      // Until Nasdaq records the surprise, its EPS column still holds a placeholder (last year's EPS).
+      const epsSurprisePct = parseNumber(r.surprise);
+      return {
       symbol: r.symbol.trim(),
       name: r.name.trim(),
       reportDate: date,
@@ -53,11 +56,12 @@ export function parseNasdaqCalendar(json: unknown, date: string): CalendarRow[] 
       marketCap: parseNumber(r.marketCap),
       epsEstimate: parseNumber(r.epsForecast),
       noOfEsts: parseIntOrNull(r.noOfEsts),
-      epsActual: parseNumber(r.eps),
-      epsSurprisePct: parseNumber(r.surprise),
+      epsActual: epsSurprisePct == null ? null : parseNumber(r.eps),
+      epsSurprisePct,
       lastYearEps: parseNumber(r.lastYearEPS),
       lastYearReportDate: usDate(r.lastYearRptDt),
-    }));
+    };
+    });
 }
 
 export async function fetchNasdaqCalendar(http: Http, date: string): Promise<CalendarRow[]> {

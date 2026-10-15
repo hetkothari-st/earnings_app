@@ -48,6 +48,12 @@ describe('parseNasdaqCalendar', () => {
   test('past rows carry actuals', () => {
     expect(parseNasdaqCalendar(past, '2026-10-13')[0]).toMatchObject({ epsActual: 5.75, epsSurprisePct: -3.2, timing: 'UNKNOWN' });
   });
+  test('EPS shown before Nasdaq records the surprise is a placeholder, not the actual', () => {
+    // Live 2026-10-14: BLK eps $11.55 with surprise N/A was last year's EPS; the real Q3 2026 figure was 15.93.
+    const rows = parseNasdaqCalendar({ data: { rows: [{ eps: '$11.55', surprise: 'N/A', time: 'time-pre-market', symbol: 'BLK',
+      name: 'BlackRock', marketCap: '$1', fiscalQuarterEnding: 'Sep/2026', epsForecast: '$14.01', noOfEsts: '6' }] } }, '2026-10-14');
+    expect(rows[0]).toMatchObject({ epsActual: null, epsSurprisePct: null });
+  });
   test('weekend response yields no rows', () => {
     expect(parseNasdaqCalendar(weekend, '2026-10-18')).toEqual([]);
   });

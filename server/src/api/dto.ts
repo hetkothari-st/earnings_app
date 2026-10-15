@@ -27,6 +27,7 @@ export function toDto(r: ReportRecord): ReportDto {
   if (r.timing === 'UNKNOWN') flags.push({ field: 'timing', message: 'Time not announced' });
   if (r.timingConflict) flags.push({ field: 'timing', message: r.timingConflict });
   if (closeFlag) flags.push(closeFlag);
+  if (r.epsConflict) flags.push({ field: 'eps', message: r.epsConflict });
   if (r.marketCapAsOf && r.marketCapAsOf > r.reportDate) {
     flags.push({ field: 'marketCap', message: 'Market cap is current, not at report time' });
   }
@@ -50,7 +51,7 @@ export function toDto(r: ReportRecord): ReportDto {
     eps: {
       estimate: r.epsEstimate,
       actual: r.epsActual,
-      surprisePct: r.epsSurprisePct ?? surprisePct(r.epsActual, r.epsEstimate),
+      surprisePct: surprisePct(r.epsActual, r.epsEstimate),
       result: beatMiss(r.epsActual, r.epsEstimate),
       noOfEsts: r.noOfEsts,
       lastYear: r.lastYearEps,

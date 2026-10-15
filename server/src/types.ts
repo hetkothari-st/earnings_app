@@ -24,6 +24,7 @@ export interface RevenueRow {
   timing: Timing;
   revenueEstimate: number | null;
   revenueActual: number | null;
+  epsActual: number | null;
 }
 
 export interface OptionQuote {
@@ -74,6 +75,7 @@ export interface ReportRecord {
   epsEstimate: number | null;
   epsActual: number | null;
   epsSurprisePct: number | null;
+  epsConflict: string | null;
   noOfEsts: number | null;
   lastYearEps: number | null;
   lastYearReportDate: string | null;

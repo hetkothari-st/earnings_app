@@ -22,8 +22,8 @@ describe('finnhub', () => {
   });
   test('parses items', () => {
     expect(parseFinnhubEarnings(body)).toEqual([
-      { symbol: 'JPM', reportDate: '2026-10-13', timing: 'BMO', revenueEstimate: 46_500_000_000, revenueActual: 47_100_000_000 },
-      { symbol: 'BRK.B', reportDate: '2026-10-15', timing: 'UNKNOWN', revenueEstimate: null, revenueActual: null },
+      { symbol: 'JPM', reportDate: '2026-10-13', timing: 'BMO', revenueEstimate: 46_500_000_000, revenueActual: 47_100_000_000, epsActual: 5.75 },
+      { symbol: 'BRK.B', reportDate: '2026-10-15', timing: 'UNKNOWN', revenueEstimate: null, revenueActual: null, epsActual: null },
     ]);
   });
   test('bad shape throws', () => {

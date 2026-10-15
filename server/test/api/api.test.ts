@@ -19,7 +19,7 @@ beforeEach(() => { db = openDb(':memory:'); });
 describe('toDto', () => {
   test('maps results with beat/miss and revenue surprise', () => {
     upsertCalendarRow(db, cal(), NOW, '2026-10-15');
-    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'BMO', revenueEstimate: 6e9, revenueActual: 5.7e9 }, NOW);
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'BMO', revenueEstimate: 6e9, revenueActual: 5.7e9, epsActual: null }, NOW);
     const dto = toDto(listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!);
     expect(dto.eps).toEqual({ estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10, lastYear: 1.31, lastYearReportDate: '2025-10-16' });
     expect(dto.revenue).toEqual({ estimate: 6e9, actual: 5.7e9, surprisePct: -5, result: 'miss' });
@@ -40,6 +40,16 @@ describe('toDto', () => {
     setSecResult(db, r0.id, { check: 'contradicted', timing: 'AMC', timingSource: 'nasdaq', acceptedAt: '2026-10-13T06:30:38', docUrl: null, indexUrl: null }, NOW);
     const flags = toDto(listRange(db, { from: '2026-10-13', to: '2026-10-13', minCap: null, q: null })[0]!).flags;
     expect(flags[0]).toEqual({ field: 'timing', message: 'SEC 8-K accepted 6:30 AM ET, which contradicts AMC' });
+  });
+});
+
+describe('EPS surprise and conflicts', () => {
+  test('surprise is computed from the stored actual and estimate, and a conflict is flagged', () => {
+    upsertCalendarRow(db, cal({ epsActual: 1.65, epsSurprisePct: -0.6 }), NOW, '2026-10-15');
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'BMO', revenueEstimate: null, revenueActual: null, epsActual: 1.71 }, NOW);
+    const dto = toDto(listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!);
+    expect(dto.eps).toMatchObject({ actual: 1.71, surprisePct: 3, result: 'beat' });
+    expect(dto.flags).toContainEqual({ field: 'eps', message: 'Nasdaq reports EPS 1.65, Finnhub 1.71' });
   });
 });
 

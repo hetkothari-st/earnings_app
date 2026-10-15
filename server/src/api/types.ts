@@ -5,7 +5,7 @@ export type SecCheck = 'verified' | 'consistent' | 'derived' | 'contradicted' | 
 export type BeatMiss = 'beat' | 'miss' | 'inline';
 
 export interface Flag {
-  field: 'timing' | 'marketCap' | 'expectedMove';
+  field: 'timing' | 'marketCap' | 'eps' | 'expectedMove';
   message: string;
 }
 

@@ -8,6 +8,7 @@ const ItemSchema = z.object({
   hour: z.string().nullish(),
   revenueActual: z.number().nullish(),
   revenueEstimate: z.number().nullish(),
+  epsActual: z.number().nullish(),
 });
 const ResponseSchema = z.object({ earningsCalendar: z.array(ItemSchema) });
 
@@ -27,6 +28,7 @@ export function parseFinnhubEarnings(json: unknown): RevenueRow[] {
     timing: finnhubTiming(i.hour),
     revenueEstimate: i.revenueEstimate ?? null,
     revenueActual: i.revenueActual ?? null,
+    epsActual: i.epsActual ?? null,
   }));
 }
 

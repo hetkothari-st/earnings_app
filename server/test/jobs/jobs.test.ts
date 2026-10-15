@@ -35,7 +35,7 @@ const all = (ctx: JobContext) => listRange(ctx.db, { from: '2000-01-01', to: '21
 describe('review fixes', () => {
   test('calendar refresh also merges Finnhub revenue for the next two weeks', async () => {
     const earningsDetails = vi.fn(async () => [
-      { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'BMO' as const, revenueEstimate: 6e9, revenueActual: null },
+      { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'BMO' as const, revenueEstimate: 6e9, revenueActual: null, epsActual: null },
     ]);
     const ctx = makeCtx({ calendar: async (d) => (d === '2026-10-16' ? [cal({ reportDate: d })] : []), earningsDetails });
     await refreshCalendar(ctx, 1);
@@ -92,7 +92,7 @@ describe('refreshResults', () => {
   test('re-reads previous and current day and merges Finnhub revenue', async () => {
     const calendar = vi.fn(async (date: string) => (date === TODAY ? [cal({ epsActual: 1.71, epsSurprisePct: 3 })] : []));
     const earningsDetails = vi.fn(async () => [
-      { symbol: 'SCHW', reportDate: TODAY, timing: 'BMO' as const, revenueEstimate: 6.0e9, revenueActual: 6.2e9 },
+      { symbol: 'SCHW', reportDate: TODAY, timing: 'BMO' as const, revenueEstimate: 6.0e9, revenueActual: 6.2e9, epsActual: null },
     ]);
     const ctx = makeCtx({ calendar, earningsDetails });
     await refreshResults(ctx);
