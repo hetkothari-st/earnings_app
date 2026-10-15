@@ -82,8 +82,10 @@ h1 {
 .band-marks { position: relative; height: 54px; }
 .mark { position: absolute; top: 0; display: grid; text-align: left; gap: 1px; border: 0; background: transparent; padding: 4px 0 4px 10px; font-size: 13px; }
 .mark span { color: var(--muted); font-size: 12px; }
-.mark-bmo { border-left: 3px solid var(--dawn); }
-.mark-amc { border-left: 3px solid var(--dusk); }
+.mark { padding-left: 0; }
+.mark-bmo { --edge: var(--dawn); }
+.mark-amc { --edge: var(--dusk); }
+.mark strong::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--edge); margin-right: 7px; vertical-align: 1px; }
 .mark:disabled { opacity: 0.45; cursor: default; }
 .mark:hover:not(:disabled) strong { text-decoration: underline; text-underline-offset: 3px; }
 .band-other { margin-top: 4px; border: 0; padding: 0; background: none; color: var(--amber); font-size: 12px; }
@@ -111,7 +113,6 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .g-amc .group-name { color: var(--dusk); }
 .g-unknown .group-name, .g-dmh .group-name { color: var(--amber); }
 .row { cursor: pointer; }
-.row td:first-child { box-shadow: inset 3px 0 0 var(--edge, transparent); }
 .row.s-bmo { --edge: var(--dawn); }
 .row.s-amc { --edge: var(--dusk); }
 .row.s-dmh, .row.s-unknown { --edge: var(--amber); }
@@ -150,7 +151,7 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .warn-text { color: var(--amber); }
 .empty { padding: 56px 16px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; }
 
-.banner { border-left: 3px solid var(--amber); background: var(--surface); padding: 8px 14px; margin-bottom: 14px; border-radius: 0 8px 8px 0; }
+.banner { border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line)); background: color-mix(in srgb, var(--amber) 8%, var(--surface)); padding: 8px 14px; margin-bottom: 14px; border-radius: 8px; }
 .banner p { margin: 4px 0; }
 
 /* Detail sheet */
@@ -158,7 +159,7 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .panel {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 10;
   width: min(460px, 100%); overflow-y: auto;
-  background: var(--surface); border-left: 4px solid var(--edge, var(--line));
+  background: var(--surface); border-left: 1px solid var(--line);
   padding: 26px 28px 40px;
   animation: slide-in 160ms ease-out;
 }
@@ -207,8 +208,7 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
   .seg-open { font-size: 11px; }
   .band-marks { height: auto; display: grid; gap: 8px; margin-top: 6px; }
   .mark, .mark-amc { position: static; left: auto !important; transform: none; text-align: left;
-    border-right: 0; padding: 2px 0 2px 10px; }
-  .mark-amc { border-left: 3px solid var(--dusk); }
+    padding: 2px 0; }
 
   /* Table becomes a list of cards */
   .table-wrap { overflow: visible; border: 0; background: transparent; }
@@ -220,7 +220,6 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
   .earnings tr.row {
     position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px;
     padding: 12px 14px 12px 16px; border-bottom: 1px solid var(--line);
-    box-shadow: inset 3px 0 0 var(--edge, transparent);
   }
   .row td:first-child { box-shadow: none; }
   .earnings tr.row td { display: flex; justify-content: space-between; gap: 8px; border: 0; padding: 1px 0; font-size: 12.5px; white-space: nowrap; }
@@ -262,3 +261,6 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 @media (prefers-reduced-motion: reduce) {
   .row.just-updated { animation: none; outline: 1px solid var(--amber); outline-offset: -1px; }
 }
+
+/* Session marker: a dot, never an edge stripe */
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--edge, var(--muted)); margin-right: 7px; vertical-align: 1px; }

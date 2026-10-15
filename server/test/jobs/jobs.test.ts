@@ -243,7 +243,8 @@ describe('previous move', () => {
     await computePrevMoves(ctx);
     const next = all(ctx).find((r) => r.reportDate === '2026-10-16')!;
     expect(next).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-07-14' });
-    expect(dailyCloses).toHaveBeenCalledWith('SCHW', '2026-07-04', '2026-07-24');
+    // Nasdaq's history endpoint returns nothing for short windows; ask for a full year ending today.
+    expect(dailyCloses).toHaveBeenCalledWith('SCHW', '2025-09-10', '2026-10-15');
   });
   const closes = new Map([['2026-07-13', 100], ['2026-07-14', 97.5], ['2026-07-15', 102.4]]);
   test('known previous timing gives an exact move', async () => {

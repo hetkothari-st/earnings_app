@@ -32,7 +32,7 @@ export function DetailPanel({ r, zone, onClose }: { r: ReportDto; zone: string; 
       <div className="scrim" onClick={onClose} aria-hidden="true" />
       <aside className={`panel s-${r.timing.toLowerCase()}`} aria-label={`${r.symbol} details`}>
         <button className="close icon" onClick={onClose} aria-label="Close">×</button>
-        <p className="panel-ticker">{r.symbol}</p>
+        <p className="panel-ticker"><span className="dot" aria-hidden="true" />{r.symbol}</p>
         <h2>{r.name}</h2>
         <p className="muted">
           {formatDateHeading(r.reportDate)}{r.fiscalQuarter ? `, quarter ending ${r.fiscalQuarter}` : ''}

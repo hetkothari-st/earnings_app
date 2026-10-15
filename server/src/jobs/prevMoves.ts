@@ -26,6 +26,7 @@ function resolveTiming(
 export async function computePrevMoves(ctx: JobContext): Promise<void> {
   const today = ctx.today();
   const recheckBefore = new Date(Date.parse(ctx.now()) - 20 * 3_600_000).toISOString();
+  const cache = new Map<string, Map<string, number>>();
   for (const r of reportsNeedingPrevMove(ctx.db, addDays(today, -7), addDays(today, 30), recheckBefore)) {
     const prev = previousReport(ctx.db, r.symbolKey, r.reportDate);
     const resolved = prev ? resolveTiming(prev, r.timing) : null;
@@ -33,8 +34,12 @@ export async function computePrevMoves(ctx: JobContext): Promise<void> {
       setPrevMove(ctx.db, r.id, null, prev?.reportDate ?? null, null, ctx.now());
       continue;
     }
-    const closes = await track(ctx, 'nasdaq-prices', () =>
-      ctx.sources.dailyCloses(r.symbol, addDays(prev.reportDate, -10), addDays(prev.reportDate, 10)));
+    // Nasdaq's history endpoint returns nothing for short windows, so fetch a year once per symbol.
+    let closes = cache.get(r.symbolKey);
+    if (!closes) {
+      closes = await track(ctx, 'nasdaq-prices', () => ctx.sources.dailyCloses(r.symbol, addDays(today, -400), today));
+      if (closes) cache.set(r.symbolKey, closes);
+    }
     if (!closes) continue; // fetch failed: retry next run
     const pct = reactionMove(closes, prev.reportDate, resolved.timing);
     setPrevMove(ctx.db, r.id, pct, prev.reportDate, pct == null ? null : resolved.basis, ctx.now());

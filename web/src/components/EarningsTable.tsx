@@ -126,7 +126,7 @@ function Row({ r, zone, isHidden, isNew, onToggleHidden, onSelect }: {
       </td>
       <td data-label="Sector" className="sector">{r.sector ? <span title={r.industry ?? undefined}>{r.sector}</span> : '—'}</td>
       <td data-label="Date" className="date">{DateTime.fromISO(r.reportDate).setLocale('en-US').toFormat('d LLL')}</td>
-      <td data-label="Time (ET)">{t.et} <Warn flags={flags('timing')} /></td>
+      <td data-label="Time (ET)"><span><span className="dot" aria-hidden="true" />{t.et}</span> <Warn flags={flags('timing')} /></td>
       <td data-label="Your time">
         {t.local}{t.nextDay && <sup className="plus1" title="Next day in your time zone">+1</sup>}
       </td>

@@ -96,7 +96,7 @@ export function parseNasdaqHistory(json: unknown): Map<string, number> {
 export async function fetchDailyCloses(http: Http, symbol: string, from: string, to: string): Promise<Map<string, number>> {
   const s = encodeURIComponent(symbol.trim().toUpperCase().replace('/', '.'));
   return parseNasdaqHistory(await http.json(
-    `https://api.nasdaq.com/api/quote/${s}/historical?assetclass=stocks&fromdate=${from}&todate=${to}&limit=60`));
+    `https://api.nasdaq.com/api/quote/${s}/historical?assetclass=stocks&fromdate=${from}&todate=${to}&limit=400`));
 }
 
 const ScreenerSchema = z.object({
