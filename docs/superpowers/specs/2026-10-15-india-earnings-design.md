@@ -35,7 +35,7 @@ Same purpose as the US calendar: show traders upcoming and just-released quarter
 | Previous move | Kite daily candles, close to close around the prior result | During-market result → same day (prev close → that day's close). After-close → next trading day. Before-open → same day. Timing basis stored (known / assumed) as in US. |
 | Markets strip | NIFTY 50, SENSEX, NIFTY BANK, NIFTY MIDCAP 100 | Kite live; Yahoo fallback. |
 
-Beat/miss colour: only when estimate basis and actual basis are both consolidated or estimate exists and actual is consolidated; with a standalone-only actual, no colour.
+Beat/miss colour: only when an estimate exists and the actual is consolidated. A standalone-only actual is shown without colour, because the estimate's basis may differ.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ Beat/miss colour: only when estimate basis and actual basis are both consolidate
   - `/api/stream` adds events `in-results`, `in-moves`, `in-prices`.
   - Admin: Zerodha status (connected, last login time, last error) and "Log in now".
 - Credentials: Railway variables `KITE_API_KEY`, `KITE_API_SECRET`, `KITE_USER_ID`, `KITE_PASSWORD`, `KITE_TOTP_SECRET`. Never in DB, logs or responses. Access token in memory only. No order-placing code.
-- Without a Kite session: calendar, estimates, results work; price, expected move, live expected move, previous move (new) show "—".
+- Without a Kite session: calendar, estimates, results work; price, expected move and live expected move show "—"; previous moves already stored stay, new ones wait for the next session.
 
 ### Web
 
