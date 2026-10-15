@@ -5,6 +5,7 @@ import { registerAdmin } from '../auth/adminRoutes.js';
 import { registerAuth } from '../auth/routes.js';
 import { registerNotes } from '../notes/routes.js';
 import { toDto } from './dto.js';
+import { registerWebApp } from './static.js';
 import type { IndexQuote } from '../sources/yahoo.js';
 import type { EarningsResponse, MarketIndexDto, MarketsResponse, StatusResponse } from './types.js';
 
@@ -27,6 +28,10 @@ export interface ServerOptions {
   requireAuth?: boolean;
   /** Clock for sessions and login rate limiting (ms since epoch). */
   now?: () => number;
+  /** Folder with the built web app to serve (production). */
+  webRoot?: string;
+  /** Trust X-Forwarded-* from any proxy (hosted behind a platform proxy) instead of loopback only. */
+  trustProxy?: boolean;
 }
 
 const MAX_RANGE_DAYS = 400;
@@ -37,7 +42,8 @@ function validDate(s: string | undefined): s is string {
 
 export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   // The API listens on loopback behind a proxy; trust its X-Forwarded-* headers for client IP and protocol.
-  const app = Fastify({ logger: false, trustProxy: 'loopback' });
+  const app = Fastify({ logger: false, trustProxy: opts.trustProxy ? true : 'loopback' });
+  if (opts.webRoot) registerWebApp(app, opts.webRoot);
   const currentUser = registerAuth(app, db, { requireAuth: opts.requireAuth ?? false, now: opts.now });
   registerNotes(app, db, currentUser, opts.now ?? Date.now);
   registerAdmin(app, db, currentUser, opts.now ?? Date.now);
