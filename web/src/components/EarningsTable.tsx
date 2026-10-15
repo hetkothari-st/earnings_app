@@ -2,14 +2,16 @@ import { Fragment, type KeyboardEvent } from 'react';
 import type { Flag, ReportDto, ResultPart, Timing } from '../../../server/src/api/types';
 import { DateTime } from 'luxon';
 import { changeClass, formatChange, formatDateHeading, formatEps, formatPct, formatUsd } from '../lib/format';
+import { type SortKey, sortRows } from '../lib/sort';
 import { describeTiming, zoneLabel } from '../lib/time';
 
 interface Props {
   rows: ReportDto[];
   zone: string;
-  hidden: Set<string>;
-  showHidden: boolean;
-  onToggleHidden: (symbol: string) => void;
+  /** Symbols whose rows are expanded; every other row shows symbol and name only. */
+  expanded: Set<string>;
+  sort: SortKey;
+  onToggle: (symbol: string) => void;
   onSelect: (row: ReportDto) => void;
   /** Report ids whose results just arrived; flashed once. */
   highlight?: Set<number>;
@@ -59,17 +61,20 @@ function Result({ part, format }: { part: ResultPart; format: (n: number | null)
   );
 }
 
-export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, onSelect, highlight }: Props) {
-  const visible = rows.filter((r) => showHidden || !hidden.has(r.symbol));
-  if (visible.length === 0) return <p className="empty">No earnings reports match this range and filter.</p>;
-  const tz = zoneLabel(zone, visible[0]!.reportDate);
+export function EarningsTable({ rows, zone, expanded, sort, onToggle, onSelect, highlight }: Props) {
+  if (rows.length === 0) return <p className="empty">No earnings reports match this range and filter.</p>;
+  const tz = zoneLabel(zone, rows[0]!.reportDate);
+  const row = (r: ReportDto) => (
+    <Row key={r.id} r={r} zone={zone} isExpanded={expanded.has(r.symbol)} isNew={highlight?.has(r.id) ?? false}
+      onToggle={onToggle} onSelect={onSelect} />
+  );
 
   return (
     <div className="table-wrap">
     <table className="earnings">
       <thead>
         <tr>
-          <th scope="col" className="c-hide">Hide</th>
+          <th scope="col" className="c-hide"><span className="sr-only">Expand</span></th>
           <th scope="col">Symbol</th>
           <th scope="col">Name</th>
           <th scope="col">Sector</th>
@@ -83,7 +88,9 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
           <th scope="col" className="num">Revenue est / act</th>
         </tr>
       </thead>
-      {group(visible).map(([date, timings]) => (
+      {sort !== 'date' ? (
+        <tbody>{sortRows(rows, sort).map(row)}</tbody>
+      ) : group(sortRows(rows, 'date')).map(([date, timings]) => (
         <tbody key={date}>
           <tr className="date-row"><th colSpan={COLS} scope="colgroup">{formatDateHeading(date)}</th></tr>
           {timings.map(([timing, list]) => (
@@ -94,10 +101,7 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
                   <span className="group-count">{list.length} report{list.length === 1 ? '' : 's'}</span>
                 </th>
               </tr>
-              {list.map((r) => (
-                <Row key={r.id} r={r} zone={zone} isHidden={hidden.has(r.symbol)} isNew={highlight?.has(r.id) ?? false}
-                  onToggleHidden={onToggleHidden} onSelect={onSelect} />
-              ))}
+              {list.map(row)}
             </Fragment>
           ))}
         </tbody>
@@ -107,23 +111,32 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
   );
 }
 
-function Row({ r, zone, isHidden, isNew, onToggleHidden, onSelect }: {
-  r: ReportDto; zone: string; isHidden: boolean; isNew: boolean; onToggleHidden: (s: string) => void; onSelect: (r: ReportDto) => void;
+function Row({ r, zone, isExpanded, isNew, onToggle, onSelect }: {
+  r: ReportDto; zone: string; isExpanded: boolean; isNew: boolean; onToggle: (s: string) => void; onSelect: (r: ReportDto) => void;
 }) {
-  const t = describeTiming(r.reportDate, r.timing, r.sessionClose, zone);
-  const flags = (field: Flag['field']) => r.flags.filter((f) => f.field === field);
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') onSelect(r); };
 
   return (
-    <tr className={`row s-${r.timing.toLowerCase()}${isHidden ? ' is-hidden' : ''}${isNew ? ' just-updated' : ''}`} onClick={() => onSelect(r)} onKeyDown={onKey} tabIndex={0}>
-      <td data-label="Hide" className="c-hide" onClick={(e) => e.stopPropagation()}>
-        <input type="checkbox" aria-label={`Hide ${r.symbol}`} checked={isHidden} onChange={() => onToggleHidden(r.symbol)} />
+    <tr className={`row s-${r.timing.toLowerCase()}${isExpanded ? '' : ' collapsed'}${isNew ? ' just-updated' : ''}`}
+      onClick={() => onSelect(r)} onKeyDown={onKey} tabIndex={0}>
+      <td data-label="Expand" className="c-hide" onClick={(e) => e.stopPropagation()}>
+        <input type="checkbox" aria-label={`Expand ${r.symbol}`} checked={isExpanded} onChange={() => onToggle(r.symbol)} />
       </td>
       <td data-label="Symbol" className="symbol"><span className="ticker">{r.symbol}</span></td>
       <td data-label="Name" className="name-cell">
         <span className="name">{r.name}</span>
         {r.exchange && <span className="exchange">{r.exchange}</span>}
       </td>
+      {isExpanded ? <Details r={r} zone={zone} /> : <td colSpan={COLS - 3} className="collapsed-rest" />}
+    </tr>
+  );
+}
+
+function Details({ r, zone }: { r: ReportDto; zone: string }) {
+  const t = describeTiming(r.reportDate, r.timing, r.sessionClose, zone);
+  const flags = (field: Flag['field']) => r.flags.filter((f) => f.field === field);
+  return (
+    <>
       <td data-label="Sector" className="sector">{r.sector ? <span title={r.industry ?? undefined}>{r.sector}</span> : '—'}</td>
       <td data-label="Date" className="date">{DateTime.fromISO(r.reportDate).setLocale('en-US').toFormat('d LLL')}</td>
       <td data-label="Time (ET)"><span><span className="dot" aria-hidden="true" />{t.et}</span> <Warn flags={flags('timing')} /></td>
@@ -157,6 +170,6 @@ function Row({ r, zone, isHidden, isNew, onToggleHidden, onSelect }: {
       <td data-label="Market cap" className="num">{formatUsd(r.marketCap)} <Warn flags={flags('marketCap')} /></td>
       <td data-label="EPS est / act" className="num"><Result part={r.eps} format={formatEps} /> <Warn flags={flags('eps')} /></td>
       <td data-label="Revenue est / act" className="num"><Result part={r.revenue} format={formatUsd} /></td>
-    </tr>
+    </>
   );
 }

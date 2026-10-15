@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import type { View } from '../lib/ranges';
+import type { SortKey } from '../lib/sort';
 
 export const CAP_OPTIONS: { label: string; value: number | null }[] = [
   { label: 'Any size', value: null },
@@ -21,7 +22,7 @@ interface Props {
   onShift: (dir: 1 | -1) => void; onToday: () => void;
   minCap: number | null; onMinCap: (v: number | null) => void;
   query: string; onQuery: (q: string) => void;
-  showHidden: boolean; hiddenCount: number; onShowHidden: (v: boolean) => void;
+  sort: SortKey; onSort: (s: SortKey) => void;
   zone: string; zoneText: string; isOverride: boolean; onZone: (z: string | null) => void;
 }
 
@@ -85,10 +86,12 @@ export function Header(p: Props) {
             {CAP_OPTIONS.map((o) => <option key={o.label} value={o.value ?? ''}>{o.label}</option>)}
           </select>
           <input type="search" placeholder="Find a ticker or company" value={p.query} onChange={(e) => p.onQuery(e.target.value)} aria-label="Search" />
-          <label className="check">
-            <input type="checkbox" checked={p.showHidden} onChange={(e) => p.onShowHidden(e.target.checked)} />
-            Show hidden{p.hiddenCount > 0 ? ` (${p.hiddenCount})` : ''}
-          </label>
+          <select value={p.sort} onChange={(e) => p.onSort(e.target.value as SortKey)} aria-label="Sort">
+            <option value="date">Sort by date</option>
+            <option value="cap">Sort by market cap</option>
+            <option value="gainers">Biggest previous rise first</option>
+            <option value="losers">Biggest previous fall first</option>
+          </select>
         </div>
       </div>
     </header>

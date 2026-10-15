@@ -22,8 +22,8 @@ const rows = [
 
 function renderTable(over: Partial<Parameters<typeof EarningsTable>[0]> = {}) {
   const props = {
-    rows, zone: 'Asia/Kolkata', hidden: new Set<string>(), showHidden: false,
-    onToggleHidden: vi.fn(), onSelect: vi.fn(), ...over,
+    rows, zone: 'Asia/Kolkata', expanded: new Set(rows.map((r) => r.symbol)), sort: 'date' as const,
+    onToggle: vi.fn(), onSelect: vi.fn(), ...over,
   };
   render(<EarningsTable {...props} />);
   return props;
@@ -38,19 +38,24 @@ describe('EarningsTable', () => {
     expect(within(tsm).getByText('BMO · before 9:30 AM')).toBeTruthy();
     expect(within(tsm).getByText('before 7:00 PM')).toBeTruthy();
   });
-  test('hidden rows are omitted unless showHidden, then shown greyed', () => {
-    renderTable({ hidden: new Set(['TSM']) });
-    expect(screen.queryByText('TSM')).toBeNull();
+  test('rows start collapsed: symbol and name only', () => {
+    renderTable({ expanded: new Set() });
+    const tr = screen.getByText('TSM').closest('tr')!;
+    expect(tr.className).toContain('collapsed');
+    expect(within(tr).getByText('Taiwan Semiconductor')).toBeTruthy();
+    expect(within(tr).queryByText('BMO · before 9:30 AM')).toBeNull();
+    expect((screen.getByLabelText('Expand TSM') as HTMLInputElement).checked).toBe(false);
   });
-  test('showHidden reveals hidden rows with is-hidden class', () => {
-    renderTable({ hidden: new Set(['TSM']), showHidden: true });
-    expect(screen.getByText('TSM').closest('tr')!.className).toContain('is-hidden');
-  });
-  test('checkbox toggles hidden without opening the detail panel', () => {
-    const props = renderTable();
-    fireEvent.click(screen.getByLabelText('Hide TSM'));
-    expect(props.onToggleHidden).toHaveBeenCalledWith('TSM');
+  test('ticking a row expands it, without opening the detail panel', () => {
+    const props = renderTable({ expanded: new Set() });
+    fireEvent.click(screen.getByLabelText('Expand TSM'));
+    expect(props.onToggle).toHaveBeenCalledWith('TSM');
     expect(props.onSelect).not.toHaveBeenCalled();
+  });
+  test('sorted by something other than date: one flat list without date or session groups', () => {
+    renderTable({ sort: 'cap' });
+    expect(screen.queryAllByRole('rowheader')).toHaveLength(0);
+    expect(screen.getAllByRole('row').slice(1).map((tr) => tr.querySelector('.ticker')?.textContent)).toEqual(['AMCCO', 'TSM', 'SCHW']);
   });
   test('beat shows ▲ and clicking a row selects it', () => {
     const props = renderTable();
@@ -61,12 +66,12 @@ describe('EarningsTable', () => {
   });
   test('flags render a ⚠ with the reason', () => {
     render(<EarningsTable rows={[dto({ timing: 'UNKNOWN', flags: [{ field: 'timing', message: 'Time not announced' }] })]}
-      zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
+      zone="Asia/Kolkata" expanded={new Set(['TSM'])} sort="date" onToggle={vi.fn()} onSelect={vi.fn()} />);
     expect(screen.getByLabelText('Time not announced').textContent).toBe('⚠');
   });
   test('row carries its session edge and the move renders as a proportional range', () => {
     render(<EarningsTable rows={[dto({ timing: 'AMC', expectedMove: { movePct: 7.5, illiquid: false, expiry: '2026-10-16', strike: 100, callMid: 4, putMid: 3.5, underlying: 100, snapshotAt: '2026-10-15T20:20:00Z' } })]}
-      zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
+      zone="Asia/Kolkata" expanded={new Set(['TSM'])} sort="date" onToggle={vi.fn()} onSelect={vi.fn()} />);
     const tr = screen.getByText('TSM').closest('tr')!;
     expect(tr.className).toContain('s-amc');
     expect(within(tr).getByText('±7.5%')).toBeTruthy();
@@ -75,7 +80,7 @@ describe('EarningsTable', () => {
   test('separate symbol, name, sector and date columns; previous move signed and coloured; provisional move marked', () => {
     render(<EarningsTable rows={[dto({ previousMove: { pct: -2.5, reportDate: '2026-07-16', basis: 'assumed' },
       expectedMove: { movePct: 4.05, illiquid: false, expiry: '2026-10-16', strike: 97, callMid: 1.9, putMid: 2.1, underlying: 97, optionsVolume: 29599, provisional: true, quoteDate: '2026-10-14', snapshotAt: '2026-10-14T20:20:00Z' } })]}
-      zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
+      zone="Asia/Kolkata" expanded={new Set(['TSM'])} sort="date" onToggle={vi.fn()} onSelect={vi.fn()} />);
     const tr = screen.getByText('TSM').closest('tr')!;
     expect(within(tr).getByText('Taiwan Semiconductor')).toBeTruthy();
     expect(within(tr).getByText('15 Oct')).toBeTruthy();

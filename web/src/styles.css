@@ -264,3 +264,14 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 
 /* Session marker: a dot, never an edge stripe */
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--edge, var(--muted)); margin-right: 7px; vertical-align: 1px; }
+
+/* Collapsed rows: symbol and name only until ticked */
+.row.collapsed td { padding-top: 6px; padding-bottom: 6px; }
+.row.collapsed .exchange { display: inline; margin-left: 8px; }
+.collapsed-rest { border-bottom: 1px solid var(--line); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 780px) {
+  .earnings tr.row.collapsed { padding-top: 8px; padding-bottom: 8px; }
+  .earnings tr.row.collapsed td.name-cell { margin-bottom: 0; }
+  .earnings tr.row.collapsed td.collapsed-rest { display: none; }
+}

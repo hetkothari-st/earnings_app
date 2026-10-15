@@ -6,6 +6,7 @@ import { useLiveResults } from '../hooks/useLiveResults';
 import { useZone } from '../hooks/useZone';
 import { rangeFor, shiftAnchor, type View } from '../lib/ranges';
 import { daySummary } from '../lib/session';
+import type { SortKey } from '../lib/sort';
 import { todayEt, zoneLabel } from '../lib/time';
 import { DayStrip } from './DayStrip';
 import { DetailPanel } from './DetailPanel';
@@ -24,7 +25,7 @@ export function Calendar() {
   const [custom, setCustom] = useState({ from: today, to: today });
   const [minCap, setMinCap] = useState<number | null>(2e9);
   const [query, setQuery] = useState('');
-  const [showHidden, setShowHidden] = useState(false);
+  const [sort, setSort] = useState<SortKey>('date');
   const [selected, setSelected] = useState<ReportDto | null>(null);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
@@ -34,7 +35,8 @@ export function Calendar() {
     setReloadKey((k) => k + 1);
     window.setTimeout(() => setHighlight(new Set()), 6000);
   });
-  const { hidden, toggle } = useHidden();
+  // Interim: the stored set now means 'expanded rows' (switches to useExpanded once per-user storage lands).
+  const { hidden: expanded, toggle } = useHidden();
   const { zone, isOverride, setZone } = useZone();
 
   const range = useMemo(() => (view === 'custom' ? custom : rangeFor(view, anchor)), [view, anchor, custom]);
@@ -53,7 +55,7 @@ export function Calendar() {
 
   const zoneText = zoneLabel(zone, range.from);
   const rows = load.status === 'ok' ? load.data.rows : [];
-  const days = daySummary(rows, showHidden ? new Set() : hidden);
+  const days = daySummary(rows, new Set());
   const jump = (timing: Timing) =>
     document.getElementById(`group-${range.from}-${timing}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const openDay = (date: string) => { setView('day'); setAnchor(date); };
@@ -65,7 +67,7 @@ export function Calendar() {
         view={view} onView={setView} range={range} custom={custom} onCustom={setCustom}
         onShift={(dir) => setAnchor((a) => shiftAnchor(view, a, dir))} onToday={() => setAnchor(today)}
         minCap={minCap} onMinCap={setMinCap} query={query} onQuery={setQuery}
-        showHidden={showHidden} hiddenCount={hidden.size} onShowHidden={setShowHidden}
+        sort={sort} onSort={setSort}
         zone={zone} zoneText={zoneText} isOverride={isOverride} onZone={setZone}
       />
       {load.status === 'ok' && <StaleBanner sources={load.data.sources} />}
@@ -79,8 +81,8 @@ export function Calendar() {
         {!customInvalid && load.status === 'loading' && <p className="muted">Loading…</p>}
         {load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
         {load.status === 'ok' && (
-          <EarningsTable rows={load.data.rows} zone={zone} hidden={hidden} showHidden={showHidden}
-            onToggleHidden={toggle} onSelect={setSelected} highlight={highlight} />
+          <EarningsTable rows={load.data.rows} zone={zone} expanded={expanded} sort={sort}
+            onToggle={toggle} onSelect={setSelected} highlight={highlight} />
         )}
       </main>
       {selected && <DetailPanel r={selected} zone={zone} onClose={() => setSelected(null)} />}
