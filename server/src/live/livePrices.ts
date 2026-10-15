@@ -19,6 +19,7 @@ export class LivePrices {
   private symbols: string[] = [];
   private quotedOn = new Map<string, string>(); // symbol -> date its quote was fetched
   private pending = new Set<string>();
+  private tradeCount = 0;
   private timers: ReturnType<typeof setInterval>[] = [];
 
   constructor(
@@ -29,6 +30,7 @@ export class LivePrices {
     private readonly publish: (prices: Record<string, LivePrice>) => void,
   ) {
     this.stream = new FinnhubStream(token, (trades) => {
+      this.tradeCount += trades.length;
       for (const s of this.book.applyTrades(trades)) this.pending.add(s);
     });
   }
@@ -60,6 +62,8 @@ export class LivePrices {
     let next = today;
     try { next = nextTradingDay(today); } catch { /* calendar not covering: today only */ }
     this.symbols = liveSymbols(this.db, today, next, MAX_SYMBOLS);
+    console.log(`[prices] ${this.symbols.length} symbols, ${this.tradeCount} trades since last refresh`);
+    this.tradeCount = 0;
     this.stream.setSymbols(this.symbols);
     for (const s of this.symbols) {
       if (this.quotedOn.get(s) === today) continue;

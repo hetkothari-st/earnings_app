@@ -6,7 +6,7 @@ type SocketLike = {
   close(): void;
   onopen: (() => void) | null;
   onmessage: ((e: { data: unknown }) => void) | null;
-  onclose: (() => void) | null;
+  onclose: ((e?: { code?: number; reason?: string }) => void) | null;
   onerror: (() => void) | null;
 };
 type SocketCtor = new (url: string) => SocketLike;
@@ -55,7 +55,7 @@ export class FinnhubStream {
     const ws = new this.Ctor(`wss://ws.finnhub.io?token=${this.token}`);
     this.socket = ws;
     this.subscribed = new Set();
-    ws.onopen = () => this.sync();
+    ws.onopen = () => { console.log('[prices] stream connected'); this.sync(); };
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(String(e.data)) as { type?: string; data?: { s: string; p: number; t: number }[] };
@@ -68,7 +68,8 @@ export class FinnhubStream {
         // malformed frame: ignore
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (e) => {
+      console.log(`[prices] stream closed ${e?.code ?? ''} ${e?.reason ?? ''}`.trim());
       if (this.socket === ws) this.socket = null;
       if (!this.stopped) this.timer = setTimeout(() => this.connect(), this.reconnectMs);
     };
