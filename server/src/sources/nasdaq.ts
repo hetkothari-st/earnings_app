@@ -67,3 +67,28 @@ export function parseNasdaqCalendar(json: unknown, date: string): CalendarRow[] 
 export async function fetchNasdaqCalendar(http: Http, date: string): Promise<CalendarRow[]> {
   return parseNasdaqCalendar(await http.json(`https://api.nasdaq.com/api/calendar/earnings?date=${date}`), date);
 }
+
+const HistorySchema = z.object({
+  data: z.object({
+    tradesTable: z.object({ rows: z.array(z.object({ date: z.string(), close: z.string() })).nullish() }).nullish(),
+  }).nullish(),
+});
+
+/** Daily closes keyed by ISO date. */
+export function parseNasdaqHistory(json: unknown): Map<string, number> {
+  const parsed = HistorySchema.safeParse(json);
+  if (!parsed.success) throw new SourceFormatError(`Nasdaq history: ${parsed.error.message}`);
+  const out = new Map<string, number>();
+  for (const r of parsed.data.data?.tradesTable?.rows ?? []) {
+    const date = usDate(r.date);
+    const close = parseNumber(r.close);
+    if (date && close != null) out.set(date, close);
+  }
+  return out;
+}
+
+export async function fetchDailyCloses(http: Http, symbol: string, from: string, to: string): Promise<Map<string, number>> {
+  const s = encodeURIComponent(symbol.trim().toUpperCase().replace('/', '.'));
+  return parseNasdaqHistory(await http.json(
+    `https://api.nasdaq.com/api/quote/${s}/historical?assetclass=stocks&fromdate=${from}&todate=${to}&limit=60`));
+}

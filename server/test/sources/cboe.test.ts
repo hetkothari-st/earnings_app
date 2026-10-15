@@ -20,6 +20,7 @@ describe('cboe', () => {
     expect(parseCboeChain(body, 'JPM')).toEqual({
       underlying: 335.28,
       asOfDate: null,
+      totalVolume: 0,
       quotes: [
         { expiry: '2026-10-16', type: 'C', strike: 180, bid: 153.3, ask: 157.25 },
         { expiry: '2026-10-16', type: 'P', strike: 180, bid: 0, ask: 0.01 },
@@ -33,6 +34,14 @@ describe('cboe', () => {
     ] } }, 'XYZ');
     expect(chain?.quotes).toEqual([{ expiry: '2026-10-16', type: 'C', strike: 100, bid: 3, ask: 3.2 }]);
     expect(chain?.asOfDate).toBe('2026-10-15');
+  });
+  test('total options volume sums the standard chain only', () => {
+    const chain = parseCboeChain({ data: { close: 100, options: [
+      { option: 'XYZ261016C00100000', bid: 3, ask: 3.2, volume: 1200 },
+      { option: 'XYZ261016P00100000', bid: 3, ask: 3.2, volume: 800 },
+      { option: 'XYZ1261016C00100000', bid: 9, ask: 9.5, volume: 50 },
+    ] } }, 'XYZ');
+    expect(chain?.totalVolume).toBe(2000);
   });
   test('class-share root has no dot', () => {
     const chain = parseCboeChain({ data: { close: 400, options: [{ option: 'BRKB261016C00400000', bid: 3, ask: 3.2 }] } }, 'BRK/B');

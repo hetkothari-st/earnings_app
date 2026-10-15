@@ -11,6 +11,7 @@ export interface Sources {
   secTickers(): Promise<Map<string, SecTicker>>;
   secEarningsFilings(cik: number): Promise<Filing[]>;
   secAcceptance(cik: number, accession: string): Promise<string>;
+  dailyCloses(symbol: string, from: string, to: string): Promise<Map<string, number>>;
 }
 
 export interface JobContext {

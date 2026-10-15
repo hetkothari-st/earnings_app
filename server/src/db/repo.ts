@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS reports (
   calendar_fetched_at TEXT,
   revenue_fetched_at TEXT,
   sec_checked_at TEXT,
+  prev_move_pct REAL,
+  prev_move_date TEXT,
+  prev_move_checked_at TEXT,
   UNIQUE (symbol_key, fiscal_quarter)
 );
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports (report_date);
@@ -54,6 +57,7 @@ CREATE TABLE IF NOT EXISTS expected_moves (
   underlying REAL NOT NULL,
   move_pct REAL NOT NULL,
   illiquid INTEGER NOT NULL,
+  options_volume INTEGER,
   snapshot_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS source_status (
@@ -74,7 +78,23 @@ export function openDb(path: string): Db {
   // busy_timeout: the app and the backfill CLI share this file; wait for locks instead of failing.
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 10000;');
   db.exec(SCHEMA);
+  addMissingColumns(db);
   return db;
+}
+
+/** CREATE TABLE IF NOT EXISTS never alters an existing table; add any column the schema gained since. */
+function addMissingColumns(db: Db): void {
+  const reference = new DatabaseSync(':memory:');
+  reference.exec(SCHEMA);
+  type Col = { name: string; type: string };
+  const cols = (d: Db, table: string) => d.prepare(`PRAGMA table_info(${table})`).all() as unknown as Col[];
+  for (const { name: table } of reference.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as unknown as { name: string }[]) {
+    const have = new Set(cols(db, table).map((c) => c.name));
+    for (const c of cols(reference, table)) {
+      if (!have.has(c.name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${c.name} ${c.type}`);
+    }
+  }
+  reference.close();
 }
 
 export function inTransaction(db: Db, fn: () => void): void {
@@ -95,16 +115,17 @@ interface ReportRow {
   eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null;
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
   sec_index_url: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
+  prev_move_pct: number | null; prev_move_date: string | null;
 }
 
 interface JoinedRow extends ReportRow {
   em_expiry: string | null; em_strike: number | null; em_call_mid: number | null; em_put_mid: number | null;
-  em_underlying: number | null; em_move_pct: number | null; em_illiquid: number | null; em_snapshot_at: string | null;
+  em_underlying: number | null; em_move_pct: number | null; em_illiquid: number | null; em_options_volume: number | null; em_snapshot_at: string | null;
 }
 
 const SELECT_REPORT = `
 SELECT r.*, m.expiry AS em_expiry, m.strike AS em_strike, m.call_mid AS em_call_mid, m.put_mid AS em_put_mid,
-       m.underlying AS em_underlying, m.move_pct AS em_move_pct, m.illiquid AS em_illiquid, m.snapshot_at AS em_snapshot_at
+       m.underlying AS em_underlying, m.move_pct AS em_move_pct, m.illiquid AS em_illiquid, m.options_volume AS em_options_volume, m.snapshot_at AS em_snapshot_at
 FROM reports r LEFT JOIN expected_moves m ON m.report_id = r.id`;
 
 function toRecord(r: JoinedRow): ReportRecord {
@@ -119,8 +140,10 @@ function toRecord(r: JoinedRow): ReportRecord {
     calendarFetchedAt: r.calendar_fetched_at, revenueFetchedAt: r.revenue_fetched_at, secCheckedAt: r.sec_checked_at,
     expectedMove: r.em_snapshot_at == null ? null : {
       expiry: r.em_expiry!, strike: r.em_strike!, callMid: r.em_call_mid!, putMid: r.em_put_mid!,
-      underlying: r.em_underlying!, movePct: r.em_move_pct!, illiquid: r.em_illiquid === 1, snapshotAt: r.em_snapshot_at,
+      underlying: r.em_underlying!, movePct: r.em_move_pct!, illiquid: r.em_illiquid === 1, optionsVolume: r.em_options_volume,
+      snapshotAt: r.em_snapshot_at,
     },
+    prevMovePct: r.prev_move_pct, prevMoveDate: r.prev_move_date,
   };
 }
 
@@ -316,9 +339,10 @@ export function reportsForSnapshot(
 
 export function saveExpectedMove(db: Db, reportId: number, em: ExpectedMove, snapshotAt: string): void {
   db.prepare(`INSERT OR REPLACE INTO expected_moves
-      (report_id, expiry, strike, call_mid, put_mid, underlying, move_pct, illiquid, snapshot_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(reportId, em.expiry, em.strike, em.callMid, em.putMid, em.underlying, em.movePct, em.illiquid ? 1 : 0, snapshotAt);
+      (report_id, expiry, strike, call_mid, put_mid, underlying, move_pct, illiquid, options_volume, snapshot_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(reportId, em.expiry, em.strike, em.callMid, em.putMid, em.underlying, em.movePct, em.illiquid ? 1 : 0,
+      em.optionsVolume ?? null, snapshotAt);
 }
 
 export function recordSourceSuccess(db: Db, source: string, now: string): void {
@@ -352,4 +376,26 @@ export function counts(db: Db): { reports: number; withExpectedMove: number; sec
     withExpectedMove: one('SELECT COUNT(*) AS n FROM expected_moves'),
     secVerified: one(`SELECT COUNT(*) AS n FROM reports WHERE sec_check IN ('verified', 'consistent', 'derived')`),
   };
+}
+
+/** The symbol's most recent report before `before`. */
+export function previousReport(db: Db, symbolKey: string, before: string): { reportDate: string; timing: Timing } | undefined {
+  return db.prepare(`SELECT report_date AS reportDate, timing FROM reports
+      WHERE symbol_key = ? AND report_date < ? ORDER BY report_date DESC LIMIT 1`)
+    .get(symbolKey, before) as unknown as { reportDate: string; timing: Timing } | undefined;
+}
+
+/** Reports in [from, to] with no previous move yet, not re-checked since `recheckBefore`. */
+export function reportsNeedingPrevMove(
+  db: Db, from: string, to: string, recheckBefore: string,
+): { id: number; symbol: string; symbolKey: string; reportDate: string }[] {
+  return db.prepare(`SELECT id, symbol, symbol_key AS symbolKey, report_date AS reportDate FROM reports
+      WHERE report_date BETWEEN ? AND ? AND prev_move_pct IS NULL
+        AND (prev_move_checked_at IS NULL OR prev_move_checked_at < ?)`)
+    .all(from, to, recheckBefore) as unknown as { id: number; symbol: string; symbolKey: string; reportDate: string }[];
+}
+
+export function setPrevMove(db: Db, id: number, pct: number | null, prevDate: string | null, now: string): void {
+  db.prepare('UPDATE reports SET prev_move_pct = ?, prev_move_date = ?, prev_move_checked_at = ? WHERE id = ?')
+    .run(pct, prevDate, now, id);
 }

@@ -39,8 +39,10 @@ export interface ReportDto {
     callMid: number;
     putMid: number;
     underlying: number;
+    optionsVolume?: number | null;
     snapshotAt: string;
   } | null;
+  previousMove: { pct: number; reportDate: string } | null;
   sec: { check: SecCheck | null; acceptedAt: string | null; docUrl: string | null; indexUrl: string | null };
   fetched: { calendar: string | null; revenue: string | null; sec: string | null };
   flags: Flag[];
@@ -61,4 +63,18 @@ export interface EarningsResponse {
 export interface StatusResponse {
   sources: SourceStatusDto[];
   counts: { reports: number; withExpectedMove: number; secVerified: number };
+}
+
+export interface MarketIndexDto {
+  exchange: string;
+  index: string;
+  symbol: string;
+  price: number | null;
+  changePct: number | null;
+  asOf: string | null;
+  currency: string | null;
+}
+
+export interface MarketsResponse {
+  indices: MarketIndexDto[];
 }

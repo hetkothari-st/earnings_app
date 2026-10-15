@@ -39,6 +39,7 @@ export interface OptionChain {
   underlying: number;        // regular-session close
   quotes: OptionQuote[];
   asOfDate?: string | null;  // date of the underlying's last regular trade (YYYY-MM-DD)
+  totalVolume?: number;      // contracts traded across the standard chain that day
 }
 
 export interface ExpectedMove {
@@ -49,6 +50,7 @@ export interface ExpectedMove {
   underlying: number;
   movePct: number;           // rounded to 2 decimals
   illiquid: boolean;
+  optionsVolume?: number | null; // contracts traded across the chain on the snapshot day
 }
 
 /** An 8-K containing Item 2.02 (results of operations). */
@@ -90,4 +92,6 @@ export interface ReportRecord {
   revenueFetchedAt: string | null;
   secCheckedAt: string | null;
   expectedMove: (ExpectedMove & { snapshotAt: string }) | null;
+  prevMovePct: number | null;     // stock reaction to the previous report, %
+  prevMoveDate: string | null;    // that previous report's date
 }

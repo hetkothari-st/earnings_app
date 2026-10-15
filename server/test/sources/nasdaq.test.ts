@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { nasdaqTiming, parseNasdaqCalendar } from '../../src/sources/nasdaq.js';
+import { nasdaqTiming, parseNasdaqCalendar, parseNasdaqHistory } from '../../src/sources/nasdaq.js';
 import { SourceFormatError } from '../../src/sources/http.js';
 
 // Shapes copied from live responses on 2026-10-15.
@@ -67,5 +67,19 @@ describe('parseNasdaqCalendar', () => {
   test('unexpected shape throws SourceFormatError', () => {
     expect(() => parseNasdaqCalendar({ data: { rows: [{ symbol: 5 }] } }, '2026-10-15')).toThrow(SourceFormatError);
     expect(() => parseNasdaqCalendar('<html>blocked</html>', '2026-10-15')).toThrow(SourceFormatError);
+  });
+});
+
+describe('parseNasdaqHistory', () => {
+  test('daily closes keyed by ISO date', () => {
+    // Shape copied from live SCHW response on 2026-10-15.
+    const json = { data: { symbol: 'SCHW', totalRecords: 2, tradesTable: { rows: [
+      { date: '07/31/2026', close: '$105.24', volume: '8,546,876', open: '$104.98', high: '$105.685', low: '$104.05' },
+      { date: '07/30/2026', close: '$104.33', volume: '7,497,713', open: '$103.93', high: '$104.82', low: '$103.5' },
+    ] } }, status: { rCode: 200 } };
+    expect(parseNasdaqHistory(json)).toEqual(new Map([['2026-07-31', 105.24], ['2026-07-30', 104.33]]));
+  });
+  test('no rows is an empty map', () => {
+    expect(parseNasdaqHistory({ data: { tradesTable: { rows: null } }, status: { rCode: 200 } }).size).toBe(0);
   });
 });

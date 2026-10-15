@@ -5,6 +5,10 @@ import {
   setExchange, setSecResult, upsertCalendarRow,
 } from '../../src/db/repo.js';
 import type { CalendarRow } from '../../src/types.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const NOW = '2026-10-15T20:00:00.000Z';
 const TODAY = '2026-10-15';
@@ -191,5 +195,21 @@ describe('sec, snapshot, status, backfill helpers', () => {
     expect(isBackfilled(db, 'nasdaq:2026-10-01')).toBe(false);
     markBackfilled(db, 'nasdaq:2026-10-01', NOW);
     expect(isBackfilled(db, 'nasdaq:2026-10-01')).toBe(true);
+  });
+});
+
+describe('schema migration', () => {
+  test('an existing database gains columns added later', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'earn-')), 'old.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE reports (id INTEGER PRIMARY KEY, symbol TEXT NOT NULL, symbol_key TEXT NOT NULL, name TEXT NOT NULL,
+      fiscal_quarter TEXT NOT NULL, report_date TEXT NOT NULL, timing TEXT NOT NULL DEFAULT 'UNKNOWN', UNIQUE (symbol_key, fiscal_quarter));
+      CREATE TABLE expected_moves (report_id INTEGER PRIMARY KEY, expiry TEXT NOT NULL, strike REAL NOT NULL, call_mid REAL NOT NULL,
+      put_mid REAL NOT NULL, underlying REAL NOT NULL, move_pct REAL NOT NULL, illiquid INTEGER NOT NULL, snapshot_at TEXT NOT NULL);`);
+    old.close();
+    const migrated = openDb(path);
+    upsertCalendarRow(migrated, row(), NOW, TODAY);
+    expect(all(migrated)[0]).toMatchObject({ symbol: 'SCHW', prevMovePct: null, lastYearEps: null });
+    migrated.close();
   });
 });

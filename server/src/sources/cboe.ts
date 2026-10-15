@@ -7,7 +7,7 @@ const ResponseSchema = z.object({
   data: z.object({
     close: z.number().nullish(),
     last_trade_time: z.string().nullish(),
-    options: z.array(z.object({ option: z.string(), bid: z.number().nullish(), ask: z.number().nullish() })),
+    options: z.array(z.object({ option: z.string(), bid: z.number().nullish(), ask: z.number().nullish(), volume: z.number().nullish() })),
   }),
 });
 
@@ -25,12 +25,14 @@ export function parseCboeChain(json: unknown, symbol: string): OptionChain | nul
   if (!close || close <= 0) return null;
   const root = optionRoot(symbol);
   const quotes: OptionQuote[] = [];
+  let totalVolume = 0;
   for (const o of options) {
     const p = parseOptionSymbol(o.option);
     if (!p || o.option.slice(0, -15).trim() !== root) continue;
     quotes.push({ ...p, bid: o.bid ?? 0, ask: o.ask ?? 0 });
+    totalVolume += o.volume ?? 0;
   }
-  return { underlying: close, quotes, asOfDate: last_trade_time ? last_trade_time.slice(0, 10) : null };
+  return { underlying: close, quotes, totalVolume, asOfDate: last_trade_time ? last_trade_time.slice(0, 10) : null };
 }
 
 export async function fetchCboeChain(http: Http, symbol: string): Promise<OptionChain | null> {

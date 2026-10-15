@@ -16,6 +16,6 @@ export async function snapshotMoves(ctx: JobContext): Promise<void> {
       continue;
     }
     const em = computeExpectedMove(chain, t.reportDate, t.timing);
-    if (em) saveExpectedMove(ctx.db, t.id, em, ctx.now());
+    if (em) saveExpectedMove(ctx.db, t.id, { ...em, optionsVolume: chain.totalVolume ?? null }, ctx.now());
   }
 }

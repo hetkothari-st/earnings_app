@@ -3,6 +3,7 @@ import { ET } from '../domain/marketCalendar.js';
 import type { JobContext } from './context.js';
 import { refreshCalendar } from './refreshCalendar.js';
 import { refreshResults } from './refreshResults.js';
+import { computePrevMoves } from './prevMoves.js';
 import { secSync } from './secSync.js';
 import { snapshotMoves } from './snapshotMoves.js';
 
@@ -30,5 +31,5 @@ export function startScheduler(ctx: JobContext): void {
   schedule('*/30 16-19 * * 1-5', results, opts);
   schedule('0 20 * * 1-5', results, opts);
   schedule('20 16 * * 1-5', job('moves', () => snapshotMoves(ctx)), opts);
-  schedule('0 23 * * *', job('sec', () => secSync(ctx)), opts);
+  schedule('0 23 * * *', job('sec', () => secSync(ctx).then(() => computePrevMoves(ctx))), opts);
 }

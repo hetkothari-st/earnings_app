@@ -3,6 +3,7 @@ import { listRange, listSourceStatus, openDb, upsertCalendarRow } from '../../sr
 import { backfill } from '../../src/jobs/backfill.js';
 import type { JobContext, Sources } from '../../src/jobs/context.js';
 import { refreshCalendar } from '../../src/jobs/refreshCalendar.js';
+import { computePrevMoves } from '../../src/jobs/prevMoves.js';
 import { refreshResults } from '../../src/jobs/refreshResults.js';
 import { secSync } from '../../src/jobs/secSync.js';
 import { snapshotMoves } from '../../src/jobs/snapshotMoves.js';
@@ -20,6 +21,7 @@ function makeCtx(over: Partial<Sources> = {}): JobContext {
     secTickers: async () => new Map(),
     secEarningsFilings: async () => [],
     secAcceptance: async () => '',
+    dailyCloses: async () => new Map(),
     ...over,
   };
   return { db: openDb(':memory:'), sources, now: () => NOW, today: () => TODAY };
@@ -196,5 +198,35 @@ describe('backfill', () => {
     await backfill(ctx, '2026-10-12', () => {});
     expect(calendar.mock.calls.length).toBe(first);
     expect(all(ctx)).toHaveLength(3);
+  });
+});
+
+describe('previous move', () => {
+  test('uses the last report before this one and its timing', async () => {
+    const dailyCloses = vi.fn(async () => new Map([['2026-07-13', 100], ['2026-07-14', 97.5], ['2026-07-15', 102.4]]));
+    const ctx = makeCtx({ dailyCloses });
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-07-14', fiscalQuarter: 'Jun/2026', timing: 'AMC' }), NOW, '2026-07-01');
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026' }), NOW, TODAY);
+    await computePrevMoves(ctx);
+    const next = all(ctx).find((r) => r.reportDate === '2026-10-16')!;
+    expect(next).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-07-14' });
+    expect(dailyCloses).toHaveBeenCalledWith('SCHW', '2026-07-04', '2026-07-24');
+  });
+  test('previous report with unknown timing gives no move', async () => {
+    const ctx = makeCtx({ dailyCloses: async () => new Map([['2026-07-13', 100], ['2026-07-14', 97.5], ['2026-07-15', 102.4]]) });
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-07-14', fiscalQuarter: 'Jun/2026', timing: 'UNKNOWN' }), NOW, '2026-07-01');
+    upsertCalendarRow(ctx.db, cal({ reportDate: '2026-10-16', fiscalQuarter: 'Sep/2026' }), NOW, TODAY);
+    await computePrevMoves(ctx);
+    expect(all(ctx).find((r) => r.reportDate === '2026-10-16')).toMatchObject({ prevMovePct: null, prevMoveDate: '2026-07-14' });
+  });
+  test('snapshot stores options volume', async () => {
+    const chain: OptionChain = { underlying: 100, asOfDate: TODAY, totalVolume: 29599, quotes: [
+      { expiry: '2026-10-16', type: 'C', strike: 100, bid: 2.9, ask: 3.1 },
+      { expiry: '2026-10-16', type: 'P', strike: 100, bid: 2.9, ask: 3.1 },
+    ] };
+    const ctx = makeCtx({ optionChain: async () => chain });
+    upsertCalendarRow(ctx.db, cal({ timing: 'AMC' }), NOW, TODAY);
+    await snapshotMoves(ctx);
+    expect(all(ctx)[0]!.expectedMove?.optionsVolume).toBe(29599);
   });
 });

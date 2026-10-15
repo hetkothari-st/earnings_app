@@ -2,7 +2,22 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { DateTime } from 'luxon';
 import { counts, type Db, getReport, listRange, listSourceStatus } from '../db/repo.js';
 import { toDto } from './dto.js';
-import type { EarningsResponse, StatusResponse } from './types.js';
+import type { IndexQuote } from '../sources/yahoo.js';
+import type { EarningsResponse, MarketIndexDto, MarketsResponse, StatusResponse } from './types.js';
+
+/** Five largest exchanges by listed market value, each with its headline index. */
+export const MARKET_INDICES = [
+  { exchange: 'NYSE', index: 'S&P 500', symbol: '^GSPC' },
+  { exchange: 'Nasdaq', index: 'Nasdaq Composite', symbol: '^IXIC' },
+  { exchange: 'Shanghai', index: 'SSE Composite', symbol: '000001.SS' },
+  { exchange: 'Japan Exchange', index: 'Nikkei 225', symbol: '^N225' },
+  { exchange: 'Euronext', index: 'Euronext 100', symbol: '^N100' },
+] as const;
+const MARKETS_TTL_MS = 60_000;
+
+export interface ServerOptions {
+  indexQuote?: (symbol: string) => Promise<IndexQuote>;
+}
 
 const MAX_RANGE_DAYS = 400;
 
@@ -10,8 +25,25 @@ function validDate(s: string | undefined): s is string {
   return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && DateTime.fromISO(s).isValid;
 }
 
-export function buildServer(db: Db): FastifyInstance {
+export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false });
+  let marketsCache: { at: number; body: MarketsResponse } | null = null;
+
+  app.get('/api/markets', async () => {
+    if (marketsCache && Date.now() - marketsCache.at < MARKETS_TTL_MS) return marketsCache.body;
+    const indices: MarketIndexDto[] = await Promise.all(MARKET_INDICES.map(async (m) => {
+      try {
+        if (!opts.indexQuote) throw new Error('index quotes not configured');
+        const q = await opts.indexQuote(m.symbol);
+        return { ...m, price: q.price, changePct: q.changePct, asOf: q.asOf, currency: q.currency };
+      } catch {
+        return { ...m, price: null, changePct: null, asOf: null, currency: null };
+      }
+    }));
+    const body: MarketsResponse = { indices };
+    marketsCache = { at: Date.now(), body };
+    return body;
+  });
 
   app.get('/api/earnings', async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;
