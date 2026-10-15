@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MarketIndexDto, MarketsResponse } from '../../../server/src/api/types';
+import { apiFetch } from '../api';
 import { changeClass, formatChange } from '../lib/format';
 
 const level = (n: number | null) =>
@@ -26,7 +27,7 @@ export function LiveMarketBar() {
   const [indices, setIndices] = useState<MarketIndexDto[] | null>(null);
   useEffect(() => {
     let alive = true;
-    const load = () => fetch('/api/markets')
+    const load = () => apiFetch('/api/markets')
       .then((r) => (r.ok ? (r.json() as Promise<MarketsResponse>) : null))
       .then((b) => { if (alive && b) setIndices(b.indices); })
       .catch(() => {});
