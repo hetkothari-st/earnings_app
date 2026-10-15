@@ -1,0 +1,57 @@
+import { describe, expect, test } from 'vitest';
+import { nasdaqTiming, parseNasdaqCalendar } from '../../src/sources/nasdaq.js';
+import { SourceFormatError } from '../../src/sources/http.js';
+
+// Shapes copied from live responses on 2026-10-15.
+const upcoming = {
+  data: {
+    asOf: 'Thu, Oct 15, 2026',
+    rows: [
+      { lastYearRptDt: '10/16/2025', lastYearEPS: '$1.31', time: 'time-pre-market', symbol: 'SCHW',
+        name: 'The Charles Schwab Corporation', marketCap: '$165,912,461,000', fiscalQuarterEnding: 'Sep/2026',
+        epsForecast: '$1.66', noOfEsts: '10' },
+      { time: 'time-after-hours', symbol: 'BRK/B', name: ' Berkshire ', marketCap: 'N/A',
+        fiscalQuarterEnding: null, epsForecast: '', noOfEsts: 'N/A' },
+    ],
+  },
+};
+const past = {
+  data: { rows: [
+    { eps: '$5.75', surprise: '-3.2', time: 'time-not-supplied', symbol: 'JPM', name: 'J P Morgan Chase & Co',
+      marketCap: '$881,002,680,000', fiscalQuarterEnding: 'Sep/2026', epsForecast: '$5.94', noOfEsts: '6' },
+  ] },
+};
+const weekend = { data: { asOf: 'Sun, Oct 18, 2026', headers: null, rows: null }, message: null, status: { rCode: 200 } };
+
+describe('nasdaqTiming', () => {
+  test('maps known values, anything else is UNKNOWN', () => {
+    expect(nasdaqTiming('time-pre-market')).toBe('BMO');
+    expect(nasdaqTiming('time-after-hours')).toBe('AMC');
+    expect(nasdaqTiming('time-not-supplied')).toBe('UNKNOWN');
+    expect(nasdaqTiming(undefined)).toBe('UNKNOWN');
+  });
+});
+
+describe('parseNasdaqCalendar', () => {
+  test('upcoming rows', () => {
+    const rows = parseNasdaqCalendar(upcoming, '2026-10-15');
+    expect(rows[0]).toEqual({
+      symbol: 'SCHW', name: 'The Charles Schwab Corporation', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
+      timing: 'BMO', marketCap: 165912461000, epsEstimate: 1.66, noOfEsts: 10, epsActual: null, epsSurprisePct: null,
+    });
+    expect(rows[1]).toMatchObject({
+      symbol: 'BRK/B', name: 'Berkshire', timing: 'AMC', marketCap: null, epsEstimate: null, noOfEsts: null,
+      fiscalQuarter: 'date:2026-10-15',
+    });
+  });
+  test('past rows carry actuals', () => {
+    expect(parseNasdaqCalendar(past, '2026-10-13')[0]).toMatchObject({ epsActual: 5.75, epsSurprisePct: -3.2, timing: 'UNKNOWN' });
+  });
+  test('weekend response yields no rows', () => {
+    expect(parseNasdaqCalendar(weekend, '2026-10-18')).toEqual([]);
+  });
+  test('unexpected shape throws SourceFormatError', () => {
+    expect(() => parseNasdaqCalendar({ data: { rows: [{ symbol: 5 }] } }, '2026-10-15')).toThrow(SourceFormatError);
+    expect(() => parseNasdaqCalendar('<html>blocked</html>', '2026-10-15')).toThrow(SourceFormatError);
+  });
+});
