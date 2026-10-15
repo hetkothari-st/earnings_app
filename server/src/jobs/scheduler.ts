@@ -32,7 +32,7 @@ export function createJobRunner(ctx: JobContext): JobRunner {
 }
 
 /** Spec section 7. All cron expressions are evaluated in America/New_York. */
-export function startScheduler(ctx: JobContext): void {
+export function startScheduler(ctx: JobContext): JobRunner {
   const job = createJobRunner(ctx);
   const opts = { timezone: ET };
   const results = job('results', () => refreshResults(ctx));
@@ -43,4 +43,17 @@ export function startScheduler(ctx: JobContext): void {
   schedule('0 20 * * 1-5', results, opts);
   schedule('20 16 * * 1-5', job('moves', () => snapshotMoves(ctx)), opts);
   schedule('0 23 * * *', job('sec', () => secSync(ctx).then(() => refreshSectors(ctx)).then(() => computePrevMoves(ctx))), opts);
+  return job;
+}
+
+/**
+ * Warms the cache on start. Each step goes through the same guard as the scheduled jobs, so a step is
+ * skipped (not run concurrently) while the scheduled job of that name is still going.
+ */
+export async function warmUp(ctx: JobContext, job: JobRunner): Promise<void> {
+  await job('results', () => refreshResults(ctx))();
+  await job('calendar', () => refreshCalendar(ctx))();
+  await job('sectors', () => refreshSectors(ctx))();
+  await job('moves', () => snapshotMoves(ctx))();
+  await job('prevMoves', () => computePrevMoves(ctx))();
 }
