@@ -71,7 +71,8 @@ CREATE TABLE IF NOT EXISTS backfill_progress (
 export function openDb(path: string): Db {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  // busy_timeout: the app and the backfill CLI share this file; wait for locks instead of failing.
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 10000;');
   db.exec(SCHEMA);
   return db;
 }
