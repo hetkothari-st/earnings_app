@@ -149,6 +149,19 @@ describe('mergeFinnhubRow', () => {
     mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'BMO', revenueEstimate: null, revenueActual: null, epsActual: null }, NOW);
     expect(all(db)[0]!.timingConflict).toBeNull();
   });
+  test('Nasdaq changing its timing on the same date clears the stale conflict', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: null, revenueActual: null, epsActual: null }, NOW);
+    expect(all(db)[0]!.timingConflict).toBe('Nasdaq says BMO, Finnhub says AMC');
+    upsertCalendarRow(db, row({ timing: 'AMC' }), NOW, TODAY);
+    expect(all(db)[0]).toMatchObject({ timing: 'AMC', timingConflict: null });
+  });
+  test('unchanged Nasdaq timing keeps the conflict', () => {
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-16', timing: 'AMC', revenueEstimate: null, revenueActual: null, epsActual: null }, NOW);
+    upsertCalendarRow(db, row(), NOW, TODAY);
+    expect(all(db)[0]!.timingConflict).toBe('Nasdaq says BMO, Finnhub says AMC');
+  });
   test('no matching report -> false', () => {
     expect(mergeFinnhubRow(db, { symbol: 'NONE', reportDate: '2026-10-16', timing: 'BMO', revenueEstimate: 1, revenueActual: 1, epsActual: null }, NOW)).toBe(false);
   });

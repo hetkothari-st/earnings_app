@@ -214,7 +214,8 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
       calendar_fetched_at = ?
     WHERE id = ?`).run(
     row.name, fiscalQuarter, row.reportDate, rescheduled ? existing.report_date : existing.rescheduled_from, timing, timingSource,
-    rescheduled ? 1 : 0,
+    // The conflict text names the old timing; the next Finnhub merge recomputes it.
+    rescheduled || timing !== existing.timing ? 1 : 0,
     capLive ? row.marketCap : existing.market_cap, capLive ? today : existing.market_cap_as_of,
     row.epsEstimate, epsActual, epsSource, epsConflict, row.epsSurprisePct, row.noOfEsts, row.lastYearEps, row.lastYearReportDate,
     rescheduled ? 1 : 0, rescheduled ? 1 : 0, rescheduled ? 1 : 0, rescheduled ? 1 : 0, rescheduled ? 1 : 0,
