@@ -12,7 +12,7 @@ export const MARKET_INDICES = [
   { exchange: 'NYSE', index: 'S&P 500', symbol: '^GSPC' },
   { exchange: 'Nasdaq', index: 'Nasdaq Composite', symbol: '^IXIC' },
   { exchange: 'Shanghai', index: 'SSE Composite', symbol: '000001.SS' },
-  { exchange: 'Japan Exchange', index: 'Nikkei 225', symbol: '^N225' },
+  { exchange: 'Tokyo', index: 'Nikkei 225', symbol: '^N225' },
   { exchange: 'Euronext', index: 'Euronext 100', symbol: '^N100' },
   // India, for the app's users
   { exchange: 'NSE', index: 'NIFTY 50', symbol: '^NSEI' },

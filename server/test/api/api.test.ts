@@ -113,7 +113,7 @@ describe('markets', () => {
     const first = (await app.inject({ method: 'GET', url: '/api/markets' })).json();
     await app.inject({ method: 'GET', url: '/api/markets' });
     expect(first.indices.map((i: { exchange: string }) => i.exchange))
-      .toEqual(['NYSE', 'Nasdaq', 'Shanghai', 'Japan Exchange', 'Euronext', 'NSE', 'BSE']);
+      .toEqual(['NYSE', 'Nasdaq', 'Shanghai', 'Tokyo', 'Euronext', 'NSE', 'BSE']);
     expect(first.indices[0]).toMatchObject({ index: 'S&P 500', price: 100, changePct: 1.01 });
     expect(calls).toBe(7);
   });
@@ -123,7 +123,7 @@ describe('markets', () => {
       return { symbol: s, price: 1, previousClose: 1, changePct: 0, asOf: NOW, currency: null };
     } });
     const body = (await app.inject({ method: 'GET', url: '/api/markets' })).json();
-    expect(body.indices.find((i: { exchange: string }) => i.exchange === 'Japan Exchange')).toMatchObject({ price: null });
+    expect(body.indices.find((i: { exchange: string }) => i.exchange === 'Tokyo')).toMatchObject({ price: null });
   });
 });
 
