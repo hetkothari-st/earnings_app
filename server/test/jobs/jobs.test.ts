@@ -349,8 +349,8 @@ describe('6-K filings for foreign issuers', () => {
 
 describe('Yahoo backfill of missing values', () => {
   test('fills EPS actual and revenue in the reporting currency for a report missing them', async () => {
-    const summary = { priceCurrency: 'USD', financialCurrency: 'TWD', epsHistory: [{ periodEnd: '2026-09-30', actual: 4.6 }],
-      revenueQuarters: [{ label: '3Q2026', revenue: 1.5e12 }], nextReportDate: null, nextRevenueEstimate: null };
+    const summary = { priceCurrency: 'USD', financialCurrency: 'TWD', epsHistory: [{ periodEnd: '2026-09-30', actual: 4.6, currency: 'USD' }],
+      revenueQuarters: [{ label: '3Q2026', revenue: 1.5e12 }], revenueEstimates: [] };
     const yahooSummary = vi.fn(async () => summary);
     const ctx = makeCtx({ yahooSummary });
     upsertCalendarRow(ctx.db, cal({ symbol: 'TSM', reportDate: TODAY, fiscalQuarter: 'Sep/2026' }), NOW, TODAY);

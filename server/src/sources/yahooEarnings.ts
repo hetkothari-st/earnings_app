@@ -5,10 +5,10 @@ import { BROWSER_UA, type Http, HttpError, makeHttp, SourceFormatError } from '.
 export interface YahooSummary {
   priceCurrency: string | null;     // currency of the quote and of per-share figures (EPS)
   financialCurrency: string | null; // reporting currency of revenue
-  epsHistory: { periodEnd: string; actual: number }[];
+  epsHistory: { periodEnd: string; actual: number; currency: string | null }[];
   revenueQuarters: { label: string; revenue: number }[]; // label like '3Q2026' (calendar quarter)
-  nextReportDate: string | null;
-  nextRevenueEstimate: number | null;
+  /** Consensus revenue per fiscal quarter, keyed by quarter-end date. */
+  revenueEstimates: { periodEnd: string; estimate: number; currency: string | null }[];
 }
 
 export interface YahooFill {
@@ -26,13 +26,15 @@ const ResultSchema = z.object({
     financialsChart: z.object({ quarterly: z.array(z.object({ date: z.string(), revenue: Raw })).nullish() }).nullish(),
   }).nullish(),
   earningsHistory: z.object({
-    history: z.array(z.object({ quarter: z.object({ fmt: z.string().nullish() }).nullish(), epsActual: Raw })).nullish(),
+    history: z.array(z.object({
+      quarter: z.object({ fmt: z.string().nullish() }).nullish(), epsActual: Raw, currency: z.string().nullish(),
+    })).nullish(),
   }).nullish(),
-  calendarEvents: z.object({
-    earnings: z.object({
-      earningsDate: z.array(z.object({ fmt: z.string().nullish() })).nullish(),
-      revenueAverage: Raw,
-    }).nullish(),
+  earningsTrend: z.object({
+    trend: z.array(z.object({
+      endDate: z.string().nullish(),
+      revenueEstimate: z.object({ avg: Raw, revenueCurrency: z.string().nullish() }).nullish(),
+    })).nullish(),
   }).nullish(),
 });
 const ResponseSchema = z.object({ quoteSummary: z.object({ result: z.array(ResultSchema).min(1) }) });
@@ -46,12 +48,13 @@ export function parseQuoteSummary(json: unknown): YahooSummary {
     financialCurrency: r.earnings?.financialCurrency ?? null,
     epsHistory: (r.earningsHistory?.history ?? [])
       .filter((h) => h.quarter?.fmt && h.epsActual?.raw != null)
-      .map((h) => ({ periodEnd: h.quarter!.fmt!, actual: h.epsActual!.raw! })),
+      .map((h) => ({ periodEnd: h.quarter!.fmt!, actual: h.epsActual!.raw!, currency: h.currency ?? null })),
     revenueQuarters: (r.earnings?.financialsChart?.quarterly ?? [])
       .filter((q) => q.revenue?.raw != null)
       .map((q) => ({ label: q.date, revenue: q.revenue!.raw! })),
-    nextReportDate: r.calendarEvents?.earnings?.earningsDate?.[0]?.fmt ?? null,
-    nextRevenueEstimate: r.calendarEvents?.earnings?.revenueAverage?.raw ?? null,
+    revenueEstimates: (r.earningsTrend?.trend ?? [])
+      .filter((t) => t.endDate && t.revenueEstimate?.avg?.raw != null)
+      .map((t) => ({ periodEnd: t.endDate!, estimate: t.revenueEstimate!.avg!.raw!, currency: t.revenueEstimate!.revenueCurrency ?? null })),
   };
 }
 
@@ -65,23 +68,27 @@ function fiscalQuarterEnd(fq: string): { year: number; month: number } | null {
 }
 
 /**
- * Values Yahoo can supply for one report. Matching is strict so a wrong quarter is never used:
- * EPS by the quarter-end month (USD quotes only), revenue actual only for calendar-aligned quarters,
- * revenue estimate only when Yahoo's next report date is this report's date.
+ * Values Yahoo can supply for one report. Matching is strict so a wrong quarter or currency is never used:
+ * EPS only from an entry for the same quarter-end month that is itself in USD (the US listing's estimate
+ * basis); revenue actual only for calendar-aligned quarters, in the reporting currency; revenue estimate
+ * only from the forecast for the same quarter-end, and only in that same currency.
  */
 export function yahooFill(s: YahooSummary, report: { reportDate: string; fiscalQuarter: string }): YahooFill {
   const end = fiscalQuarterEnd(report.fiscalQuarter);
   const ym = end ? `${end.year}-${String(end.month).padStart(2, '0')}` : null;
-  const eps = ym && s.priceCurrency === 'USD' ? s.epsHistory.find((h) => h.periodEnd.slice(0, 7) === ym)?.actual ?? null : null;
+  const epsEntry = ym ? s.epsHistory.find((h) => h.periodEnd.slice(0, 7) === ym) : undefined;
+  const eps = epsEntry && epsEntry.currency === 'USD' ? epsEntry.actual : null;
   const calendarAligned = end != null && end.month % 3 === 0;
   const label = calendarAligned ? `${end!.month / 3}Q${end!.year}` : null;
   const revenueActual = label ? s.revenueQuarters.find((q) => q.label === label)?.revenue ?? null : null;
-  const revenueEstimate = s.nextReportDate === report.reportDate ? s.nextRevenueEstimate : null;
+  const est = ym ? s.revenueEstimates.find((e) => e.periodEnd.slice(0, 7) === ym) : undefined;
+  const currency = revenueActual != null ? s.financialCurrency : est?.currency ?? null;
+  const revenueEstimate = est && est.currency != null && est.currency === currency ? est.estimate : null;
   return {
     epsActual: eps,
     revenueEstimate,
     revenueActual,
-    revenueCurrency: revenueActual != null || revenueEstimate != null ? s.financialCurrency : null,
+    revenueCurrency: revenueActual != null || revenueEstimate != null ? currency : null,
   };
 }
 
@@ -104,7 +111,7 @@ export function createYahooSummaryFetcher(): (symbol: string) => Promise<YahooSu
     for (let attempt = 0; attempt < 2; attempt++) {
       session ??= await open();
       const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(s)}`
-        + `?modules=price,earnings,earningsHistory,calendarEvents&crumb=${encodeURIComponent(session.crumb)}`;
+        + `?modules=price,earnings,earningsHistory,earningsTrend&crumb=${encodeURIComponent(session.crumb)}`;
       try {
         return parseQuoteSummary(await session.http.json(url));
       } catch (err) {

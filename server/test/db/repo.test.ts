@@ -269,3 +269,13 @@ describe('mergeYahooFill', () => {
     expect(all(db)[0]).toMatchObject({ epsActual: 4.35, epsConflict: 'Nasdaq reports EPS 4.35, Yahoo 4.31 (often adjusted vs GAAP)' });
   });
 });
+
+describe('revenue currency guard', () => {
+  test('Finnhub (USD) never writes revenue into a row held in another currency', () => {
+    upsertCalendarRow(db, row({ symbol: 'ASML', reportDate: '2026-10-14', fiscalQuarter: 'Sep/2026' }), NOW, TODAY);
+    const id = all(db)[0]!.id;
+    mergeYahooFill(db, id, { epsActual: null, revenueEstimate: null, revenueActual: 1.1662e10, revenueCurrency: 'EUR' }, NOW);
+    mergeFinnhubRow(db, { symbol: 'ASML', reportDate: '2026-10-14', timing: 'BMO', revenueEstimate: 1.3e10, revenueActual: 1.36e10, epsActual: null }, NOW);
+    expect(all(db)[0]).toMatchObject({ revenueEstimate: null, revenueActual: 1.1662e10, revenueCurrency: 'EUR' });
+  });
+});

@@ -279,10 +279,12 @@ export function mergeFinnhubRow(db: Db, r: RevenueRow, now: string): boolean {
     }
   }
 
+  // Finnhub revenue is USD; never mix it into a row already held in another currency.
+  const usdRow = existing.revenue_currency == null || existing.revenue_currency === 'USD';
   db.prepare(`UPDATE reports SET revenue_estimate = COALESCE(?, revenue_estimate),
       revenue_actual = COALESCE(?, revenue_actual), timing = ?, timing_source = ?, timing_conflict = ?,
       eps_actual = ?, eps_actual_source = ?, eps_conflict = ?, revenue_fetched_at = ? WHERE id = ?`)
-    .run(r.revenueEstimate, r.revenueActual, timing, source, conflict, epsActual, epsSource, epsConflict, now, existing.id);
+    .run(usdRow ? r.revenueEstimate : null, usdRow ? r.revenueActual : null, timing, source, conflict, epsActual, epsSource, epsConflict, now, existing.id);
   if (timing !== existing.timing) dropExpectedMove(db, existing.id);
   return true;
 }

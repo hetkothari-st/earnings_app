@@ -2,27 +2,42 @@ import { describe, expect, test } from 'vitest';
 import { SourceFormatError } from '../../src/sources/http.js';
 import { parseQuoteSummary, yahooFill } from '../../src/sources/yahooEarnings.js';
 
-// Shape copied from the live TSM quoteSummary response on 2026-10-15 (trimmed).
+// Shapes copied from live quoteSummary responses on 2026-10-15 (trimmed).
 const tsm = { quoteSummary: { result: [{
   price: { currency: 'USD' },
   earnings: { financialCurrency: 'TWD', financialsChart: { quarterly: [
-    { date: '1Q2026', revenue: { raw: 1134103000000 }, earnings: { raw: 572480000000 } },
-    { date: '2Q2026', revenue: { raw: 1270380000000 }, earnings: { raw: 706560000000 } },
+    { date: '1Q2026', revenue: { raw: 1134103000000 } },
+    { date: '2Q2026', revenue: { raw: 1270380000000 } },
   ] } },
   earningsHistory: { history: [
-    { quarter: { raw: 1774915200, fmt: '2026-03-31' }, epsActual: { raw: 3.49 }, epsEstimate: { raw: 3.33393 } },
-    { quarter: { raw: 1782777600, fmt: '2026-06-30' }, epsActual: { raw: 4.31 }, epsEstimate: { raw: 3.88658 } },
+    { quarter: { fmt: '2026-03-31' }, epsActual: { raw: 3.49 }, currency: 'USD' },
+    { quarter: { fmt: '2026-06-30' }, epsActual: { raw: 4.31 }, currency: 'USD' },
   ] },
-  calendarEvents: { earnings: { earningsDate: [{ raw: 1792067400, fmt: '2026-10-15' }], revenueAverage: { raw: 1460392943930 } } },
+  earningsTrend: { trend: [
+    { period: '0q', endDate: '2026-09-30', revenueEstimate: { avg: { raw: 1460392943930 }, revenueCurrency: 'TWD' } },
+    { period: '+1q', endDate: '2026-12-31', revenueEstimate: { avg: { raw: 1613260108730 }, revenueCurrency: 'TWD' } },
+  ] },
+}] } };
+
+// ASML: EPS history in EUR although the US listing trades in USD; Yahoo had already rolled its
+// "next" estimate forward to the December quarter right after the October report.
+const asml = { quoteSummary: { result: [{
+  price: { currency: 'USD' },
+  earnings: { financialCurrency: 'EUR', financialsChart: { quarterly: [{ date: '3Q2026', revenue: { raw: 11662000000 } }] } },
+  earningsHistory: { history: [{ quarter: { fmt: '2026-09-30' }, epsActual: { raw: 11.8193 }, currency: 'EUR' }] },
+  earningsTrend: { trend: [{ period: '0q', endDate: '2026-12-31', revenueEstimate: { avg: { raw: 14436628480 }, revenueCurrency: 'EUR' } }] },
 }] } };
 
 describe('parseQuoteSummary', () => {
-  test('EPS history, quarterly revenue, next-report estimate and currencies', () => {
+  test('EPS history with currency, quarterly revenue, per-quarter revenue estimates', () => {
     expect(parseQuoteSummary(tsm)).toEqual({
       priceCurrency: 'USD', financialCurrency: 'TWD',
-      epsHistory: [{ periodEnd: '2026-03-31', actual: 3.49 }, { periodEnd: '2026-06-30', actual: 4.31 }],
+      epsHistory: [{ periodEnd: '2026-03-31', actual: 3.49, currency: 'USD' }, { periodEnd: '2026-06-30', actual: 4.31, currency: 'USD' }],
       revenueQuarters: [{ label: '1Q2026', revenue: 1134103000000 }, { label: '2Q2026', revenue: 1270380000000 }],
-      nextReportDate: '2026-10-15', nextRevenueEstimate: 1460392943930,
+      revenueEstimates: [
+        { periodEnd: '2026-09-30', estimate: 1460392943930, currency: 'TWD' },
+        { periodEnd: '2026-12-31', estimate: 1613260108730, currency: 'TWD' },
+      ],
     });
   });
   test('missing result is a format error', () => {
@@ -31,20 +46,22 @@ describe('parseQuoteSummary', () => {
 });
 
 describe('yahooFill', () => {
-  const s = parseQuoteSummary(tsm);
   test('matches the report by fiscal quarter end; revenue in the reporting currency', () => {
-    expect(yahooFill(s, { reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026' }))
+    expect(yahooFill(parseQuoteSummary(tsm), { reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026' }))
       .toEqual({ epsActual: 4.31, revenueEstimate: null, revenueActual: 1270380000000, revenueCurrency: 'TWD' });
   });
-  test('upcoming report: revenue estimate only when the next Yahoo date is the report date', () => {
-    expect(yahooFill(s, { reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026' }))
+  test('revenue estimate comes from the forecast for the same quarter', () => {
+    expect(yahooFill(parseQuoteSummary(tsm), { reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026' }))
       .toEqual({ epsActual: null, revenueEstimate: 1460392943930, revenueActual: null, revenueCurrency: 'TWD' });
-    expect(yahooFill(s, { reportDate: '2026-10-22', fiscalQuarter: 'Sep/2026' }).revenueEstimate).toBeNull();
+  });
+  test('EPS in a non-USD currency is never used (live ASML)', () => {
+    expect(yahooFill(parseQuoteSummary(asml), { reportDate: '2026-10-14', fiscalQuarter: 'Sep/2026' }).epsActual).toBeNull();
+  });
+  test('a forecast for another quarter is never used as the estimate (live ASML)', () => {
+    const f = yahooFill(parseQuoteSummary(asml), { reportDate: '2026-10-14', fiscalQuarter: 'Sep/2026' });
+    expect(f).toEqual({ epsActual: null, revenueEstimate: null, revenueActual: 11662000000, revenueCurrency: 'EUR' });
   });
   test('non-calendar fiscal quarters never take a quarterly revenue (labels may not line up)', () => {
-    expect(yahooFill(s, { reportDate: '2026-06-25', fiscalQuarter: 'May/2026' }).revenueActual).toBeNull();
-  });
-  test('EPS is only taken when quoted in USD', () => {
-    expect(yahooFill({ ...s, priceCurrency: 'EUR' }, { reportDate: '2026-07-16', fiscalQuarter: 'Jun/2026' }).epsActual).toBeNull();
+    expect(yahooFill(parseQuoteSummary(tsm), { reportDate: '2026-06-25', fiscalQuarter: 'May/2026' }).revenueActual).toBeNull();
   });
 });
