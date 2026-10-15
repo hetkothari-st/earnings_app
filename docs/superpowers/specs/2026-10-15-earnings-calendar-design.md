@@ -1,0 +1,230 @@
+# US Earnings Calendar — Design Spec
+
+Date: 2026-10-15
+Status: Draft for review
+
+## 1. Purpose
+
+A web app for traders outside the US (primarily India) that shows which US-listed companies report quarterly earnings when, whether before market open (BMO) or after market close (AMC), the release moment in US Eastern time and in the user's local time, and the key numbers around each report: market cap, primary exchange, options-implied expected move, and results versus estimates.
+
+Accuracy is the top priority. The app never guesses: missing or conflicting data is shown as "—" or flagged with ⚠, and every stored value records its source and fetch time.
+
+This is a prototype for a client demo. It uses free data sources only. If the client approves, data sources are upgraded to licensed feeds (Approach 1, section 10) by swapping source modules.
+
+## 2. Users and scope
+
+- Now: the owner only (personal use). Later: a small private group.
+- Platform: web app (desktop and phone browsers). A mobile app is a later phase and will reuse the same backend API.
+- Universe: all US-listed stocks in the Nasdaq earnings calendar, including ADRs (e.g. TSM, ASML). A market-cap filter defaults to ≥ $2B and is user-adjustable down to "all".
+- Time range: 2 years of history, plus forward as far as dates are published (typically about 3 months).
+
+### Out of scope for v1
+
+- Mobile app
+- Paid data sources
+- True highest-volume trading venue (see section 6.4)
+- Login (deferred to the final phase, section 9)
+- Alerts and notifications
+
+## 3. Architecture
+
+```
+Browser (React web app) --HTTP/JSON--> Backend API (Node + TypeScript)
+                                          |
+                                          +-- SQLite database (cache + history)
+                                          +-- Scheduled data jobs
+                                                +-- nasdaqSource   calendar, BMO/AMC, market cap, EPS estimate/actual
+                                                +-- finnhubSource  revenue estimate/actual
+                                                +-- secSource      primary exchange, 8-K link, 8-K acceptance timestamp
+                                                +-- cboeSource     delayed options chain -> expected move
+```
+
+Principles:
+
+- Only the backend fetches external data. The browser talks only to our API. This avoids rate-limit and blocking problems, keeps API keys server-side, and lets the future mobile app reuse the API.
+- All data is stored in the database. Viewing any range (day, week, month, quarter, custom) is a database query, never a live call to a source.
+- Each source is one module implementing a common interface (e.g. `CalendarSource`, `ResultsSource`, `OptionsSource`, `FilingsSource`). Upgrading to paid sources means adding new modules and switching configuration; the rest of the app does not change.
+
+Stack:
+
+- TypeScript throughout
+- Backend: Fastify, SQLite via Drizzle ORM, node-cron for scheduling
+- Frontend: React + Vite
+- Time handling: Luxon (IANA time zones, DST-correct)
+- Tests: Vitest
+- Runs locally for now. Hosting is decided before the client demo.
+
+## 4. Data sources (free tier)
+
+All of these were tested on 2026-10-15 and returned live data, except Finnhub (needs a free API key, not yet tested).
+
+| Need | Source | Notes |
+|---|---|---|
+| Earnings dates, BMO/AMC, market cap, EPS consensus, # of estimates | Nasdaq calendar JSON (`api.nasdaq.com/api/calendar/earnings?date=YYYY-MM-DD`) | Unofficial endpoint used by nasdaq.com. Timing values: `time-pre-market`, `time-after-hours`, `time-not-supplied`. |
+| Past EPS: actual, consensus, surprise % | Nasdaq earnings-surprise JSON (`api.nasdaq.com/api/company/{SYMBOL}/earnings-surprise`) | Unofficial. |
+| Revenue estimate and actual | Finnhub free tier earnings calendar | Free API key. 60 requests/min. |
+| Primary listing exchange | SEC `company_tickers_exchange.json` | Official. Requires a descriptive User-Agent. |
+| Release verification, official press release link | SEC EDGAR submissions API; 8-K filings with Item 2.02, Exhibit 99.1 | Official. Max 10 requests/sec. |
+| Options chain for expected move | Cboe delayed quotes JSON (`cdn.cboe.com/api/global/delayed_quotes/options/{SYMBOL}.json`) | Unofficial, 15-min delayed. Follow redirects. |
+
+### Known limitations of the free stack (accepted)
+
+1. Primary listing exchange is shown instead of the highest-volume venue. No free per-venue volume data exists.
+2. No exact release minute. Only BMO/AMC, shown as "before 9:30 AM ET" or "after 4:00 PM ET". For past reports, the SEC filing timestamp verifies the label.
+3. Expected move is our own calculation from delayed quotes, not a published vendor figure.
+4. The Nasdaq and Cboe endpoints are unofficial: undocumented, no uptime guarantee, may change, and their terms likely do not permit commercial use. Acceptable for the prototype. Switch to Approach 1 before paying users.
+
+## 5. Screens
+
+### 5.1 Main screen
+
+Header:
+
+- App title
+- Detected time zone, e.g. "Your time zone: IST (Asia/Kolkata)", with a manual override
+- Range selector: Day / Week / Month / Quarter / Custom (from–to dates)
+- Date navigation: previous / next / Today
+- Market-cap filter (default ≥ $2B)
+- Ticker/company search
+- "Show hidden (N)" toggle
+
+Table columns, in order:
+
+1. Hide checkbox
+2. Release (ET): e.g. "BMO · before 9:30 AM" or "AMC · after 4:00 PM"
+3. Your time: the same moment in the user's detected zone, e.g. "before 7:00 PM IST". A "+1" marker shows when it falls on the next calendar day in the user's zone.
+4. Ticker and company name
+5. Exchange
+6. Market cap (formatted, e.g. $165.9B, $2.31T)
+7. EPS: estimate / actual, with ▲ green for a beat and ▼ red for a miss; surprise % on hover
+8. Revenue: estimate / actual, same treatment
+9. Expected move (e.g. ±5.1%)
+
+Grouping: rows are grouped by date (sticky date headers), and within each date by BMO, then AMC, then "Time not announced". Week, month, quarter and custom views use the same table across multiple dates.
+
+Results columns show "—" until results are released.
+
+A ⚠ icon appears on any cell whose value is unconfirmed or where sources conflict. Hovering it explains why (e.g. "Date projected, not confirmed by company", "Nasdaq says BMO; SEC filing accepted 10:42 AM ET").
+
+### 5.2 Hide behaviour
+
+- Ticking a row's checkbox hides that ticker everywhere (all dates and views).
+- "Show hidden (N)" reveals hidden rows greyed out, so they can be unticked.
+- Until login exists, the hide list is stored in the browser (localStorage, with try/catch; the app works if storage is unavailable).
+
+### 5.3 Detail panel
+
+Clicking a row opens a side panel with:
+
+- Fiscal quarter, report date, BMO/AMC, and the SEC filing acceptance time (when available)
+- EPS and revenue: estimate, actual, surprise %, number of estimates
+- Last year's same-quarter EPS
+- Expected-move inputs: expiry used, strike, call/put mid, stock price, snapshot time
+- Link to the official press release on SEC EDGAR (8-K Exhibit 99.1)
+- Source and fetch time for every value
+- Reschedule history, if the date moved
+
+### 5.4 Responsive
+
+At phone width, each row is shown as a card. No horizontal page scroll.
+
+### 5.5 Status page
+
+`/status` shows each source's last successful fetch, last error, and record counts.
+
+## 6. Data rules
+
+### 6.1 Time display
+
+- BMO means "before 9:30 AM ET". AMC means "after 4:00 PM ET".
+- On NYSE early-close days, AMC means "after 1:00 PM ET". The app keeps an NYSE holiday and early-close calendar.
+- `time-not-supplied` shows "Time not announced" with ⚠. It is never guessed.
+- Conversion uses the IANA zone `America/New_York` and the user's zone, evaluated on the specific report date, so DST transitions in either zone are handled correctly. Example: 4:00 PM ET is 1:30 AM IST (next day) during EDT and 2:30 AM IST (next day) during EST.
+- The user's zone is read from the browser (`Intl.DateTimeFormat().resolvedOptions().timeZone`). No permission prompt is needed. The user can override it. If detection fails, it falls back to `Asia/Kolkata`.
+
+### 6.2 Expected move (labelled "Options-implied move")
+
+1. **Expiry:** the first listed expiry that captures the earnings reaction. For BMO on day D, that is the first expiry on or after D. For AMC on day D, it is the first expiry strictly after D.
+2. **Strike:** the strike closest to the underlying price. Ties go to the lower strike.
+3. **Mid:** mid = (bid + ask) / 2 for both the call and the put at that strike.
+4. **Move %:** move % = (call mid + put mid) / underlying price × 100.
+5. **Snapshot timing:** the last close before the report. For BMO, that is the close of D−1 (previous trading day). For AMC, it is the close of D. The snapshot time is stored and shown.
+6. **Guards:**
+   - If either bid is 0, or either spread (ask − bid) exceeds 30% of its mid, the value is shown with ⚠ "illiquid".
+   - If no options are listed, or no expiry qualifies, show "—".
+7. **Disclosure:** the label and tooltip state that this is our straddle-based calculation. It includes some non-earnings time value, so it may read slightly higher than vendor figures.
+
+### 6.3 Results
+
+- EPS actual, consensus and surprise % come from Nasdaq.
+- Revenue estimate and actual come from Finnhub.
+- Surprise % = (actual − estimate) / |estimate| × 100, rounded to 1 decimal. If the estimate is 0 or missing, show "—".
+- Beat: actual > estimate. Miss: actual < estimate. Equal is shown as in-line, with no arrow.
+
+### 6.4 Exchange
+
+- The primary listing exchange comes from the SEC ticker file. If the ticker is not found, show "—".
+- In the paid phase, this is replaced by the venue with the highest share volume on the previous full trading day, among registered exchanges only (FINRA TRF/off-exchange excluded). Only the venue name is shown, never the volume.
+
+### 6.5 Market cap
+
+From the Nasdaq calendar row, stored with its fetch date. If missing or unparseable, show "—".
+
+### 6.6 SEC cross-check (past reports)
+
+- For each report with a past date, find the company's 8-K containing Item 2.02 with a filing date of D or the next business day (EDGAR assigns the next business day's filing date to filings accepted after 5:30 PM ET). Matching uses the acceptance timestamp, not the filing date.
+- Classify the EDGAR acceptance timestamp, converted to ET:
+  - before 9:30 → BMO
+  - at or after 16:00 (or the early-close time) → AMC
+  - otherwise → "during market hours"
+- If the result matches Nasdaq's label, the timing is marked verified (✓ in the detail panel).
+- If it contradicts the label, show ⚠ with both values. The SEC result is treated as stronger evidence, but the label is not auto-changed.
+- "During market hours" is shown with ⚠. It is often just a late filing after a pre-market press release.
+- Store the 8-K and Exhibit 99.1 URLs for the detail panel.
+
+### 6.7 Reschedules
+
+Each calendar refresh compares dates with stored ones. A changed date updates the record, logs the old date, and shows "Rescheduled from <old date>" in the detail panel.
+
+## 7. Scheduled jobs (all times ET)
+
+| Job | Schedule |
+|---|---|
+| Calendar refresh (today through +90 days) | Every 2 hours |
+| Results refresh | Every 30 min, 6:00–10:30 AM and 4:00–8:00 PM on trading days |
+| Expected move snapshot | 4:20 PM on trading days, for the next session's BMO reporters and today's AMC reporters |
+| SEC sync (exchange file, 8-K verification) | Nightly at 11:00 PM |
+| Historical backfill (2 years) | Once, rate-limited, resumable |
+
+## 8. Error handling
+
+- **Source down or blocked:** keep the last good data and show a banner, e.g. "Calendar data last updated 3h ago (Nasdaq unreachable)". A failed fetch never deletes stored data.
+- **Format change:** each source module validates response shape (zod schemas). On a mismatch, the job fails loudly in the log and on `/status`, and stored data is untouched.
+- **Rate limits:** requests are spaced per source (Finnhub ≤ 60/min, SEC ≤ 10/s, Nasdaq and Cboe conservatively ~1/s). The backfill is resumable.
+- **Provenance:** every stored value has `source` and `fetched_at`.
+
+## 9. Login (final phase, deferred)
+
+- **v1:** no login. The hide list is stored in the browser.
+- **Final phase:** passkeys (WebAuthn): Face ID, fingerprint or Windows Hello. No password, email, phone or Google. On first login, the browser hide list migrates into the account.
+- The data model includes a `user_id` slot on user-owned data from the start.
+
+## 10. Upgrade path (Approach 1, after client approval)
+
+| Need | Paid source |
+|---|---|
+| Earnings dates, exact times, confirmed flag, estimates, actuals, guidance | Benzinga earnings (price quote needed) |
+| Highest-volume venue, market cap, reference data | Massive (formerly Polygon) Stocks Developer, $79/month (individual license; business license needed for group use) |
+| Published implied earnings move | ORATS Data API, from $199/month (confirm the `impErnMv` field is in the API) |
+| Official release, timing verification | SEC EDGAR (free, unchanged) |
+
+## 11. Testing
+
+- **Unit tests (pure logic):**
+  - ET ↔ user-zone conversion across March and November DST transitions (US and other zones), and early-close days
+  - Expected-move calculation: expiry selection for BMO vs AMC, strike selection, illiquid guard, missing options
+  - Surprise % and beat/miss classification
+  - SEC timestamp → BMO / AMC / during-market classification
+- **Source module tests:** run against saved real responses (fixtures), including malformed and empty responses.
+- **API tests:** range queries (day, week, month, quarter, custom), market-cap filter, search.
+- **Acceptance:** manually spot-check about 10 real reports from the current week against the companies' own press releases and SEC filings before declaring v1 done.
