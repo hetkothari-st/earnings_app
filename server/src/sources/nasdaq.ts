@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseIntOrNull, parseNumber } from '../domain/parse.js';
+import { normalizeTicker } from '../domain/ticker.js';
 import type { CalendarRow, Timing } from '../types.js';
 import { type Http, SourceFormatError } from './http.js';
 
@@ -96,4 +97,23 @@ export async function fetchDailyCloses(http: Http, symbol: string, from: string,
   const s = encodeURIComponent(symbol.trim().toUpperCase().replace('/', '.'));
   return parseNasdaqHistory(await http.json(
     `https://api.nasdaq.com/api/quote/${s}/historical?assetclass=stocks&fromdate=${from}&todate=${to}&limit=60`));
+}
+
+const ScreenerSchema = z.object({
+  data: z.object({ rows: z.array(z.object({ symbol: z.string(), sector: z.string().nullish(), industry: z.string().nullish() })) }),
+});
+
+/** Sector and industry for every US-listed stock, keyed by normalized ticker. */
+export function parseNasdaqScreener(json: unknown): Map<string, { sector: string | null; industry: string | null }> {
+  const parsed = ScreenerSchema.safeParse(json);
+  if (!parsed.success) throw new SourceFormatError(`Nasdaq screener: ${parsed.error.message}`);
+  const out = new Map<string, { sector: string | null; industry: string | null }>();
+  for (const r of parsed.data.data.rows) {
+    out.set(normalizeTicker(r.symbol), { sector: r.sector?.trim() || null, industry: r.industry?.trim() || null });
+  }
+  return out;
+}
+
+export async function fetchSectors(http: Http): Promise<Map<string, { sector: string | null; industry: string | null }>> {
+  return parseNasdaqScreener(await http.json('https://api.nasdaq.com/api/screener/stocks?tableonly=true&download=true'));
 }

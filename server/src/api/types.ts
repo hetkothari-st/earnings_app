@@ -27,6 +27,8 @@ export interface ReportDto {
   sessionClose: '16:00' | '13:00';
   rescheduledFrom: string | null;
   exchange: string | null;
+  sector: string | null;
+  industry: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
   eps: ResultPart & { noOfEsts: number | null; lastYear: number | null; lastYearReportDate: string | null };
@@ -40,6 +42,8 @@ export interface ReportDto {
     putMid: number;
     underlying: number;
     optionsVolume?: number | null;
+    provisional?: boolean;
+    quoteDate?: string | null;
     snapshotAt: string;
   } | null;
   previousMove: { pct: number; reportDate: string } | null;

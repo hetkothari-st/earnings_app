@@ -51,6 +51,8 @@ export interface ExpectedMove {
   movePct: number;           // rounded to 2 decimals
   illiquid: boolean;
   optionsVolume?: number | null; // contracts traded across the chain on the snapshot day
+  provisional?: boolean;         // priced off a close earlier than the last one before the release
+  quoteDate?: string | null;     // date of the close the quotes are from
 }
 
 /** An 8-K containing Item 2.02 (results of operations). */
@@ -94,4 +96,6 @@ export interface ReportRecord {
   expectedMove: (ExpectedMove & { snapshotAt: string }) | null;
   prevMovePct: number | null;     // stock reaction to the previous report, %
   prevMoveDate: string | null;    // that previous report's date
+  sector: string | null;
+  industry: string | null;
 }

@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS reports (
   prev_move_pct REAL,
   prev_move_date TEXT,
   prev_move_checked_at TEXT,
+  sector TEXT,
+  industry TEXT,
   UNIQUE (symbol_key, fiscal_quarter)
 );
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports (report_date);
@@ -58,6 +60,8 @@ CREATE TABLE IF NOT EXISTS expected_moves (
   move_pct REAL NOT NULL,
   illiquid INTEGER NOT NULL,
   options_volume INTEGER,
+  provisional INTEGER NOT NULL DEFAULT 0,
+  quote_date TEXT,
   snapshot_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS source_status (
@@ -115,17 +119,17 @@ interface ReportRow {
   eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null;
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
   sec_index_url: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
-  prev_move_pct: number | null; prev_move_date: string | null;
+  prev_move_pct: number | null; prev_move_date: string | null; sector: string | null; industry: string | null;
 }
 
 interface JoinedRow extends ReportRow {
   em_expiry: string | null; em_strike: number | null; em_call_mid: number | null; em_put_mid: number | null;
-  em_underlying: number | null; em_move_pct: number | null; em_illiquid: number | null; em_options_volume: number | null; em_snapshot_at: string | null;
+  em_underlying: number | null; em_move_pct: number | null; em_illiquid: number | null; em_options_volume: number | null; em_provisional: number | null; em_quote_date: string | null; em_snapshot_at: string | null;
 }
 
 const SELECT_REPORT = `
 SELECT r.*, m.expiry AS em_expiry, m.strike AS em_strike, m.call_mid AS em_call_mid, m.put_mid AS em_put_mid,
-       m.underlying AS em_underlying, m.move_pct AS em_move_pct, m.illiquid AS em_illiquid, m.options_volume AS em_options_volume, m.snapshot_at AS em_snapshot_at
+       m.underlying AS em_underlying, m.move_pct AS em_move_pct, m.illiquid AS em_illiquid, m.options_volume AS em_options_volume, m.provisional AS em_provisional, m.quote_date AS em_quote_date, m.snapshot_at AS em_snapshot_at
 FROM reports r LEFT JOIN expected_moves m ON m.report_id = r.id`;
 
 function toRecord(r: JoinedRow): ReportRecord {
@@ -140,10 +144,10 @@ function toRecord(r: JoinedRow): ReportRecord {
     calendarFetchedAt: r.calendar_fetched_at, revenueFetchedAt: r.revenue_fetched_at, secCheckedAt: r.sec_checked_at,
     expectedMove: r.em_snapshot_at == null ? null : {
       expiry: r.em_expiry!, strike: r.em_strike!, callMid: r.em_call_mid!, putMid: r.em_put_mid!,
-      underlying: r.em_underlying!, movePct: r.em_move_pct!, illiquid: r.em_illiquid === 1, optionsVolume: r.em_options_volume,
+      underlying: r.em_underlying!, movePct: r.em_move_pct!, illiquid: r.em_illiquid === 1, optionsVolume: r.em_options_volume, provisional: r.em_provisional === 1, quoteDate: r.em_quote_date,
       snapshotAt: r.em_snapshot_at,
     },
-    prevMovePct: r.prev_move_pct, prevMoveDate: r.prev_move_date,
+    prevMovePct: r.prev_move_pct, prevMoveDate: r.prev_move_date, sector: r.sector, industry: r.industry,
   };
 }
 
@@ -328,21 +332,22 @@ export function setSecResult(
     .run(r.check, r.timing, r.timingSource, r.acceptedAt, r.docUrl, r.indexUrl, now, id);
 }
 
+/** Reports dated in [from, to] that have no final expected-move snapshot yet. */
 export function reportsForSnapshot(
-  db: Db, today: string, nextDay: string,
-): { id: number; symbol: string; reportDate: string; timing: Timing }[] {
-  return db.prepare(`SELECT id, symbol, report_date AS reportDate, timing FROM reports
-      WHERE (report_date = ? AND timing = 'AMC')
-         OR (report_date = ? AND timing IN ('BMO', 'DMH', 'UNKNOWN'))`)
-    .all(today, nextDay) as unknown as { id: number; symbol: string; reportDate: string; timing: Timing }[];
+  db: Db, from: string, to: string,
+): { id: number; symbol: string; reportDate: string; timing: Timing; quoteDate: string | null }[] {
+  return db.prepare(`SELECT r.id, r.symbol, r.report_date AS reportDate, r.timing, m.quote_date AS quoteDate
+      FROM reports r LEFT JOIN expected_moves m ON m.report_id = r.id
+      WHERE r.report_date BETWEEN ? AND ? AND (m.report_id IS NULL OR m.provisional = 1)`)
+    .all(from, to) as unknown as { id: number; symbol: string; reportDate: string; timing: Timing; quoteDate: string | null }[];
 }
 
 export function saveExpectedMove(db: Db, reportId: number, em: ExpectedMove, snapshotAt: string): void {
   db.prepare(`INSERT OR REPLACE INTO expected_moves
-      (report_id, expiry, strike, call_mid, put_mid, underlying, move_pct, illiquid, options_volume, snapshot_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (report_id, expiry, strike, call_mid, put_mid, underlying, move_pct, illiquid, options_volume, provisional, quote_date, snapshot_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(reportId, em.expiry, em.strike, em.callMid, em.putMid, em.underlying, em.movePct, em.illiquid ? 1 : 0,
-      em.optionsVolume ?? null, snapshotAt);
+      em.optionsVolume ?? null, em.provisional ? 1 : 0, em.quoteDate ?? null, snapshotAt);
 }
 
 export function recordSourceSuccess(db: Db, source: string, now: string): void {
@@ -398,4 +403,12 @@ export function reportsNeedingPrevMove(
 export function setPrevMove(db: Db, id: number, pct: number | null, prevDate: string | null, now: string): void {
   db.prepare('UPDATE reports SET prev_move_pct = ?, prev_move_date = ?, prev_move_checked_at = ? WHERE id = ?')
     .run(pct, prevDate, now, id);
+}
+
+export function setSectors(db: Db, sectors: Map<string, { sector: string | null; industry: string | null }>): void {
+  const update = db.prepare('UPDATE reports SET sector = ?, industry = ? WHERE symbol_key = ?');
+  for (const key of distinctSymbolKeys(db)) {
+    const s = sectors.get(key);
+    if (s) update.run(s.sector, s.industry, key);
+  }
 }

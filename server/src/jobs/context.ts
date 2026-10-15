@@ -12,6 +12,7 @@ export interface Sources {
   secEarningsFilings(cik: number): Promise<Filing[]>;
   secAcceptance(cik: number, accession: string): Promise<string>;
   dailyCloses(symbol: string, from: string, to: string): Promise<Map<string, number>>;
+  sectors(): Promise<Map<string, { sector: string | null; industry: string | null }>>;
 }
 
 export interface JobContext {

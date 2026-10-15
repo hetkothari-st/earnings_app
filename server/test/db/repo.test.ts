@@ -176,13 +176,17 @@ describe('sec, snapshot, status, backfill helpers', () => {
     }
     expect(reportsNeedingSec(db, TODAY, '2026-10-10').map((p) => p.symbolKey)).toEqual(['RECENT']);
   });
-  test('reportsForSnapshot: AMC today, BMO/DMH/UNKNOWN next trading day', () => {
-    upsertCalendarRow(db, row({ symbol: 'AMCTODAY', reportDate: TODAY, timing: 'AMC' }), NOW, TODAY);
-    upsertCalendarRow(db, row({ symbol: 'BMOTODAY', reportDate: TODAY, timing: 'BMO' }), NOW, TODAY);
-    upsertCalendarRow(db, row({ symbol: 'BMONEXT', reportDate: '2026-10-16', timing: 'BMO' }), NOW, TODAY);
-    upsertCalendarRow(db, row({ symbol: 'UNKNEXT', reportDate: '2026-10-16', timing: 'UNKNOWN' }), NOW, TODAY);
-    upsertCalendarRow(db, row({ symbol: 'AMCNEXT', reportDate: '2026-10-16', timing: 'AMC' }), NOW, TODAY);
-    expect(reportsForSnapshot(db, TODAY, '2026-10-16').map((r) => r.symbol).sort()).toEqual(['AMCTODAY', 'BMONEXT', 'UNKNEXT']);
+  test('reportsForSnapshot: reports in the window without a final snapshot', () => {
+    upsertCalendarRow(db, row({ symbol: 'PAST', reportDate: '2026-10-14' }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'TODAY', reportDate: TODAY }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'PROV', reportDate: '2026-10-16' }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'FINAL', reportDate: '2026-10-16' }), NOW, TODAY);
+    upsertCalendarRow(db, row({ symbol: 'FAR', reportDate: '2026-11-30' }), NOW, TODAY);
+    const id = (s: string) => all(db).find((r) => r.symbol === s)!.id;
+    const em = { expiry: '2026-10-16', strike: 100, callMid: 3, putMid: 3, underlying: 100, movePct: 6, illiquid: false };
+    saveExpectedMove(db, id('PROV'), { ...em, provisional: true, quoteDate: '2026-10-14' }, NOW);
+    saveExpectedMove(db, id('FINAL'), { ...em, provisional: false, quoteDate: '2026-10-15' }, NOW);
+    expect(reportsForSnapshot(db, TODAY, '2026-10-22').map((r) => r.symbol).sort()).toEqual(['PROV', 'TODAY']);
   });
   test('source status keeps last success and last error', () => {
     recordSourceSuccess(db, 'nasdaq', NOW);

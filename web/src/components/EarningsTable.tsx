@@ -1,7 +1,7 @@
 import { Fragment, type KeyboardEvent } from 'react';
 import type { Flag, ReportDto, ResultPart, Timing } from '../../../server/src/api/types';
 import { DateTime } from 'luxon';
-import { changeClass, formatChange, formatCount, formatDateHeading, formatEps, formatPct, formatUsd } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatEps, formatPct, formatUsd } from '../lib/format';
 import { describeTiming, zoneLabel } from '../lib/time';
 
 interface Props {
@@ -65,12 +65,12 @@ export function EarningsTable({ rows, zone, hidden, showHidden, onToggleHidden, 
           <th scope="col" className="c-hide">Hide</th>
           <th scope="col">Symbol</th>
           <th scope="col">Name</th>
+          <th scope="col">Sector</th>
           <th scope="col">Date</th>
           <th scope="col">Time (ET)</th>
           <th scope="col">Your time ({tz})</th>
           <th scope="col" className="num">Previous move</th>
           <th scope="col" className="num">Expected move</th>
-          <th scope="col" className="num">Options volume</th>
           <th scope="col" className="num">Market cap</th>
           <th scope="col" className="num">EPS est / act</th>
           <th scope="col" className="num">Revenue est / act</th>
@@ -116,6 +116,7 @@ function Row({ r, zone, isHidden, onToggleHidden, onSelect }: {
         <span className="name">{r.name}</span>
         {r.exchange && <span className="exchange">{r.exchange}</span>}
       </td>
+      <td data-label="Sector" className="sector">{r.sector ? <span title={r.industry ?? undefined}>{r.sector}</span> : '—'}</td>
       <td data-label="Date" className="date">{DateTime.fromISO(r.reportDate).setLocale('en-US').toFormat('d LLL')}</td>
       <td data-label="Time (ET)">{t.et} <Warn flags={flags('timing')} /></td>
       <td data-label="Your time">
@@ -132,11 +133,13 @@ function Row({ r, zone, isHidden, onToggleHidden, onSelect }: {
             <span className="move-track" aria-hidden="true">
               <span className="move-range" style={{ width: `${Math.min(r.expectedMove.movePct / MOVE_SCALE, 1) * 100}%` }} />
             </span>
-            <span>±{r.expectedMove.movePct.toFixed(1)}%</span>
+            <span className={r.expectedMove.provisional ? 'provisional' : undefined}
+              title={r.expectedMove.provisional ? `Provisional: priced off the ${r.expectedMove.quoteDate ?? 'earlier'} close. Final value uses the last close before the release.` : undefined}>
+              {r.expectedMove.provisional ? '≈' : ''}±{(Math.round(r.expectedMove.movePct * 10 + 1e-9) / 10).toFixed(1)}%
+            </span>
           </span>
         ) : '—'} <Warn flags={flags('expectedMove')} />
       </td>
-      <td data-label="Options volume" className="num">{formatCount(r.expectedMove?.optionsVolume)}</td>
       <td data-label="Market cap" className="num">{formatUsd(r.marketCap)} <Warn flags={flags('marketCap')} /></td>
       <td data-label="EPS est / act" className="num"><Result part={r.eps} format={formatEps} /> <Warn flags={flags('eps')} /></td>
       <td data-label="Revenue est / act" className="num"><Result part={r.revenue} format={formatUsd} /></td>

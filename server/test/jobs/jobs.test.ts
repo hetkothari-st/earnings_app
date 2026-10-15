@@ -4,6 +4,7 @@ import { backfill } from '../../src/jobs/backfill.js';
 import type { JobContext, Sources } from '../../src/jobs/context.js';
 import { refreshCalendar } from '../../src/jobs/refreshCalendar.js';
 import { computePrevMoves } from '../../src/jobs/prevMoves.js';
+import { refreshSectors } from '../../src/jobs/sectors.js';
 import { refreshResults } from '../../src/jobs/refreshResults.js';
 import { secSync } from '../../src/jobs/secSync.js';
 import { snapshotMoves } from '../../src/jobs/snapshotMoves.js';
@@ -22,6 +23,7 @@ function makeCtx(over: Partial<Sources> = {}): JobContext {
     secEarningsFilings: async () => [],
     secAcceptance: async () => '',
     dailyCloses: async () => new Map(),
+    sectors: async () => new Map(),
     ...over,
   };
   return { db: openDb(':memory:'), sources, now: () => NOW, today: () => TODAY };
@@ -44,19 +46,39 @@ describe('review fixes', () => {
     expect(earningsDetails).toHaveBeenCalledWith('2026-10-15', '2026-10-29');
     expect(all(ctx)[0]!.revenueEstimate).toBe(6e9);
   });
-  test('snapshot refuses quotes that are not from today', async () => {
-    const chain: OptionChain = {
-      underlying: 100, asOfDate: '2026-10-14',
-      quotes: [
-        { expiry: '2026-10-16', type: 'C', strike: 100, bid: 2.9, ask: 3.1 },
-        { expiry: '2026-10-16', type: 'P', strike: 100, bid: 2.9, ask: 3.1 },
-      ],
-    };
-    const ctx = makeCtx({ optionChain: async () => chain });
-    upsertCalendarRow(ctx.db, cal({ timing: 'AMC' }), NOW, TODAY);
+  const chainAsOf = (asOfDate: string): OptionChain => ({
+    underlying: 100, asOfDate,
+    quotes: [
+      { expiry: '2026-10-16', type: 'C', strike: 100, bid: 2.9, ask: 3.1 },
+      { expiry: '2026-10-16', type: 'P', strike: 100, bid: 2.9, ask: 3.1 },
+      { expiry: '2026-10-23', type: 'C', strike: 100, bid: 4.4, ask: 4.6 },
+      { expiry: '2026-10-23', type: 'P', strike: 100, bid: 4.4, ask: 4.6 },
+    ],
+  });
+  test('BMO today priced off yesterday close is final (the last close before the release)', async () => {
+    const ctx = makeCtx({ optionChain: async () => chainAsOf('2026-10-14') });
+    upsertCalendarRow(ctx.db, cal({ timing: 'BMO' }), NOW, TODAY);
+    await snapshotMoves(ctx);
+    expect(all(ctx)[0]!.expectedMove).toMatchObject({ movePct: 6, provisional: false, quoteDate: '2026-10-14' });
+  });
+  test('quotes from after the release are never used', async () => {
+    const ctx = makeCtx({ optionChain: async () => chainAsOf('2026-10-15') });
+    upsertCalendarRow(ctx.db, cal({ timing: 'BMO' }), NOW, TODAY);
     await snapshotMoves(ctx);
     expect(all(ctx)[0]!.expectedMove).toBeNull();
-    expect(listSourceStatus(ctx.db).find((s) => s.source === 'cboe')?.lastError).toMatch(/not from 2026-10-15/);
+  });
+  test('an earlier close gives a provisional value, replaced by the final one, which is never overwritten', async () => {
+    let asOf = '2026-10-14';
+    const ctx = makeCtx({ optionChain: async () => chainAsOf(asOf) });
+    upsertCalendarRow(ctx.db, cal({ timing: 'AMC' }), NOW, TODAY); // AMC today: final needs today's close
+    await snapshotMoves(ctx);
+    expect(all(ctx)[0]!.expectedMove).toMatchObject({ provisional: true, quoteDate: '2026-10-14' });
+    asOf = '2026-10-15';
+    await snapshotMoves(ctx);
+    expect(all(ctx)[0]!.expectedMove).toMatchObject({ provisional: false, quoteDate: '2026-10-15' });
+    asOf = '2026-10-16';
+    await snapshotMoves(ctx);
+    expect(all(ctx)[0]!.expectedMove).toMatchObject({ provisional: false, quoteDate: '2026-10-15' });
   });
   test('any failed header fetch leaves the report pending, even if another candidate succeeded', async () => {
     const f = (accession: string) => ({ accession, filingDate: '2026-10-13', docUrl: 'd', indexUrl: 'i' });
@@ -228,5 +250,14 @@ describe('previous move', () => {
     upsertCalendarRow(ctx.db, cal({ timing: 'AMC' }), NOW, TODAY);
     await snapshotMoves(ctx);
     expect(all(ctx)[0]!.expectedMove?.optionsVolume).toBe(29599);
+  });
+});
+
+describe('sectors', () => {
+  test('sector and industry are set for every row of a symbol', async () => {
+    const ctx = makeCtx({ sectors: async () => new Map([['SCHW', { sector: 'Finance', industry: 'Investment Bankers/Brokers/Service' }]]) });
+    upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
+    await refreshSectors(ctx);
+    expect(all(ctx)[0]).toMatchObject({ sector: 'Finance', industry: 'Investment Bankers/Brokers/Service' });
   });
 });

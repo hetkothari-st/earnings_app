@@ -3,7 +3,7 @@ import type { Sources } from '../jobs/context.js';
 import { fetchCboeChain } from './cboe.js';
 import { fetchFinnhubEarnings } from './finnhub.js';
 import { BROWSER_UA, makeHttp } from './http.js';
-import { fetchDailyCloses, fetchNasdaqCalendar } from './nasdaq.js';
+import { fetchDailyCloses, fetchNasdaqCalendar, fetchSectors } from './nasdaq.js';
 import { fetchAcceptance, fetchEarningsFilings, fetchSecTickers } from './sec.js';
 
 export function createSources(cfg: Config): Sources {
@@ -27,5 +27,6 @@ export function createSources(cfg: Config): Sources {
     secEarningsFilings: async (cik) => { requireSecUa(); return fetchEarningsFilings(sec, cik); },
     secAcceptance: async (cik, accession) => { requireSecUa(); return fetchAcceptance(sec, cik, accession); },
     dailyCloses: (symbol, from, to) => fetchDailyCloses(nasdaq, symbol, from, to),
+    sectors: () => fetchSectors(nasdaq),
   };
 }

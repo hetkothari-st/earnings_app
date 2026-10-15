@@ -6,7 +6,7 @@ import { EarningsTable } from '../src/components/EarningsTable';
 
 const dto = (over: Partial<ReportDto>): ReportDto => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
-  timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
+  timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE', sector: 'Technology', industry: 'Semiconductors',
   marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
   eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6, lastYear: null, lastYearReportDate: null },
   revenue: { estimate: null, actual: null, surprisePct: null, result: null },
@@ -72,15 +72,17 @@ describe('EarningsTable', () => {
     expect(within(tr).getByText('±7.5%')).toBeTruthy();
     expect((tr.querySelector('.move-range') as HTMLElement).style.width).toBe('50%');
   });
-  test('separate symbol, name and date columns; previous move signed and coloured; options volume', () => {
+  test('separate symbol, name, sector and date columns; previous move signed and coloured; provisional move marked', () => {
     render(<EarningsTable rows={[dto({ previousMove: { pct: -2.5, reportDate: '2026-07-16' },
-      expectedMove: { movePct: 4.05, illiquid: false, expiry: '2026-10-16', strike: 97, callMid: 1.9, putMid: 2.1, underlying: 97, optionsVolume: 29599, snapshotAt: '2026-10-14T20:20:00Z' } })]}
+      expectedMove: { movePct: 4.05, illiquid: false, expiry: '2026-10-16', strike: 97, callMid: 1.9, putMid: 2.1, underlying: 97, optionsVolume: 29599, provisional: true, quoteDate: '2026-10-14', snapshotAt: '2026-10-14T20:20:00Z' } })]}
       zone="Asia/Kolkata" hidden={new Set()} showHidden={false} onToggleHidden={vi.fn()} onSelect={vi.fn()} />);
     const tr = screen.getByText('TSM').closest('tr')!;
     expect(within(tr).getByText('Taiwan Semiconductor')).toBeTruthy();
     expect(within(tr).getByText('15 Oct')).toBeTruthy();
     expect(within(tr).getByText('−2.5%').className).toContain('down');
-    expect(within(tr).getByText('29,599')).toBeTruthy();
+    expect(within(tr).getByText('Technology').getAttribute('title')).toBe('Semiconductors');
+    expect(within(tr).getByText('≈±4.1%')).toBeTruthy();
+    expect(within(tr).queryByText('29,599')).toBeNull();
   });
   test('group header shows how many reports it holds', () => {
     renderTable();

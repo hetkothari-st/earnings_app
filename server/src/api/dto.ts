@@ -46,6 +46,8 @@ export function toDto(r: ReportRecord): ReportDto {
     sessionClose: close,
     rescheduledFrom: r.rescheduledFrom,
     exchange: r.exchange,
+    sector: r.sector,
+    industry: r.industry,
     marketCap: r.marketCap,
     marketCapAsOf: r.marketCapAsOf,
     eps: {

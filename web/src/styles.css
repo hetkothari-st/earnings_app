@@ -220,3 +220,6 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 .earnings thead th { text-transform: none; letter-spacing: 0.01em; background: var(--raised); }
 .row:nth-child(even of .row) { background: color-mix(in srgb, var(--raised) 45%, var(--surface)); }
 .market-level { font-size: 14px; }
+
+.sector { color: var(--muted); }
+.provisional { color: var(--muted); }

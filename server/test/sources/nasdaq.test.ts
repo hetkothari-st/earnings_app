@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { nasdaqTiming, parseNasdaqCalendar, parseNasdaqHistory } from '../../src/sources/nasdaq.js';
+import { nasdaqTiming, parseNasdaqCalendar, parseNasdaqHistory, parseNasdaqScreener } from '../../src/sources/nasdaq.js';
 import { SourceFormatError } from '../../src/sources/http.js';
 
 // Shapes copied from live responses on 2026-10-15.
@@ -89,5 +89,18 @@ describe('parseNasdaqHistory', () => {
   });
   test('no rows is an empty map', () => {
     expect(parseNasdaqHistory({ data: { tradesTable: { rows: null } }, status: { rCode: 200 } }).size).toBe(0);
+  });
+});
+
+describe('parseNasdaqScreener', () => {
+  test('sector and industry keyed by normalized ticker; blanks are null', () => {
+    // Shape copied from live screener response on 2026-10-15.
+    const json = { data: { rows: [
+      { symbol: 'TSM', name: 'Taiwan Semiconductor', sector: 'Technology', industry: 'Semiconductors' },
+      { symbol: 'BRK/B', name: 'Berkshire Hathaway', sector: '', industry: '' },
+    ] } };
+    const m = parseNasdaqScreener(json);
+    expect(m.get('TSM')).toEqual({ sector: 'Technology', industry: 'Semiconductors' });
+    expect(m.get('BRK-B')).toEqual({ sector: null, industry: null });
   });
 });

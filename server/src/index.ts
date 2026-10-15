@@ -10,6 +10,8 @@ import { BROWSER_UA, makeHttp } from './sources/http.js';
 import { createSources } from './sources/index.js';
 import { fetchIndexQuote } from './sources/yahoo.js';
 import { computePrevMoves } from './jobs/prevMoves.js';
+import { refreshSectors } from './jobs/sectors.js';
+import { snapshotMoves } from './jobs/snapshotMoves.js';
 
 const db = openDb(config.dbPath);
 const ctx: JobContext = { db, sources: createSources(config), now: () => new Date().toISOString(), today: () => todayET() };
@@ -21,4 +23,8 @@ console.log(`API listening on http://127.0.0.1:${config.port}`);
 
 startScheduler(ctx);
 // Warm the cache on start; failures are recorded in /api/status.
-void refreshResults(ctx).then(() => refreshCalendar(ctx)).then(() => computePrevMoves(ctx));
+void refreshResults(ctx)
+  .then(() => refreshCalendar(ctx))
+  .then(() => refreshSectors(ctx))
+  .then(() => computePrevMoves(ctx))
+  .then(() => snapshotMoves(ctx));
