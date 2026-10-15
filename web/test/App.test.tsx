@@ -25,7 +25,7 @@ beforeEach(() => {
     if (path === '/api/logout') { signedIn = false; return new Response(null, { status: 204 }); }
     if (!signedIn) return json(401, { error: 'Not signed in' });
     if (path === '/api/me') return json(200, { id: '1A' });
-    if (path === '/api/hidden') return json(200, { symbols: [] });
+    if (path === '/api/expanded') return json(200, { symbols: [] });
     if (path === '/api/markets') return json(200, { indices: [] });
     if (path === '/api/earnings') return earningsStatus === 200 ? json(200, { rows: [], sources: [] }) : json(earningsStatus, {});
     return json(404, {});

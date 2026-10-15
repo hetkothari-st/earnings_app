@@ -59,14 +59,14 @@ export async function logout(): Promise<void> {
   await fetch('/api/logout', { method: 'POST' });
 }
 
-export async function fetchHidden(signal?: AbortSignal): Promise<string[]> {
-  const res = await apiFetch('/api/hidden', { signal });
+export async function fetchExpanded(signal?: AbortSignal): Promise<string[]> {
+  const res = await apiFetch('/api/expanded', { signal });
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return ((await res.json()) as { symbols: string[] }).symbols;
 }
 
-export async function saveHidden(symbols: string[]): Promise<void> {
-  const res = await apiFetch('/api/hidden', {
+export async function saveExpanded(symbols: string[]): Promise<void> {
+  const res = await apiFetch('/api/expanded', {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbols }),
   });
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
