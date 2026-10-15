@@ -1,0 +1,75 @@
+import { beforeEach, describe, expect, test } from 'vitest';
+import { toDto } from '../../src/api/dto.js';
+import { buildServer } from '../../src/api/server.js';
+import {
+  type Db, listRange, mergeFinnhubRow, openDb, recordSourceSuccess, saveExpectedMove, setSecResult, upsertCalendarRow,
+} from '../../src/db/repo.js';
+import type { CalendarRow } from '../../src/types.js';
+
+const NOW = '2026-10-15T20:00:00.000Z';
+const cal = (over: Partial<CalendarRow> = {}): CalendarRow => ({
+  symbol: 'SCHW', name: 'Charles Schwab', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026', timing: 'BMO',
+  marketCap: 1.659e11, epsEstimate: 1.66, noOfEsts: 10, epsActual: 1.71, epsSurprisePct: 3, ...over,
+});
+
+let db: Db;
+beforeEach(() => { db = openDb(':memory:'); });
+
+describe('toDto', () => {
+  test('maps results with beat/miss and revenue surprise', () => {
+    upsertCalendarRow(db, cal(), NOW, '2026-10-15');
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'BMO', revenueEstimate: 6e9, revenueActual: 5.7e9 }, NOW);
+    const dto = toDto(listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!);
+    expect(dto.eps).toEqual({ estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10 });
+    expect(dto.revenue).toEqual({ estimate: 6e9, actual: 5.7e9, surprisePct: -5, result: 'miss' });
+    expect(dto.sessionClose).toBe('16:00');
+    expect(dto.flags).toEqual([]);
+  });
+  test('flags: unknown time, backfilled market cap, illiquid, SEC contradiction, timing conflict', () => {
+    upsertCalendarRow(db, cal({ timing: 'UNKNOWN', reportDate: '2026-10-13' }), NOW, '2026-10-15');
+    const r0 = listRange(db, { from: '2026-10-13', to: '2026-10-13', minCap: null, q: null })[0]!;
+    saveExpectedMove(db, r0.id, { expiry: '2026-10-16', strike: 100, callMid: 3, putMid: 3, underlying: 100, movePct: 6, illiquid: true }, NOW);
+    const messages = toDto(listRange(db, { from: '2026-10-13', to: '2026-10-13', minCap: null, q: null })[0]!).flags.map((f) => f.message);
+    expect(messages).toEqual([
+      'Time not announced',
+      'Market cap is current, not at report time',
+      'Illiquid options: zero bid or spread over 30% of mid',
+    ]);
+
+    setSecResult(db, r0.id, { check: 'contradicted', timing: 'AMC', timingSource: 'nasdaq', acceptedAt: '2026-10-13T06:30:38', docUrl: null, indexUrl: null }, NOW);
+    const flags = toDto(listRange(db, { from: '2026-10-13', to: '2026-10-13', minCap: null, q: null })[0]!).flags;
+    expect(flags[0]).toEqual({ field: 'timing', message: 'SEC 8-K accepted 6:30 AM ET, which contradicts AMC' });
+  });
+});
+
+describe('routes', () => {
+  test('GET /api/earnings returns rows and source status', async () => {
+    upsertCalendarRow(db, cal(), NOW, '2026-10-15');
+    recordSourceSuccess(db, 'nasdaq', NOW);
+    const app = buildServer(db);
+    const res = await app.inject({ method: 'GET', url: '/api/earnings?from=2026-10-15&to=2026-10-15&minCap=2000000000' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.rows.map((r: { symbol: string }) => r.symbol)).toEqual(['SCHW']);
+    expect(body.sources[0]).toMatchObject({ source: 'nasdaq', lastSuccessAt: NOW });
+  });
+  test.each([
+    'from=2026-10-15',
+    'from=2026-10-16&to=2026-10-15',
+    'from=2026-02-31&to=2026-03-01',
+    'from=2024-01-01&to=2026-01-01',
+    'from=2026-10-15&to=2026-10-15&minCap=abc',
+  ])('400 for bad query %s', async (qs) => {
+    const res = await buildServer(db).inject({ method: 'GET', url: `/api/earnings?${qs}` });
+    expect(res.statusCode).toBe(400);
+  });
+  test('GET /api/earnings/:id 404 for unknown id', async () => {
+    const res = await buildServer(db).inject({ method: 'GET', url: '/api/earnings/999' });
+    expect(res.statusCode).toBe(404);
+  });
+  test('GET /api/status returns counts', async () => {
+    upsertCalendarRow(db, cal(), NOW, '2026-10-15');
+    const res = await buildServer(db).inject({ method: 'GET', url: '/api/status' });
+    expect(res.json().counts).toEqual({ reports: 1, withExpectedMove: 0, secVerified: 0 });
+  });
+});
