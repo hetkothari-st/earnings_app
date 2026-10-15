@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../../src/api/server.js';
-import { ensureAuthSchema, setUser } from '../../src/auth/store.js';
+import { ensureAuthSchema, listUsers, setAdmin, setUser } from '../../src/auth/store.js';
 import { type Db, listRange, openDb, upsertCalendarRow } from '../../src/db/repo.js';
 
 let template: Db;
@@ -59,7 +59,7 @@ describe('login', () => {
     const res = await login('1a', '00000000');
     expect(res.statusCode).toBe(204);
     const me = await app.inject({ url: '/api/me', headers: sessionHeader(res) });
-    expect(me.json()).toEqual({ id: '1A' });
+    expect(me.json()).toEqual({ id: '1A', isAdmin: false });
   });
 
   test('wrong password, unknown user and malformed bodies all give the same generic 401', async () => {
@@ -96,6 +96,23 @@ describe('login', () => {
   });
 });
 
+describe('roles and last sign-in', () => {
+  test('/api/me reports whether the user is an admin', async () => {
+    setAdmin(db, '2A', true);
+    const a = sessionHeader(await login('1A', '00000000'));
+    const b = sessionHeader(await login('2A', '00000000'));
+    expect((await app.inject({ url: '/api/me', headers: a })).json()).toEqual({ id: '1A', isAdmin: false });
+    expect((await app.inject({ url: '/api/me', headers: b })).json()).toEqual({ id: '2A', isAdmin: true });
+  });
+
+  test('a successful sign-in records the time; a failed one does not', async () => {
+    await login('1A', 'wrong');
+    expect(listUsers(db).find((u) => u.id === '1A')!.lastLoginAt).toBeNull();
+    await login('1A', '00000000');
+    expect(listUsers(db).find((u) => u.id === '1A')!.lastLoginAt).toBe('2026-10-15T12:00:00.000Z');
+  });
+});
+
 describe('session', () => {
   test('/api/me is 401 without a session', async () => {
     const res = await app.inject({ url: '/api/me' });
@@ -112,7 +129,7 @@ describe('session', () => {
   test('cookie is found among other cookies', async () => {
     const res = await login('1A', '00000000');
     const cookie = `theme=dark; ${sessionHeader(res).cookie}; other=x%20y`;
-    expect((await app.inject({ url: '/api/me', headers: { cookie } })).json()).toEqual({ id: '1A' });
+    expect((await app.inject({ url: '/api/me', headers: { cookie } })).json()).toEqual({ id: '1A', isAdmin: false });
   });
 
   test('logout revokes the session and clears the cookie', async () => {

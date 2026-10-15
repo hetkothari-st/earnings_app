@@ -4,8 +4,8 @@ import { parseCookies, serializeCookie } from './cookies.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { LoginLimiter } from './rateLimit.js';
 import {
-  createSession, deleteSession, ensureAuthSchema, findSessionUser, getExpanded, getPasswordHash, normalizeUserId,
-  SESSION_TTL_MS, setExpanded,
+  createSession, deleteSession, ensureAuthSchema, findSessionUser, getExpanded, getPasswordHash, isAdmin, normalizeUserId,
+  recordLogin, SESSION_TTL_MS, setExpanded,
 } from './store.js';
 
 export const SESSION_COOKIE = 'session';
@@ -65,6 +65,7 @@ export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): (
       return reply.code(401).send(WRONG);
     }
     limiter.succeed(id);
+    recordLogin(db, id, new Date(now()).toISOString());
     const { token } = createSession(db, id, now());
     reply.header('set-cookie', serializeCookie(SESSION_COOKIE, token, { maxAgeSeconds: SESSION_TTL_MS / 1000, secure: isHttps(req) }));
     return reply.code(204).send();
@@ -79,7 +80,7 @@ export function registerAuth(app: FastifyInstance, db: Db, opts: AuthOptions): (
 
   app.get('/api/me', async (req, reply) => {
     const user = userOf(req);
-    return user ? { id: user } : reply.code(401).send(NOT_SIGNED_IN);
+    return user ? { id: user, isAdmin: isAdmin(db, user) } : reply.code(401).send(NOT_SIGNED_IN);
   });
 
   const requireUser = (req: FastifyRequest, reply: FastifyReply): string | null => {
