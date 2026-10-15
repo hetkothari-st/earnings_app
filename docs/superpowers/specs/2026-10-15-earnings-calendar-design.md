@@ -48,7 +48,7 @@ Principles:
 Stack:
 
 - TypeScript throughout
-- Backend: Fastify, SQLite via Drizzle ORM, node-cron for scheduling
+- Backend: Fastify, SQLite via Node's built-in `node:sqlite` (no native build step on Windows) with plain SQL, node-cron for scheduling
 - Frontend: React + Vite
 - Time handling: Luxon (IANA time zones, DST-correct)
 - Tests: Vitest
@@ -73,6 +73,15 @@ All of these were tested on 2026-10-15 and returned live data, except Finnhub (n
 2. No exact release minute. Only BMO/AMC, shown as "before 9:30 AM ET" or "after 4:00 PM ET". For past reports, the SEC filing timestamp verifies the label.
 3. Expected move is our own calculation from delayed quotes, not a published vendor figure.
 4. The Nasdaq and Cboe endpoints are unofficial: undocumented, no uptime guarantee, may change, and their terms likely do not permit commercial use. Acceptable for the prototype. Switch to Approach 1 before paying users.
+
+### Findings from live data checks (2026-10-15), which shape the rules below
+
+5. **Nasdaq drops timing for past dates.** For any date that has passed, every row reads `time-not-supplied` (checked 2024-10-15 and 2026-10-13). Consequences:
+   - The app captures timing while a report is still upcoming and never overwrites a known timing with "not supplied".
+   - For the 2-year backfill, timing comes from Finnhub's `hour` field (`bmo` / `amc` / `dmh`), then from the SEC filing time where that proves it. Otherwise it stays "Time not announced".
+6. **Nasdaq market cap is always the current value**, even on past dates (ASML showed the same $662B for 2024-10-15 and 2026-10-14). Market cap is frozen once a report date passes. Backfilled rows are flagged "Market cap is current, not at report time".
+7. **An 8-K can be filed after the press release, never before it is public.** The SEC acceptance time is therefore an upper bound on the release time, not the release time itself. Example: JPM's Q3 2026 8-K was accepted at 06:30:38 ET, consistent with its pre-market release. See section 6.6 for which timestamp field to trust.
+8. **Cboe only provides the current options chain.** No free historical options data exists, so the expected move is available only for reports snapshotted from launch onward. Backfilled history shows "—".
 
 ## 5. Screens
 
@@ -149,6 +158,7 @@ At phone width, each row is shown as a card. No horizontal page scroll.
 3. **Mid:** mid = (bid + ask) / 2 for both the call and the put at that strike.
 4. **Move %:** move % = (call mid + put mid) / underlying price × 100.
 5. **Snapshot timing:** the last close before the report. For BMO, that is the close of D−1 (previous trading day). For AMC, it is the close of D. The snapshot time is stored and shown.
+   - DMH or "time not announced": expiry is the first strictly after D, and the snapshot is taken at the D−1 close. That covers either case.
 6. **Guards:**
    - If either bid is 0, or either spread (ask − bid) exceeds 30% of its mid, the value is shown with ⚠ "illiquid".
    - If no options are listed, or no expiry qualifies, show "—".
@@ -168,19 +178,45 @@ At phone width, each row is shown as a card. No horizontal page scroll.
 
 ### 6.5 Market cap
 
-From the Nasdaq calendar row, stored with its fetch date. If missing or unparseable, show "—".
+- Comes from the Nasdaq calendar row and is stored with its fetch date. If missing or unparseable, show "—".
+- It is refreshed only while the report date is today or later, then frozen.
+- If the stored as-of date is after the report date (backfilled rows), the cell shows ⚠ "Market cap is current, not at report time".
 
 ### 6.6 SEC cross-check (past reports)
 
-- For each report with a past date, find the company's 8-K containing Item 2.02 with a filing date of D or the next business day (EDGAR assigns the next business day's filing date to filings accepted after 5:30 PM ET). Matching uses the acceptance timestamp, not the filing date.
-- Classify the EDGAR acceptance timestamp, converted to ET:
-  - before 9:30 → BMO
-  - at or after 16:00 (or the early-close time) → AMC
-  - otherwise → "during market hours"
-- If the result matches Nasdaq's label, the timing is marked verified (✓ in the detail panel).
-- If it contradicts the label, show ⚠ with both values. The SEC result is treated as stronger evidence, but the label is not auto-changed.
-- "During market hours" is shown with ⚠. It is often just a late filing after a pre-market press release.
-- Store the 8-K and Exhibit 99.1 URLs for the detail panel.
+An 8-K is filed at or after the press release, so its acceptance time T is an **upper bound** on the release time. That bound can prove a BMO release, or disprove an AMC label. It can never prove an AMC release.
+
+- Candidate filings come from the SEC submissions API: form `8-K`, items include `2.02`, and `filingDate` is D or the next business day. Use the earliest by acceptance time. If there is none, the timing is unverifiable.
+- **The acceptance time T is read from the filing's SGML header** (`.../{accession}.hdr.sgml`, line `<ACCEPTANCE-DATETIME>yyyyMMddHHmmss`), which is ET wall-clock time.
+  - Do not use the submissions API's `acceptanceDateTime`. It carries a "Z" suffix but is not UTC.
+  - Checked on JPM: header 06:30:38 ET vs API `14:30:38Z` in October, and 06:41:09 vs `16:41:09Z` in January. The gap shifts with DST.
+  - Only filings whose T falls on D are used.
+- Derive from T on day D:
+  - before 9:30 → released before the open (BMO)
+  - at or after the session close (16:00, or 13:00 on early-close days) → filed after close
+  - otherwise → released by T, during the session
+- The label is the timing from Nasdaq or Finnhub. Result:
+
+| Label | T before 9:30 | T during session | T after close |
+|---|---|---|---|
+| BMO | verified ✓ | unverifiable | unverifiable |
+| AMC | contradicted ⚠ | contradicted ⚠ | consistent ≈ |
+| DMH | contradicted ⚠ | consistent ≈ | unverifiable |
+| Not announced | set to BMO (source: SEC) | unverifiable | unverifiable |
+
+- "Contradicted" shows ⚠ with both values. The label is not auto-changed.
+- "Unverifiable" shows no warning. The detail panel shows the SEC acceptance time.
+- Store the 8-K document URL and the filing index URL (which lists Exhibit 99.1) for the detail panel.
+- The SEC submissions API's `recent` block covers roughly the last 1,000 filings. For very old reports at very active filers, a missing filing means "unverifiable", never "contradicted".
+
+### 6.6a Timing source priority
+
+Use the first available:
+1. Nasdaq, captured while the report was upcoming.
+2. Finnhub `hour` (`bmo` → BMO, `amc` → AMC, `dmh` → during market hours).
+3. SEC-derived BMO (table above).
+
+If Nasdaq and Finnhub disagree, keep Nasdaq's label and flag ⚠ with both values. "DMH" is displayed as "During market hours (9:30 AM–4:00 PM)".
 
 ### 6.7 Reschedules
 
