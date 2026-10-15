@@ -25,6 +25,14 @@ test('calls back with the changed report ids and closes on unmount', () => {
   expect(FakeSource.last!.closed).toBe(true);
 });
 
+test('live expected-move updates call the second callback', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  const onMoves = vi.fn();
+  renderHook(() => useLiveResults(vi.fn(), onMoves));
+  FakeSource.last!.emit('moves', { ids: [2] });
+  expect(onMoves).toHaveBeenCalledWith([2]);
+});
+
 test('does nothing where EventSource is unavailable', () => {
   vi.stubGlobal('EventSource', undefined);
   expect(() => renderHook(() => useLiveResults(vi.fn()))).not.toThrow();

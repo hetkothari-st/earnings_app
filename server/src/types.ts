@@ -42,6 +42,15 @@ export interface OptionChain {
   quotes: OptionQuote[];
   asOfDate?: string | null;  // date of the underlying's last regular trade (YYYY-MM-DD)
   totalVolume?: number;      // contracts traded across the standard chain that day
+  quoteTime?: string | null; // ET wall clock of the quotes (YYYY-MM-DDTHH:mm:ss), from the feed
+}
+
+/** Intraday expected move, refreshed through the session from (delayed) quotes. */
+export interface LiveMove {
+  movePct: number;
+  illiquid: boolean;
+  quoteTime: string | null;
+  fetchedAt: string;
 }
 
 export interface ExpectedMove {
@@ -101,4 +110,5 @@ export interface ReportRecord {
   prevMoveBasis: PrevMoveBasis | null;
   sector: string | null;
   industry: string | null;
+  liveMove: LiveMove | null;
 }

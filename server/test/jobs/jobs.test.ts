@@ -4,6 +4,7 @@ import { backfill } from '../../src/jobs/backfill.js';
 import type { JobContext, Sources } from '../../src/jobs/context.js';
 import { refreshCalendar } from '../../src/jobs/refreshCalendar.js';
 import { computePrevMoves } from '../../src/jobs/prevMoves.js';
+import { refreshLiveMoves } from '../../src/jobs/liveMoves.js';
 import { refreshSectors } from '../../src/jobs/sectors.js';
 import { refreshResults } from '../../src/jobs/refreshResults.js';
 import { secSync } from '../../src/jobs/secSync.js';
@@ -295,5 +296,38 @@ describe('sectors', () => {
     upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
     await refreshSectors(ctx);
     expect(all(ctx)[0]).toMatchObject({ sector: 'Finance', industry: 'Investment Bankers/Brokers/Service' });
+  });
+});
+
+describe('live expected move', () => {
+  const live = (quoteTime: string, bid: number): OptionChain => ({
+    underlying: 100, asOfDate: '2026-10-14', quoteTime,
+    quotes: [
+      { expiry: '2026-10-16', type: 'C', strike: 100, bid, ask: bid + 0.2 },
+      { expiry: '2026-10-16', type: 'P', strike: 100, bid, ask: bid + 0.2 },
+    ],
+  });
+  test('tracks reports whose release is still ahead: AMC today and BMO next session, not BMO today', async () => {
+    const optionChain = vi.fn(async () => live('2026-10-15T11:03:00', 2.9));
+    const ctx = makeCtx({ optionChain });
+    upsertCalendarRow(ctx.db, cal({ symbol: 'AMCT', timing: 'AMC' }), NOW, TODAY);
+    upsertCalendarRow(ctx.db, cal({ symbol: 'BMOT', timing: 'BMO' }), NOW, TODAY);
+    upsertCalendarRow(ctx.db, cal({ symbol: 'BMON', reportDate: '2026-10-16', timing: 'BMO' }), NOW, TODAY);
+    const changed = await refreshLiveMoves(ctx);
+    const rows = all(ctx);
+    expect(rows.find((r) => r.symbol === 'AMCT')!.liveMove).toMatchObject({ movePct: 6, quoteTime: '2026-10-15T11:03:00' });
+    expect(rows.find((r) => r.symbol === 'BMON')!.liveMove?.movePct).toBe(6);
+    expect(rows.find((r) => r.symbol === 'BMOT')!.liveMove).toBeNull();
+    expect(changed.sort()).toEqual([rows.find((r) => r.symbol === 'AMCT')!.id, rows.find((r) => r.symbol === 'BMON')!.id].sort());
+  });
+  test('reports only ids whose live value changed', async () => {
+    let bid = 2.9;
+    const ctx = makeCtx({ optionChain: async () => live('2026-10-15T11:03:00', bid) });
+    upsertCalendarRow(ctx.db, cal({ timing: 'AMC' }), NOW, TODAY);
+    await refreshLiveMoves(ctx);
+    expect(await refreshLiveMoves(ctx)).toEqual([]);
+    bid = 3.4;
+    expect(await refreshLiveMoves(ctx)).toHaveLength(1);
+    expect(all(ctx)[0]!.liveMove?.movePct).toBe(7);
   });
 });

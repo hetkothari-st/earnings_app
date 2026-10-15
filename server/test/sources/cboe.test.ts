@@ -21,6 +21,7 @@ describe('cboe', () => {
       underlying: 335.28,
       asOfDate: null,
       totalVolume: 0,
+      quoteTime: '2026-10-15T02:18:14',
       quotes: [
         { expiry: '2026-10-16', type: 'C', strike: 180, bid: 153.3, ask: 157.25 },
         { expiry: '2026-10-16', type: 'P', strike: 180, bid: 0, ask: 0.01 },
@@ -42,6 +43,10 @@ describe('cboe', () => {
       { option: 'XYZ1261016C00100000', bid: 9, ask: 9.5, volume: 50 },
     ] } }, 'XYZ');
     expect(chain?.totalVolume).toBe(2000);
+  });
+  test('quote time comes from the payload timestamp (ET)', () => {
+    const chain = parseCboeChain({ timestamp: '2026-10-15 14:42:10', data: { close: 100, options: [] } }, 'X');
+    expect(chain?.quoteTime).toBe('2026-10-15T14:42:10');
   });
   test('class-share root has no dot', () => {
     const chain = parseCboeChain({ data: { close: 400, options: [{ option: 'BRKB261016C00400000', bid: 3, ask: 3.2 }] } }, 'BRK/B');

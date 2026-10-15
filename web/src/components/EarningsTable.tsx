@@ -21,7 +21,7 @@ const ORDER: Timing[] = ['BMO', 'DMH', 'AMC', 'UNKNOWN'];
 const GROUP_LABEL: Record<Timing, string> = {
   BMO: 'Before open', DMH: 'During market', AMC: 'After close', UNKNOWN: 'Time not announced',
 };
-const COLS = 12;
+const COLS = 13;
 const BASIS_NOTE: Record<'known' | 'sec-inferred' | 'assumed', string> = {
   known: '',
   'sec-inferred': ' Release time inferred as after the close from the SEC filing time.',
@@ -83,6 +83,7 @@ export function EarningsTable({ rows, zone, expanded, sort, onToggle, onSelect, 
           <th scope="col">Your time ({tz})</th>
           <th scope="col" className="num">Previous move</th>
           <th scope="col" className="num">Expected move</th>
+          <th scope="col" className="num" title="Expected move from live options trading, 15-minute delayed quotes, refreshed every 3 minutes. The change is against the value at the last close.">Live exp. move</th>
           <th scope="col" className="num">Market cap</th>
           <th scope="col" className="num">EPS est / act</th>
           <th scope="col" className="num">Revenue est / act</th>
@@ -166,6 +167,18 @@ function Details({ r, zone }: { r: ReportDto; zone: string }) {
             </span>
           </span>
         ) : '—'} <Warn flags={flags('expectedMove')} />
+      </td>
+      <td data-label="Live exp. move" className="num">
+        {r.liveMove ? (
+          <span title={r.liveMove.quoteTime ? `Quotes as of ${r.liveMove.quoteTime.slice(11, 16)} ET (15-minute delay)` : undefined}>
+            <span>±{(Math.round(r.liveMove.movePct * 10 + 1e-9) / 10).toFixed(1)}%</span>
+            {r.liveMove.changePp != null && r.liveMove.changePp !== 0 && (
+              <span className={`live-change ${changeClass(r.liveMove.changePp)}`}>
+                {r.liveMove.changePp > 0 ? '+' : '−'}{Math.abs(r.liveMove.changePp).toFixed(1)}
+              </span>
+            )}
+          </span>
+        ) : '—'}
       </td>
       <td data-label="Market cap" className="num">{formatUsd(r.marketCap)} <Warn flags={flags('marketCap')} /></td>
       <td data-label="EPS est / act" className="num"><Result part={r.eps} format={formatEps} /> <Warn flags={flags('eps')} /></td>

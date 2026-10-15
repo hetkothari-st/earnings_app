@@ -53,6 +53,17 @@ describe('EPS surprise and conflicts', () => {
   });
 });
 
+describe('live move in DTO', () => {
+  test('change is measured against the expected move at the last close', () => {
+    upsertCalendarRow(db, cal({ timing: 'AMC' }), NOW, '2026-10-15');
+    const r = listRange(db, { from: '2026-10-15', to: '2026-10-15', minCap: null, q: null })[0]!;
+    const em = { expiry: '2026-10-16', strike: 100, callMid: 2, putMid: 1.8, underlying: 100, movePct: 3.8, illiquid: false, snapshotAt: NOW, provisional: true, quoteDate: '2026-10-14' };
+    const dto = toDto({ ...r, expectedMove: em, liveMove: { movePct: 4.1, illiquid: false, quoteTime: '2026-10-15T11:03:00', fetchedAt: NOW } });
+    expect(dto.liveMove).toEqual({ movePct: 4.1, changePp: 0.3, illiquid: false, quoteTime: '2026-10-15T11:03:00' });
+    expect(toDto({ ...r, expectedMove: null, liveMove: { movePct: 4.1, illiquid: false, quoteTime: 'x', fetchedAt: NOW } }).liveMove?.changePp).toBeNull();
+  });
+});
+
 describe('expected-move guard', () => {
   test('a snapshot whose expiry no longer fits the timing is not shown', () => {
     upsertCalendarRow(db, cal({ timing: 'AMC', reportDate: '2026-10-16' }), NOW, '2026-10-15');

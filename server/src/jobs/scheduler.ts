@@ -3,6 +3,7 @@ import { recordSourceError } from '../db/repo.js';
 import { CalendarCoverageError, ET } from '../domain/marketCalendar.js';
 import type { JobContext } from './context.js';
 import { refreshCalendar } from './refreshCalendar.js';
+import { refreshLiveMoves } from './liveMoves.js';
 import { refreshResults } from './refreshResults.js';
 import { computePrevMoves } from './prevMoves.js';
 import { refreshSectors } from './sectors.js';
@@ -32,7 +33,11 @@ export function createJobRunner(ctx: JobContext): JobRunner {
 }
 
 /** Spec section 7. All cron expressions are evaluated in America/New_York. */
-export function startScheduler(ctx: JobContext, onResults: (ids: number[]) => void = () => {}): JobRunner {
+export function startScheduler(
+  ctx: JobContext,
+  onResults: (ids: number[]) => void = () => {},
+  onMoves: (ids: number[]) => void = () => {},
+): JobRunner {
   const job = createJobRunner(ctx);
   const opts = { timezone: ET };
   const results = job('results', () => refreshResults(ctx).then((ids) => { if (ids.length) onResults(ids); }));
@@ -44,6 +49,10 @@ export function startScheduler(ctx: JobContext, onResults: (ids: number[]) => vo
   schedule('* 16-19 * * 1-5', results, opts);
   schedule('0 20 * * 1-5', results, opts);
   schedule('20 16 * * 1-5', job('moves', () => snapshotMoves(ctx)), opts);
+  // Intraday expected move every 3 minutes through the session (quotes are 15 minutes delayed).
+  const live = job('live', () => refreshLiveMoves(ctx).then((ids) => { if (ids.length) onMoves(ids); }));
+  schedule('*/3 9-15 * * 1-5', live, opts);
+  schedule('0-15/3 16 * * 1-5', live, opts);
   schedule('0 23 * * *', job('sec', () => secSync(ctx).then(() => refreshSectors(ctx)).then(() => computePrevMoves(ctx))), opts);
   return job;
 }

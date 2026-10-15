@@ -34,7 +34,7 @@ export function Calendar() {
     setHighlight(new Set(ids));
     setReloadKey((k) => k + 1);
     window.setTimeout(() => setHighlight(new Set()), 6000);
-  });
+  }, () => setReloadKey((k) => k + 1));
   const { expanded, toggle } = useExpanded();
   const { zone, isOverride, setZone } = useZone();
 

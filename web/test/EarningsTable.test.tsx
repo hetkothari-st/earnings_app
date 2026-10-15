@@ -10,7 +10,7 @@ const dto = (over: Partial<ReportDto>): ReportDto => ({
   marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
   eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6, lastYear: null, lastYearReportDate: null },
   revenue: { estimate: null, actual: null, surprisePct: null, result: null },
-  expectedMove: null, previousMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
+  expectedMove: null, liveMove: null, previousMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
   fetched: { calendar: null, revenue: null, sec: null }, flags: [], ...over,
 });
 
@@ -99,6 +99,13 @@ describe('EarningsTable', () => {
     renderTable({ highlight: new Set([3]) });
     expect(screen.getByText('SCHW').closest('tr')!.className).toContain('just-updated');
     expect(screen.getByText('TSM').closest('tr')!.className).not.toContain('just-updated');
+  });
+  test('live expected move shows the value and its signed change since the last close', () => {
+    render(<EarningsTable rows={[dto({ liveMove: { movePct: 4.1, changePp: 0.3, illiquid: false, quoteTime: '2026-10-15T11:03:00' } })]}
+      zone="Asia/Kolkata" expanded={new Set(['TSM'])} sort="date" onToggle={vi.fn()} onSelect={vi.fn()} />);
+    const tr = screen.getByText('TSM').closest('tr')!;
+    expect(within(tr).getByText('±4.1%')).toBeTruthy();
+    expect(within(tr).getByText('+0.3').className).toContain('up');
   });
   test('empty state', () => {
     renderTable({ rows: [] });

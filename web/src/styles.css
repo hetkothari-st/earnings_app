@@ -136,7 +136,7 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .market-level { grid-column: 2; grid-row: 1; text-align: right; font-weight: 600; }
 .market-change { grid-column: 2; grid-row: 2; text-align: right; font-size: 12px; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
-.table-wrap table.earnings { border: 0; border-radius: 0; min-width: 1240px; }
+.table-wrap table.earnings { border: 0; border-radius: 0; min-width: 1340px; }
 .num, .earnings .num { text-align: right; white-space: nowrap; }
 .est { color: var(--muted); }
 .sep { color: var(--line); }
@@ -275,3 +275,5 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
   .earnings tr.row.collapsed td.name-cell { margin-bottom: 0; }
   .earnings tr.row.collapsed td.collapsed-rest { display: none; }
 }
+
+.live-change { margin-left: 6px; font-size: 12px; }

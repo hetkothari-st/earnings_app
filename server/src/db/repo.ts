@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { SourceStatusDto } from '../api/types.js';
 import { normalizeTicker } from '../domain/ticker.js';
 import type {
-  CalendarRow, ExpectedMove, PrevMoveBasis, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
+  CalendarRow, ExpectedMove, LiveMove, PrevMoveBasis, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
 } from '../types.js';
 
 export type Db = DatabaseSync;
@@ -64,6 +64,13 @@ CREATE TABLE IF NOT EXISTS expected_moves (
   provisional INTEGER NOT NULL DEFAULT 0,
   quote_date TEXT,
   snapshot_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS live_moves (
+  report_id INTEGER PRIMARY KEY REFERENCES reports (id) ON DELETE CASCADE,
+  move_pct REAL NOT NULL,
+  illiquid INTEGER NOT NULL,
+  quote_time TEXT,
+  fetched_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS source_status (
   source TEXT PRIMARY KEY,
@@ -125,13 +132,15 @@ interface ReportRow {
 
 interface JoinedRow extends ReportRow {
   em_expiry: string | null; em_strike: number | null; em_call_mid: number | null; em_put_mid: number | null;
-  em_underlying: number | null; em_move_pct: number | null; em_illiquid: number | null; em_options_volume: number | null; em_provisional: number | null; em_quote_date: string | null; em_snapshot_at: string | null;
+  em_underlying: number | null; em_move_pct: number | null; em_illiquid: number | null; em_options_volume: number | null; em_provisional: number | null; em_quote_date: string | null; lm_move_pct: number | null; lm_illiquid: number | null;
+  lm_quote_time: string | null; lm_fetched_at: string | null; em_snapshot_at: string | null;
 }
 
 const SELECT_REPORT = `
 SELECT r.*, m.expiry AS em_expiry, m.strike AS em_strike, m.call_mid AS em_call_mid, m.put_mid AS em_put_mid,
        m.underlying AS em_underlying, m.move_pct AS em_move_pct, m.illiquid AS em_illiquid, m.options_volume AS em_options_volume, m.provisional AS em_provisional, m.quote_date AS em_quote_date, m.snapshot_at AS em_snapshot_at
-FROM reports r LEFT JOIN expected_moves m ON m.report_id = r.id`;
+, l.move_pct AS lm_move_pct, l.illiquid AS lm_illiquid, l.quote_time AS lm_quote_time, l.fetched_at AS lm_fetched_at
+FROM reports r LEFT JOIN expected_moves m ON m.report_id = r.id LEFT JOIN live_moves l ON l.report_id = r.id`;
 
 function toRecord(r: JoinedRow): ReportRecord {
   return {
@@ -149,6 +158,9 @@ function toRecord(r: JoinedRow): ReportRecord {
       snapshotAt: r.em_snapshot_at,
     },
     prevMovePct: r.prev_move_pct, prevMoveDate: r.prev_move_date, prevMoveBasis: r.prev_move_basis, sector: r.sector, industry: r.industry,
+    liveMove: r.lm_fetched_at == null ? null : {
+      movePct: r.lm_move_pct!, illiquid: r.lm_illiquid === 1, quoteTime: r.lm_quote_time, fetchedAt: r.lm_fetched_at,
+    },
   };
 }
 
@@ -429,4 +441,19 @@ export function actualsByReport(db: Db, from: string, to: string): Map<number, s
   const rows = db.prepare(`SELECT id, eps_actual AS e, revenue_actual AS r FROM reports WHERE report_date BETWEEN ? AND ?`)
     .all(from, to) as unknown as { id: number; e: number | null; r: number | null }[];
   return new Map(rows.map((x) => [x.id, `${x.e}|${x.r}`]));
+}
+
+/** Reports dated in [from, to]; the caller decides which are still before their release. */
+export function reportsInRange(db: Db, from: string, to: string): { id: number; symbol: string; reportDate: string; timing: Timing }[] {
+  return db.prepare(`SELECT id, symbol, report_date AS reportDate, timing FROM reports
+      WHERE report_date BETWEEN ? AND ? ORDER BY report_date, market_cap DESC`)
+    .all(from, to) as unknown as { id: number; symbol: string; reportDate: string; timing: Timing }[];
+}
+
+/** Saves the live move; returns true when the value differs from the stored one. */
+export function saveLiveMove(db: Db, reportId: number, m: Omit<LiveMove, 'fetchedAt'>, now: string): boolean {
+  const prev = db.prepare('SELECT move_pct AS p FROM live_moves WHERE report_id = ?').get(reportId) as unknown as { p: number } | undefined;
+  db.prepare(`INSERT OR REPLACE INTO live_moves (report_id, move_pct, illiquid, quote_time, fetched_at) VALUES (?, ?, ?, ?, ?)`)
+    .run(reportId, m.movePct, m.illiquid ? 1 : 0, m.quoteTime, now);
+  return prev?.p !== m.movePct;
 }

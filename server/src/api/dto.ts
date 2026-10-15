@@ -66,6 +66,12 @@ export function toDto(r: ReportRecord): ReportDto {
       result: beatMiss(r.revenueActual, r.revenueEstimate),
     },
     expectedMove: em,
+    liveMove: r.liveMove ? {
+      movePct: r.liveMove.movePct,
+      changePp: r.expectedMove ? Math.round((r.liveMove.movePct - r.expectedMove.movePct) * 100) / 100 : null,
+      illiquid: r.liveMove.illiquid,
+      quoteTime: r.liveMove.quoteTime,
+    } : null,
     previousMove: r.prevMovePct != null && r.prevMoveDate
       ? { pct: r.prevMovePct, reportDate: r.prevMoveDate, basis: r.prevMoveBasis ?? 'known' }
       : null,

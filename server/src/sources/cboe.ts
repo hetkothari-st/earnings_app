@@ -4,6 +4,7 @@ import type { OptionChain, OptionQuote } from '../types.js';
 import { type Http, HttpError, SourceFormatError } from './http.js';
 
 const ResponseSchema = z.object({
+  timestamp: z.string().nullish(),
   data: z.object({
     close: z.number().nullish(),
     last_trade_time: z.string().nullish(),
@@ -32,7 +33,12 @@ export function parseCboeChain(json: unknown, symbol: string): OptionChain | nul
     quotes.push({ ...p, bid: o.bid ?? 0, ask: o.ask ?? 0 });
     totalVolume += o.volume ?? 0;
   }
-  return { underlying: close, quotes, totalVolume, asOfDate: last_trade_time ? last_trade_time.slice(0, 10) : null };
+  const ts = parsed.data.timestamp;
+  return {
+    underlying: close, quotes, totalVolume,
+    asOfDate: last_trade_time ? last_trade_time.slice(0, 10) : null,
+    quoteTime: ts && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(ts) ? ts.replace(' ', 'T') : null,
+  };
 }
 
 export async function fetchCboeChain(http: Http, symbol: string): Promise<OptionChain | null> {
