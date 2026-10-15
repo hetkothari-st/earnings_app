@@ -21,9 +21,12 @@ const EARLY_CLOSES: Record<number, string[]> = {
   2028: ['2028-07-03', '2028-11-24'],
 };
 
+/** Thrown for dates in years the holiday tables do not cover yet. */
+export class CalendarCoverageError extends RangeError {}
+
 function covered(date: string): number {
   const y = Number(date.slice(0, 4));
-  if (!(y in HOLIDAYS)) throw new RangeError(`Market calendar does not cover ${date}; add ${y} to marketCalendar.ts`);
+  if (!(y in HOLIDAYS)) throw new CalendarCoverageError(`Market calendar does not cover ${date}; add ${y} to marketCalendar.ts`);
   return y;
 }
 
