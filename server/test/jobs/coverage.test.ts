@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import { listRange, openDb, saveExpectedMove, upsertCalendarRow } from '../../src/db/repo.js';
-import { computeCoverage, runCoverageCheck } from '../../src/jobs/coverage.js';
+import { computeCoverage, coverageOk, runCoverageCheck } from '../../src/jobs/coverage.js';
 import { saveFoList, saveInExpectedMove, upsertInCalendarRow } from '../../src/india/db/inRepo.js';
 import type { CalendarRow } from '../../src/types.js';
 
@@ -33,6 +33,12 @@ function seedUs(db: ReturnType<typeof openDb>) {
 }
 
 describe('coverage', () => {
+  test('ok uses the exact share, not the rounded percentage', () => {
+    expect(coverageOk(8496, 10000, 85)).toBe(false); // 84.96% rounds to 85.0 but is below
+    expect(coverageOk(8500, 10000, 85)).toBe(true);
+    expect(coverageOk(0, 0, 85)).toBe(false);
+  });
+
   test('coverage counts filled fields over the next 14 days', () => {
     const db = openDb(':memory:');
     seedUs(db);

@@ -26,6 +26,11 @@ const FIELDS: Record<Market, FieldDef[]> = {
 };
 
 /** How much of the next 14 days' reports (7 for expectedMove) have each field. `today` is the market's own date. */
+/** Compares the exact share, not the rounded pct: 84.96% against a minimum of 85 fails. */
+export function coverageOk(filled: number, total: number, min: number): boolean {
+  return total > 0 && filled * 100 >= min * total;
+}
+
 export function computeCoverage(db: Db, market: Market, today: string): CoverageRow[] {
   const from = today;
   const to14 = addDays(today, 14);
@@ -39,7 +44,7 @@ export function computeCoverage(db: Db, market: Market, today: string): Coverage
         FROM ${source} WHERE r.report_date >= ? AND r.report_date <= ?`).get(from, to) as unknown as { total: number; filled: number };
     const pct = row.total === 0 ? 0 : Math.round((row.filled / row.total) * 1000) / 10;
     // No reports in the window is itself a failure for a pre-demo check.
-    return { field: f.field, filled: row.filled, total: row.total, pct, min: f.min, ok: row.total > 0 && pct >= f.min };
+    return { field: f.field, filled: row.filled, total: row.total, pct, min: f.min, ok: coverageOk(row.filled, row.total, f.min) };
   });
 }
 
