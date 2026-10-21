@@ -324,9 +324,10 @@ export type InFastGates = Pick<typeof config.fastFields, 'inEps' | 'inRevenue' |
 interface PrelimRow {
   eps_actual: number | null; revenue_actual: number | null; pnl_actual: number | null; nature: string | null;
   eps_prelim: number | null; revenue_prelim: number | null; pnl_prelim: number | null; prelim_basis: string | null; prelim_at: string | null;
+  revenue_kind: string | null; revenue_prelim_kind: string | null;
 }
-const PRELIM_SELECT = `SELECT eps_actual, revenue_actual, pnl_actual, nature, eps_prelim, revenue_prelim, pnl_prelim, prelim_basis, prelim_at
-  FROM in_reports WHERE id = ?`;
+const PRELIM_SELECT = `SELECT eps_actual, revenue_actual, pnl_actual, nature, eps_prelim, revenue_prelim, pnl_prelim, prelim_basis, prelim_at,
+  revenue_kind, revenue_prelim_kind FROM in_reports WHERE id = ?`;
 
 /**
  * Store values read from the results PDF, only for fields whose gate is open and that have no official
@@ -340,9 +341,9 @@ export function saveInPrelim(db: DatabaseSync, id: number, v: InPrelimValues, at
   const revenue = gates.inRevenue && r.revenue_actual == null && v.revenueKind ? v.revenue : null;
   const pnl = gates.inProfit && r.pnl_actual == null ? v.profit : null;
   if (eps == null && revenue == null && pnl == null) return false;
-  db.prepare(`UPDATE in_reports SET eps_prelim = ?, revenue_prelim = ?, pnl_prelim = ?, prelim_basis = ?, prelim_at = ?,
+  db.prepare(`UPDATE in_reports SET eps_prelim = ?, revenue_prelim = ?, revenue_prelim_kind = ?, pnl_prelim = ?, prelim_basis = ?, prelim_at = ?,
       revenue_kind = CASE WHEN ? IS NOT NULL AND revenue_actual IS NULL THEN ? ELSE revenue_kind END WHERE id = ?`)
-    .run(eps, revenue, pnl, v.basis, at, revenue, v.revenueKind, id);
+    .run(eps, revenue, revenue != null ? v.revenueKind : null, pnl, v.basis, at, revenue, v.revenueKind, id);
   return true;
 }
 
@@ -350,7 +351,8 @@ export function saveInPrelim(db: DatabaseSync, id: number, v: InPrelimValues, at
  * Called after an official (XBRL) figure is written. On the same basis a match (EPS within 0.01, revenue and
  * profit within 0.5%) clears the prelim and a mismatch clears it with the field marked corrected. A consolidated
  * official figure clears a standalone prelim without a correction (another basis); a standalone official figure
- * leaves a consolidated prelim in place (consolidated wins) until the consolidated filing arrives.
+ * leaves a consolidated prelim in place (consolidated wins) until the consolidated filing arrives. A revenue
+ * prelim of the other kind (total income vs revenue from operations) is cleared without a correction.
  */
 export function confirmInPrelim(db: DatabaseSync, id: number): void {
   const r = db.prepare(PRELIM_SELECT).get(id) as unknown as PrelimRow | undefined;
@@ -363,7 +365,9 @@ export function confirmInPrelim(db: DatabaseSync, id: number): void {
   };
   const pct = (a: number, p: number) => Math.abs(a - p) > Math.abs(a) * 0.005 + 1e-9;
   const eps = check(r.eps_prelim, r.eps_actual, (a, p) => Math.abs(a - p) > 0.01 + 1e-9);
-  const rev = check(r.revenue_prelim, r.revenue_actual, pct);
+  // Total income and revenue from operations are different figures: no correction across kinds.
+  const sameKind = r.revenue_prelim_kind == null || r.revenue_prelim_kind === r.revenue_kind;
+  const rev = check(r.revenue_prelim, r.revenue_actual, (a, p) => sameKind && pct(a, p));
   const pnl = check(r.pnl_prelim, r.pnl_actual, pct);
   if (!eps.clear && !rev.clear && !pnl.clear) return;
   const left = (r.eps_prelim != null && !eps.clear) || (r.revenue_prelim != null && !rev.clear) || (r.pnl_prelim != null && !pnl.clear);

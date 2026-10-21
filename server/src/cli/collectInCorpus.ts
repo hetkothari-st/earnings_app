@@ -30,11 +30,16 @@ const gate = async () => {
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   last = Date.now();
 };
+const HOST = 'https://nsearchives.nseindia.com/';
 const inner = makeHttp({ minIntervalMs: 0, headers: { 'User-Agent': BROWSER_UA }, retries: 0 });
 const http: Http = {
-  json: async (u) => { await gate(); return inner.json(u); },
+  json: async (u) => {
+    if (!u.startsWith(HOST)) throw new Error(`host not allowed: ${u}`);
+    await gate();
+    return inner.json(u);
+  },
   text: async (u) => {
-    if (!u.startsWith('https://nsearchives.nseindia.com/')) throw new Error(`host not allowed: ${u}`);
+    if (!u.startsWith(HOST)) throw new Error(`host not allowed: ${u}`);
     await gate();
     const body = await inner.text(u);
     if (looksBlocked(200, body)) throw new Error('blocked (block page instead of the document)');

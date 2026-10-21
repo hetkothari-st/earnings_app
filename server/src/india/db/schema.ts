@@ -96,6 +96,7 @@ export const IN_ADDED_COLUMNS: Record<string, [string, string][]> = {
     ['eps_corrected', 'INTEGER'],
     ['revenue_corrected', 'INTEGER'],
     ['pnl_corrected', 'INTEGER'],
+    ['revenue_prelim_kind', 'TEXT'], // 'revenue-from-ops' | 'total-income' of revenue_prelim
   ],
   in_expected_moves: [['final', 'INTEGER NOT NULL DEFAULT 0']],
 };

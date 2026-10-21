@@ -109,6 +109,8 @@ void (async () => {
     return next;
   };
   const inReader = async (pdfUrl: string, reportId: number): Promise<void> => {
+    const g = config.fastFields;
+    if (!g.inEps && !g.inRevenue && !g.inProfit) return; // no field is live: nothing would be stored
     const rep = getInReport(db, reportId);
     if (!rep) return;
     const v = await readInResultsPdf(await queuedPdf(pdfUrl), rep.quarterEnd);

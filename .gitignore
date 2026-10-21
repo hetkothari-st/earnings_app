@@ -15,3 +15,4 @@ server/debug_*.mjs
 .claude/
 .superpowers/
 server/test/fixtures/us/releases/report.json
+server/test/fixtures/india/pdf/report.json

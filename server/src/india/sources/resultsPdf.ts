@@ -196,11 +196,16 @@ type Unit = keyof typeof UNIT_SCALE;
 
 /** The unit a table states ("(₹ in crore)", "Rs. in Lakhs", "(Amount in Rs million)", "(₹ '000)"). */
 export function unitOf(line: string): Unit | null {
+  // Only unit phrasings count: "in <unit>" (optionally "in Rs. <unit>"), "(₹ <unit>)", "(Rs. <unit>)", "'000".
+  // An amount ("Rs. 500 crore", "within 5 lakh units") never does: no digit may stand before the unit.
   const s = line.toLowerCase();
-  const m = s.match(/(?:in|rs\.?|inr|rupees|₹)\s*(?:\S{1,3}\s+)?(cror|cr\b|lakh|lac|million|mn\b|thousand)/)
-    ?? s.match(/(?:in|rs\.?|inr|₹)\s*'000/)
+  const UNIT = '(cror|lakh|lac|million|mn\\b|thousand)';
+  const CUR = "(?:rs\\.?|inr|rupees|₹|[^\\s\\w\\d]|[a-z](?=\\s))"; // a rupee sign, or one misread character
+  const m = s.match(new RegExp(`(?<![a-z]{2})in\\s+(?:${CUR}\\s*)?${UNIT}`)) // "in crore", "(fin crore", "in rs. crores"
+    ?? s.match(new RegExp(`\\(\\s*(?:${CUR}\\s*)?(?:in\\s+)?${UNIT}`)) // "(₹ crore)", "(rs. lakhs)", "(z in million)"
+    ?? s.match(/(?:\bin|rs\.?|inr|₹)\s*'000/)
     // A short line that is only the unit, its rupee sign misread ("₹ lakhs" as "flakhs").
-    ?? s.trim().match(/^\(?\W{0,2}\w?\W{0,2}\s*(cror|lakh|lac|million)[a-z]*\W{0,2}\)?$/);
+    ?? s.trim().match(/^\(?[^\w\d]{0,2}[a-z]?[^\w\d]{0,2}\s*(cror|lakh|lac|million)[a-z]*\W{0,2}\)?$/);
   if (!m) return null;
   const u = m[1] ?? 'thousand';
   if (u.startsWith('cr')) return 'crore';
@@ -545,7 +550,7 @@ export async function readInResultsPdf(bytes: Uint8Array, quarterEnd: string): P
   out.basis = basis;
   const list = withValues(basis);
   // A table continued on a page without its unit line takes the document's unit, if the document states only one.
-  const units = new Set(pages.flatMap((p) => p.lines.filter((l) => l.text.length <= 160).map((l) => unitOf(l.text)).filter((u) => u)));
+  const units = new Set(pages.flatMap((p) => p.lines.filter((l) => l.text.length <= 100).map((l) => unitOf(l.text)).filter((u) => u)));
   const docUnit = units.size === 1 ? [...units][0]! : null;
   const unitFor = (t: Table) => t.unit ?? docUnit;
 

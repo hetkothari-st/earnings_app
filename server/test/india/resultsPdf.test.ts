@@ -5,7 +5,7 @@ import { toInDto } from '../../src/india/api/dto.js';
 import {
   confirmInPrelim, getInReport, mergeInFiling, saveFoList, saveInPrelim, setInEstimates, upsertInCalendarRow,
 } from '../../src/india/db/inRepo.js';
-import { fetchResultsPdf, readInResultsPdf } from '../../src/india/sources/resultsPdf.js';
+import { fetchResultsPdf, readInResultsPdf, unitOf } from '../../src/india/sources/resultsPdf.js';
 
 /** Results PDFs in the corpus (each with an expected.json entry from the XBRL filing). Target 30; grows with collect-in-corpus. */
 const MIN_CORPUS = 11;
@@ -51,6 +51,30 @@ describe('readInResultsPdf', () => {
     expect(v.notes).toContain('no text layer');
   });
 
+  // synthetic_*.pdf: one generated standalone table (1,234.56 / 123.45 / EPS 4.56), not corpus data.
+  test('a lakh table scales x1e5', async () => {
+    const v = await readInResultsPdf(pdf(cases, 'synthetic_lakh.pdf'), '2026-09-30');
+    expect(v).toMatchObject({ basis: 'Standalone', eps: 4.56, revenue: 123_456_000, profit: 12_345_000 });
+  });
+
+  test('no unit: revenue and profit null, EPS still read', async () => {
+    const v = await readInResultsPdf(pdf(cases, 'synthetic_no_unit.pdf'), '2026-09-30');
+    expect(v).toMatchObject({ eps: 4.56, revenue: null, profit: null });
+  });
+
+  test('an amount in prose ("Rs. 500 crore") is not a unit', async () => {
+    const v = await readInResultsPdf(pdf(cases, 'synthetic_prose_crore.pdf'), '2026-09-30');
+    expect(v).toMatchObject({ eps: 4.56, revenue: null, profit: null });
+    for (const prose of ['approved borrowing up to Rs. 500 crore', 'an investment of ₹ 50 crore', 'within 5 lakh units', 'INR 587 crore', '(5 lakh units)']) {
+      expect(unitOf(prose), prose).toBeNull();
+    }
+    for (const [line, unit] of [['(₹ in crore)', 'crore'], ['Rs. in Lakhs', 'lakh'], ['(Amount in Rs million, unless stated)', 'million'],
+      ["(₹ '000)", 'thousand'], ['(Rs. Lakhs)', 'lakh'], ['(₹ crore)', 'crore'], ['(Z in Million)', 'million'], ['flakhs', 'lakh'],
+      ['(All amounts are in Rs. crores unless otherwise stated)', 'crore'], ['(Rupees In Crores)', 'crore']] as const) {
+      expect(unitOf(line), line).toBe(unit);
+    }
+  });
+
   test('not a PDF: all null, no throw', async () => {
     const v = await readInResultsPdf(new TextEncoder().encode('<html>Request Rate Threshold Exceeded</html>'), '2026-09-30');
     expect(v).toMatchObject({ basis: null, eps: null, revenue: null, profit: null });
@@ -61,6 +85,7 @@ describe('readInResultsPdf', () => {
     const files = readdirSync(corpus).filter((f) => f.endsWith('.pdf'));
     expect(files.length).toBeGreaterThanOrEqual(MIN_CORPUS);
     const bad: string[] = [];
+    const accepted = { eps: 0, revenue: 0, profit: 0 };
     for (const f of files) {
       const e = expected[f];
       expect(e, `expected.json entry for ${f}`).toBeDefined();
@@ -68,6 +93,7 @@ describe('readInResultsPdf', () => {
       for (const k of ['eps', 'revenue', 'profit'] as const) {
         const got = v[k];
         if (got === null) continue;
+        accepted[k]++;
         if (v.basis !== e!.basis) { bad.push(`${f} ${k} read on the ${v.basis} basis, filing is ${e!.basis}`); continue; }
         if (k === 'revenue' && v.revenueKind !== e!.revenueKind) { bad.push(`${f} revenue kind ${v.revenueKind} != ${e!.revenueKind}`); continue; }
         const w = e!.pdf?.[k] ?? e![k];
@@ -77,6 +103,11 @@ describe('readInResultsPdf', () => {
       }
     }
     expect(bad).toEqual([]);
+    // The reader must keep reading: an all-null reader would pass the check above. Raise as the corpus grows.
+    expect(accepted).toMatchObject({ eps: expect.any(Number), revenue: expect.any(Number), profit: expect.any(Number) });
+    expect(accepted.eps).toBeGreaterThanOrEqual(6);
+    expect(accepted.revenue).toBeGreaterThanOrEqual(6);
+    expect(accepted.profit).toBeGreaterThanOrEqual(5);
   }, 120_000);
 });
 
@@ -158,6 +189,12 @@ describe('India preliminary values', () => {
     expect(dto().eps).toMatchObject({ actual: 27.45, preliminary: false });
     confirmInPrelim(db, id); // nothing left: a no-op
     expect(dto().eps).toMatchObject({ preliminary: false, corrected: false });
+  });
+
+  test('a revenue prelim of the other kind is cleared without a correction', () => {
+    saveInPrelim(db, id, prelim({ revenue: 40_000_000_000, revenueKind: 'total-income' }), NOW, OPEN);
+    mergeInFiling(db, filing(), NOW); // revenue from operations 37,764 Cr vs prelim total income 40,000 Cr
+    expect(dto().revenue).toMatchObject({ actual: 37_764_180_000, kind: 'revenue-from-ops', preliminary: false, corrected: false });
   });
 
   test('bank prelim total income gets no colour; no basis means nothing stored', () => {
