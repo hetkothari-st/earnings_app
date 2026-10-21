@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { type Db, isBackfilled, markBackfilled } from '../db/repo.js';
+import { confirmPrelim } from '../db/prelim.js';
 import { normalizeTicker } from '../domain/ticker.js';
 import type { PastEps } from '../sources/nasdaq.js';
 import { createFailover } from '../sources/failover.js';
@@ -31,6 +32,7 @@ export function storePastEps(db: Db, symbol: string, name: string, rows: PastEps
             eps_surprise_pct = CASE WHEN eps_estimate IS NULL THEN COALESCE(eps_surprise_pct, ?) ELSE eps_surprise_pct END
           WHERE id = ?`)
           .run(r.epsActual, source, r.epsEstimate, r.epsSurprisePct, existing.id); // Nasdaq's surprise goes with Nasdaq's estimate only
+        confirmPrelim(db, existing.id); // a fast-read value is confirmed or corrected by the official one
         touched++;
       } else {
         db.prepare('UPDATE reports SET eps_estimate = COALESCE(eps_estimate, ?) WHERE id = ? AND eps_estimate IS NULL').run(r.epsEstimate, existing.id);

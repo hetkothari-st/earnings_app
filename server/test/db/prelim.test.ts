@@ -3,6 +3,7 @@ import { toDto } from '../../src/api/dto.js';
 import { confirmPrelim, savePrelim } from '../../src/db/prelim.js';
 import { type Db, listRange, mergeFinnhubRow, mergeYahooFill, openDb, upsertCalendarRow } from '../../src/db/repo.js';
 import type { CalendarRow } from '../../src/types.js';
+import { storePastEps } from '../../src/jobs/watchBackfill.js';
 
 const NOW = '2026-10-15T20:00:00.000Z';
 const TODAY = '2026-10-15';
@@ -29,6 +30,19 @@ describe('preliminary values', () => {
     expect(d.eps).toMatchObject({ actual: 1.8, preliminary: true, corrected: false, basis: 'adjusted', result: 'beat' });
     expect(d.eps.surprisePct).toBeCloseTo(8.4, 1);
     expect(d.revenue).toMatchObject({ actual: 5e9, preliminary: true, corrected: false });
+  });
+
+  test('revenue far from the estimate (1000x) is not stored', () => {
+    mergeFinnhubRow(db, { symbol: 'SCHW', reportDate: '2026-10-15', timing: 'AMC', revenueEstimate: 5e9, revenueActual: null, epsActual: null } as never, NOW);
+    expect(savePrelim(db, id(), { epsAdjusted: null, epsGaap: null, revenue: 5e12 }, NOW, ADJ)).toBe(false);
+    expect(dto().revenue.actual).toBeNull();
+    expect(savePrelim(db, id(), { epsAdjusted: null, epsGaap: null, revenue: 5.2e9 }, NOW, ADJ)).toBe(true);
+  });
+
+  test('a past EPS written by the watch backfill confirms or corrects the prelim', () => {
+    savePrelim(db, id(), { epsAdjusted: 1.8, epsGaap: null, revenue: null }, NOW, ADJ);
+    storePastEps(db, 'SCHW', 'Charles Schwab', [{ fiscalQuarter: 'Sep/2026', reportDate: '2026-10-15', epsActual: 1.7, epsEstimate: 1.66, epsSurprisePct: 2.4 }], 'nasdaq', NOW);
+    expect(dto().eps).toMatchObject({ actual: 1.7, preliminary: false, corrected: true });
   });
 
   test('GAAP-only prelim: result null', () => {

@@ -76,6 +76,16 @@ describe('readUsRelease', () => {
     expect(v.epsGaap).toBe(0.5);
   });
 
+  it('a unit-less table preceded by "(millions of subscribers)" gives no revenue', () => {
+    const html = `<p>We ended the quarter with 12.4 (millions of subscribers) worldwide.</p>
+    <table>
+      <tr><td></td><td colspan="2">Three Months Ended September 30, 2026</td></tr>
+      <tr><td>Total revenues</td><td>$</td><td>1,234</td></tr>
+      <tr><td>Diluted earnings per share</td><td>$</td><td>0.50</td></tr>
+    </table>`;
+    expect(readUsRelease(html, '2026-09-30').revenue).toBeNull();
+  });
+
   it('a caption just above the table is a unit ("(unaudited, in millions, except per share amounts)")', () => {
     const html = `<p>Consolidated Statements of Earnings (unaudited, in millions, except per share amounts)</p>
     <table>

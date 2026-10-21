@@ -188,7 +188,7 @@ const UNIT_RE = /\bin\s+(thousands|millions|billions)\b|\(\s*(?:\$|us\$|usd|u\.s
  * "(unaudited, in millions…)",
  * "$ in millions", "$000s", "(000s)". Prose such as "tens of millions of customers" does not count.
  */
-const CAPTION_RE = /\(\s*(?:\$|us\$|usd|u\.s\. dollars|dollars|amounts)?\s*(?:in\s+)?(thousands|millions|billions)\b|\([^()]{0,60}?\bin\s+(thousands|millions|billions)\b|\$\s*(?:in\s+)?(thousands|millions|billions)\b|\$\s?(000)'?s\b|\(\s*(000)'?s\s*\)/gi;
+const CAPTION_RE = /\(\s*(?:\$|us\$|usd|u\.s\. dollars|dollars|amounts)?\s*in\s+(thousands|millions|billions)\b|\([^()]{0,60}?\bin\s+(thousands|millions|billions)\b|\$\s*(?:in\s+)?(thousands|millions|billions)\b|\$\s?(000)'?s\b|\(\s*(000)'?s\s*\)/gi;
 const MULT: Record<string, number> = { thousands: 1e3, '000': 1e3, millions: 1e6, billions: 1e9 };
 
 function units(text: string, re: RegExp = UNIT_RE): Set<number> {
@@ -259,7 +259,7 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
     const inTable = units(nonData.join(' '));
     // Caption: the last sentence above the table ("… Reconciliation of Non-GAAP Measures (in millions)").
     const caption = table.before.split(/[.!?;]\s+(?=[A-Z0-9(])/).pop() ?? '';
-    const near = units(table.before, CAPTION_RE);
+    const near = units(caption, CAPTION_RE);
     let unit: number | null = null;
     if (inTable.size === 1) unit = [...inTable][0]!;
     else if (inTable.size === 0 && near.size === 1) unit = [...near][0]!;

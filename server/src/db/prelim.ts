@@ -6,10 +6,10 @@ export type FastGates = typeof config.fastFields;
 
 interface PrelimRow {
   eps_actual: number | null; revenue_actual: number | null;
-  eps_prelim: number | null; eps_prelim_basis: string | null; revenue_prelim: number | null;
+  eps_prelim: number | null; eps_prelim_basis: string | null; revenue_prelim: number | null; revenue_estimate: number | null;
 }
 
-const SELECT = 'SELECT eps_actual, revenue_actual, eps_prelim, eps_prelim_basis, revenue_prelim FROM reports WHERE id = ?';
+const SELECT = 'SELECT eps_actual, revenue_actual, eps_prelim, eps_prelim_basis, revenue_prelim, revenue_estimate FROM reports WHERE id = ?';
 
 /**
  * Store fast-read values from the press release, only for fields whose gate is open. Never replaces an
@@ -26,7 +26,13 @@ export function savePrelim(db: Db, id: number, v: PrelimValues, at: string, gate
     if (gates.usEpsAdjusted && v.epsAdjusted != null) { eps = v.epsAdjusted; basis = 'adjusted'; }
     else if (gates.usEpsGaap && v.epsGaap != null) { eps = v.epsGaap; basis = 'gaap'; }
   }
-  const revenue = gates.usRevenue && r.revenue_actual == null && r.revenue_prelim == null ? v.revenue : null;
+  let revenue = gates.usRevenue && r.revenue_actual == null && r.revenue_prelim == null ? v.revenue : null;
+  // Plausibility: a read revenue far from the consensus estimate means a wrong unit or table; store nothing.
+  if (revenue != null && r.revenue_estimate != null && r.revenue_estimate > 0
+      && (revenue < 0.2 * r.revenue_estimate || revenue > 5 * r.revenue_estimate)) {
+    console.warn(`prelim: report ${id} revenue ${revenue} is outside 0.2x-5x of estimate ${r.revenue_estimate}; not stored`);
+    revenue = null;
+  }
   if (eps == null && revenue == null) return false;
 
   db.prepare(`UPDATE reports SET
