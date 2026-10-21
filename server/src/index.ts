@@ -69,8 +69,8 @@ const app = buildServer(db, {
 });
 registerStream(app, live);
 startSymbolRefresh(symbolIndex, {
-  ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers()) } : {}),
-  IN: () => loadInEntries(inCtx.http),
+  ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers(), db) } : {}),
+  IN: () => loadInEntries(inCtx.http, db),
 });
 await app.listen({ port: config.port, host: config.host });
 console.log(`API listening on http://${config.host}:${config.port}`);

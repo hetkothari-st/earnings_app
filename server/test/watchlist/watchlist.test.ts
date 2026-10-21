@@ -3,16 +3,18 @@ import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../../src/api/server.js';
 import { createSession, ensureAuthSchema } from '../../src/auth/store.js';
 import { type Db, openDb } from '../../src/db/repo.js';
-import { SymbolIndex, type SymbolEntry } from '../../src/watchlist/search.js';
+import { SymbolIndex, startSymbolRefresh, type IndexEntry, type SymbolEntry } from '../../src/watchlist/search.js';
 import { addWatch, allWatched, listWatch, removeWatch } from '../../src/watchlist/store.js';
 
-const US: SymbolEntry[] = [
-  { symbol: 'AAPL', name: 'Apple Inc.', exchange: 'Nasdaq' },
+const US: IndexEntry[] = [
   { symbol: 'BRK-B', name: 'Berkshire Hathaway Inc', exchange: 'NYSE' },
   { symbol: 'REL', name: 'Relx Plc', exchange: 'NYSE' },
+  { symbol: 'APLE', name: 'Apple Hospitality', exchange: 'NYSE', weight: 4e9 },
+  { symbol: 'AAPL', name: 'Apple Inc.', exchange: 'Nasdaq', weight: 3e12 },
 ];
-const IN: SymbolEntry[] = [
-  { symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES', exchange: 'NSE' },
+const IN: IndexEntry[] = [
+  { symbol: 'RELAXO', name: 'RELAXO FOOTWEARS', exchange: 'NSE', weight: 1e10 },
+  { symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES', exchange: 'NSE', weight: 2e13 },
   { symbol: 'INFY', name: 'INFOSYS', exchange: 'NSE' },
   { symbol: 'M&M', name: 'MAHINDRA & MAHINDRA', exchange: 'NSE' },
   { symbol: 'AREL', name: 'RELIABLE CO', exchange: 'NSE' },
@@ -95,13 +97,26 @@ describe('symbol search', () => {
   const search = async (market: string, q: string) => (await call('GET', `/api/symbols?market=${market}&q=${encodeURIComponent(q)}`, as('1A'))).json().results as SymbolEntry[];
 
   test('search: "REL" ranks RELIANCE first; "infosys" finds INFY by name', async () => {
-    expect((await search('IN', 'REL')).map((r) => r.symbol)).toEqual(['RELIANCE', 'AREL']);
+    expect((await search('IN', 'REL')).map((r) => r.symbol)).toEqual(['RELIANCE', 'RELAXO', 'AREL']);
     expect((await search('IN', 'infosys'))[0]).toEqual({ symbol: 'INFY', name: 'INFOSYS', exchange: 'NSE' });
   });
 
   test('exact symbol beats prefix; US uses its own index; blank query is empty', async () => {
     expect((await search('US', 'rel')).map((r) => r.symbol)).toEqual(['REL']);
     expect((await search('US', 'berkshire'))[0]!.symbol).toBe('BRK-B');
+    expect((await search('US', 'apple')).map((r) => r.symbol)).toEqual(['AAPL', 'APLE']); // same class: larger cap first
     expect(await search('US', '')).toEqual([]);
+  });
+});
+
+describe('index refresh', () => {
+  test('a failed first load is retried until one succeeds', async () => {
+    const index = new SymbolIndex();
+    let calls = 0;
+    const stop = startSymbolRefresh(index, { IN: async () => { if (++calls < 3) throw new Error('down'); return IN; } }, 60_000, 5);
+    await new Promise((r) => setTimeout(r, 100));
+    stop();
+    expect(calls).toBe(3);
+    expect(index.size('IN')).toBe(IN.length);
   });
 });
