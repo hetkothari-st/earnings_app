@@ -2,7 +2,7 @@ import { previousReport, reportsNeedingPrevMove, setPrevMove } from '../db/repo.
 import { addDays, sessionClose } from '../domain/marketCalendar.js';
 import { reactionMove } from '../domain/reactionMove.js';
 import type { PrevMoveBasis, Timing } from '../types.js';
-import { type JobContext, track } from './context.js';
+import { type JobContext, guarded } from './context.js';
 
 /**
  * Timing to use for the previous report, and how sure we are of it:
@@ -37,7 +37,7 @@ export async function computePrevMoves(ctx: JobContext, window: { from?: string 
     // Nasdaq's history endpoint returns nothing for short windows, so fetch ~2 years once per symbol.
     let closes = cache.get(r.symbolKey);
     if (!closes) {
-      closes = await track(ctx, 'nasdaq-prices', () => ctx.sources.dailyCloses(r.symbol, addDays(today, -800), today));
+      closes = (await guarded(ctx, { name: 'nasdaq-prices', run: () => ctx.sources.dailyCloses(r.symbol, addDays(today, -800), today) }))?.value;
       if (closes) cache.set(r.symbolKey, closes);
     }
     if (!closes) continue; // fetch failed: retry next run

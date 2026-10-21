@@ -151,7 +151,7 @@ export function inTransaction(db: Db, fn: () => void): void {
 
 interface ReportRow {
   id: number; symbol: string; symbol_key: string; name: string; fiscal_quarter: string; report_date: string;
-  rescheduled_from: string | null; timing: Timing; timing_source: TimingSource; timing_conflict: string | null;
+  rescheduled_from: string | null; date_status: string | null; timing: Timing; timing_source: TimingSource; timing_conflict: string | null;
   market_cap: number | null; market_cap_as_of: string | null; eps_estimate: number | null; eps_actual: number | null;
   eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null; revenue_currency: string | null;
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
@@ -176,7 +176,7 @@ FROM reports r LEFT JOIN expected_moves m ON m.report_id = r.id LEFT JOIN live_m
 function toRecord(r: JoinedRow): ReportRecord {
   return {
     id: r.id, symbol: r.symbol, symbolKey: r.symbol_key, name: r.name, fiscalQuarter: r.fiscal_quarter,
-    reportDate: r.report_date, rescheduledFrom: r.rescheduled_from, timing: r.timing, timingSource: r.timing_source,
+    reportDate: r.report_date, rescheduledFrom: r.rescheduled_from, dateStatus: r.date_status === 'estimated' ? 'estimated' : 'confirmed', timing: r.timing, timingSource: r.timing_source,
     timingConflict: r.timing_conflict, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of, sharesOutstanding: r.shares_outstanding,
     epsEstimate: r.eps_estimate, epsActual: r.eps_actual, epsSurprisePct: r.eps_surprise_pct, epsConflict: r.eps_conflict, noOfEsts: r.no_of_ests,
     lastYearEps: r.last_year_eps, lastYearReportDate: r.last_year_rpt_dt,
@@ -270,7 +270,8 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
       sec_checked_at = CASE WHEN ? THEN NULL ELSE sec_checked_at END,
       calendar_fetched_at = ?
     WHERE id = ?`).run(
-    row.name, fiscalQuarter, reportDate, rescheduled ? existing.report_date : existing.rescheduled_from, timing, timingSource,
+    // Nasdaq moving a row off a Yahoo estimate corrects the estimate; it is not a reschedule.
+    row.name, fiscalQuarter, reportDate, rescheduled && existing.date_status !== 'estimated' ? existing.report_date : existing.rescheduled_from, timing, timingSource,
     // The conflict text names the old timing; the next Finnhub merge recomputes it.
     rescheduled || timing !== existing.timing ? 1 : 0,
     capLive ? row.marketCap : existing.market_cap, capLive ? today : existing.market_cap_as_of,
@@ -651,22 +652,21 @@ export function liveSymbols(db: Db, from: string, to: string, limit: number): st
     .all(from, to, limit) as unknown as { symbol: string }[]).map((r) => r.symbol);
 }
 
-/** Unreleased reports dated in [from, to]: the ones a backup date source may correct. */
+/** Unreleased reports dated in [from, to] whose date is itself only an estimate: the only ones a backup source may adjust. */
 export function reportsAwaitingDate(db: Db, from: string, to: string): { id: number; symbol: string; reportDate: string }[] {
   return db.prepare(`SELECT id, symbol, report_date AS reportDate FROM reports
-      WHERE report_date BETWEEN ? AND ? AND released_at IS NULL AND eps_actual IS NULL
+      WHERE report_date BETWEEN ? AND ? AND released_at IS NULL AND eps_actual IS NULL AND date_status = 'estimated'
       ORDER BY report_date, market_cap DESC`).all(from, to) as unknown as { id: number; symbol: string; reportDate: string }[];
 }
 
 /** A backup source's date (Yahoo): stored, and marked 'estimated' until the Nasdaq calendar confirms a date. */
 export function setEstimatedDate(db: Db, id: number, date: string): void {
-  const r = db.prepare('SELECT report_date, rescheduled_from FROM reports WHERE id = ? AND released_at IS NULL').get(id) as unknown as
-    { report_date: string; rescheduled_from: string | null } | undefined;
+  const r = db.prepare('SELECT report_date FROM reports WHERE id = ? AND released_at IS NULL').get(id) as unknown as { report_date: string } | undefined;
   if (!r) return;
   const moved = r.report_date !== date;
-  db.prepare(`UPDATE reports SET report_date = ?, date_status = 'estimated', rescheduled_from = ?,
+  db.prepare(`UPDATE reports SET report_date = ?, date_status = 'estimated',
       timing = CASE WHEN ? THEN 'UNKNOWN' ELSE timing END, timing_source = CASE WHEN ? THEN NULL ELSE timing_source END
-    WHERE id = ?`).run(date, moved ? r.report_date : r.rescheduled_from, moved ? 1 : 0, moved ? 1 : 0, id);
+    WHERE id = ?`).run(date, moved ? 1 : 0, moved ? 1 : 0, id);
   if (moved) dropExpectedMove(db, id);
 }
 

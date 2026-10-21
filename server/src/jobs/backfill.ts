@@ -1,6 +1,6 @@
 import { inTransaction, isBackfilled, markBackfilled, mergeFinnhubRow } from '../db/repo.js';
 import { addDays, prevTradingDay, tradingDaysBetween } from '../domain/marketCalendar.js';
-import { type JobContext, track } from './context.js';
+import { type JobContext, guarded, track } from './context.js';
 import { storeCalendarRows } from './refreshCalendar.js';
 import { secSync } from './secSync.js';
 
@@ -13,7 +13,7 @@ export async function backfill(ctx: JobContext, start: string, log: (msg: string
   for (const day of days) {
     const key = `nasdaq:${day}`;
     if (!isBackfilled(ctx.db, key)) {
-      const rows = await track(ctx, 'nasdaq', () => ctx.sources.calendar(day));
+      const rows = (await guarded(ctx, { name: 'nasdaq', run: () => ctx.sources.calendar(day) }))?.value;
       if (rows) {
         storeCalendarRows(ctx, rows);
         markBackfilled(ctx.db, key, ctx.now());

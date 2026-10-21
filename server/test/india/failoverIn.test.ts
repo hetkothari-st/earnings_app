@@ -5,7 +5,8 @@ import { activeStocks, saveFoList, upsertInCalendarRow } from '../../src/india/d
 import { refreshInCalendar } from '../../src/india/jobs/calendar.js';
 import type { InJobContext } from '../../src/india/jobs/context.js';
 import { refreshInEstimates } from '../../src/india/jobs/estimates.js';
-import { loadFoCache } from '../../src/india/jobs/stocks.js';
+import { refreshInResults, resetInResultsState } from '../../src/india/jobs/results.js';
+import { loadFoCache, refreshInStocks } from '../../src/india/jobs/stocks.js';
 import { HttpError, type Http } from '../../src/sources/http.js';
 
 const NOW = '2026-10-15T12:30:00.000Z';
@@ -35,6 +36,22 @@ describe('NSE Board_Meetings failover', () => {
     await refreshInCalendar(ctx);
     expect(status(db, 'nse-board-meetings')).toMatchObject({ state: 'blocked' });
     expect(status(db, 'nse-board-meetings')!.lastError).toContain('not RSS');
+  });
+});
+
+describe('other NSE feeds', () => {
+  it('a 200 HTML block page on Integrated_Filing is recorded as blocked and backed off', async () => {
+    resetInResultsState();
+    const { ctx, db } = makeCtx(() => '<html><body>Request Rate Threshold Exceeded not RSS</body></html>');
+    await refreshInResults(ctx);
+    expect(status(db, 'nse-integrated-filing')).toMatchObject({ state: 'blocked', blockedUntil: '2026-10-15T12:31:00.000Z' });
+    expect(status(db, 'nse-online-announcements')).toMatchObject({ state: 'blocked' });
+  });
+  it('F&O list 429: blocked, the stored list stays', async () => {
+    const { ctx, db } = makeCtx(() => { throw new HttpError(429, 'u'); });
+    await refreshInStocks(ctx);
+    expect(status(db, 'nse-fo-list')).toMatchObject({ state: 'blocked' });
+    expect(activeStocks(db)).toHaveLength(2);
   });
 });
 

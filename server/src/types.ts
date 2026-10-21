@@ -96,6 +96,8 @@ export interface ReportRecord {
   fiscalQuarter: string;
   reportDate: string;
   rescheduledFrom: string | null;
+  /** 'estimated' while the date comes from the Yahoo backup, not the Nasdaq calendar. */
+  dateStatus: 'confirmed' | 'estimated';
   timing: Timing;
   timingSource: TimingSource;
   timingConflict: string | null;

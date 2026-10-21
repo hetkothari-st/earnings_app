@@ -20,7 +20,9 @@ export async function computeInPrevMoves(ctx: InJobContext): Promise<void> {
       // Nothing captured by this app: the latest past date Yahoo lists (with its time, when it has one).
       const dates = await trackIn(ctx, 'yahoo-past-dates', () => ctx.yahooPastDates!(r.symbol));
       if (dates === undefined) continue; // fetch failed: retry next run
-      const y = dates.filter((d) => d.date < r.reportDate).sort((a, b) => b.date.localeCompare(a.date))[0];
+      // Only a date about one quarter back (45-140 days): Yahoo's coverage is often stale, and an old date is no previous move.
+      const age = (d: string) => (Date.parse(r.reportDate) - Date.parse(d)) / 86_400_000;
+      const y = dates.filter((d) => age(d.date) >= 45 && age(d.date) <= 140).sort((a, b) => b.date.localeCompare(a.date))[0];
       if (y) prior = { reportDate: y.date, timing: y.timing ?? 'UNKNOWN', known: y.timing != null };
     }
     const current = (ctx.db.prepare('SELECT timing FROM in_reports WHERE id = ?').get(r.id) as { timing: InTiming }).timing;

@@ -5,7 +5,7 @@ import { StockList } from '../src/components/StockList';
 
 const dto = (over: Partial<ReportDto>): ReportDto => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
-  releasedAt: null, timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
+  releasedAt: null, timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, dateStatus: 'confirmed', exchange: 'NYSE',
   sector: 'Technology', industry: 'Semiconductors', marketCap: 2.31e12, marketCapAsOf: '2026-10-15', sharesOutstanding: null,
   eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, preliminary: false, corrected: false, basis: null, noOfEsts: 6, lastYear: 2.92, lastYearReportDate: '2025-10-16' },
   revenue: { estimate: 3.3e10, actual: null, surprisePct: null, result: null, preliminary: false, corrected: false, currency: 'USD' },
@@ -55,6 +55,12 @@ describe('StockList', () => {
     expect(cap('NEA')).toBe('$10.0B live');
     expect(cap('HIG')).toBe('$2.0B');
     expect(cap('LOW')).toBe('$50.0B');
+  });
+  test('an estimated date (Yahoo backup) shows a muted estimated marker; a confirmed one does not', () => {
+    renderList({ rows: [dto({ id: 30, symbol: 'EST', dateStatus: 'estimated' }), dto({ id: 31, symbol: 'CNF' })], expanded: new Set(['EST', 'CNF']) });
+    const date = (sym: string) => within(screen.getByRole('button', { name: new RegExp(sym) }).closest('li')!).getByText('Result date').nextElementSibling!;
+    expect(date('EST').textContent).toContain('estimated');
+    expect(date('CNF').textContent).not.toContain('estimated');
   });
   test('stocks are listed under their date, names only while collapsed', () => {
     renderList();

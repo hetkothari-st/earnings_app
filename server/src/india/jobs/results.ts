@@ -5,7 +5,7 @@ import { latestQuarterEndBefore, quarterLabel } from '../domain/quarter.js';
 import { fetchNseRss, isResultSubject, parseAnnouncementDescription, resolveIntegratedFilingUrl, type RssItem } from '../sources/nseRss.js';
 import { resolveSymbol } from '../sources/symbolMatch.js';
 import { parseIntegratedFiling } from '../sources/xbrl.js';
-import { type InJobContext, trackIn } from './context.js';
+import { type InJobContext, guardedIn } from './context.js';
 import { getFoCache } from './stocks.js';
 
 /** The XBRL file appears ~15–20 minutes after the feed item; keep trying for two hours. */
@@ -89,7 +89,8 @@ export async function refreshInResults(ctx: InJobContext): Promise<number[]> {
   const now = ctx.now();
   const changed = new Set<number>();
 
-  const items = await trackIn(ctx, 'nse-integrated-filing', () => fetchNseRss(ctx.http, 'Integrated_Filing'));
+  // Backup: the Online_announcements path below covers release times; a blocked feed keeps stored values.
+  const items = (await guardedIn(ctx, { name: 'nse-integrated-filing', run: () => fetchNseRss(ctx.http, 'Integrated_Filing') }))?.value;
   for (const item of items ?? []) {
     if (!/financials/i.test(item.description)) continue; // governance etc.
     const state = filings.get(item.link) ?? { firstSeen: Date.parse(now), done: false };
@@ -123,7 +124,7 @@ export async function refreshInResults(ctx: InJobContext): Promise<number[]> {
     }
   }
 
-  const ann = await trackIn(ctx, 'nse-online-announcements', () => fetchNseRss(ctx.http, 'Online_announcements'));
+  const ann = (await guardedIn(ctx, { name: 'nse-online-announcements', run: () => fetchNseRss(ctx.http, 'Online_announcements') }))?.value;
   for (const id of handleAnnouncements(ctx, ann ?? [])) changed.add(id);
 
   // Keep memory bounded: links older than a day are gone from the feeds.

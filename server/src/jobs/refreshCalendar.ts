@@ -15,19 +15,34 @@ export function storeCalendarRows(ctx: JobContext, rows: CalendarRow[]): void {
   });
 }
 
+const MAX_YAHOO_SHIFT_DAYS = 14;
+const daysApart = (a: string, b: string): number => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
+
 /** Most reports a Yahoo date check covers per run (Yahoo answers one a second). */
 const YAHOO_DATE_CHECKS = 60;
 
 /**
- * Backup for the Nasdaq calendar: Yahoo's next earnings date for reports not yet out. A date that
- * differs from the stored one replaces it, marked 'estimated' until Nasdaq lists a date again.
+ * Backup for the Nasdaq calendar: Yahoo's next earnings date, only for reports whose date is already an
+ * estimate. A date Nasdaq confirmed is never touched; Nasdaq listing the report again takes over.
  */
 export async function refreshYahooDates(ctx: JobContext, from: string, to: string): Promise<void> {
+  let tried = 0;
+  let failed = 0;
+  let lastError: unknown;
   for (const r of reportsAwaitingDate(ctx.db, from, to).slice(0, YAHOO_DATE_CHECKS)) {
-    const summary = await ctx.sources.yahooSummary(r.symbol);
-    const date = summary?.nextEarningsDate;
-    if (date && date >= from && date !== r.reportDate) setEstimatedDate(ctx.db, r.id, date);
+    tried++;
+    try {
+      const date = (await ctx.sources.yahooSummary(r.symbol))?.nextEarningsDate;
+      // Only a date inside the window and within 14 days of the stored one: after a release Yahoo rolls on to next quarter.
+      if (date && date >= from && date <= to && date !== r.reportDate && daysApart(date, r.reportDate) <= MAX_YAHOO_SHIFT_DAYS) {
+        setEstimatedDate(ctx.db, r.id, date);
+      }
+    } catch (err) {
+      failed++; // one symbol's error does not stop the others
+      lastError = err;
+    }
   }
+  if (tried > 0 && failed === tried) throw lastError; // nothing worked: Yahoo itself is down
 }
 
 /**

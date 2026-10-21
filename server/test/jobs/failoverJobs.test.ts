@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
-import { listSourceStatus, openDb, upsertCalendarRow } from '../../src/db/repo.js';
+import { listSourceStatus, openDb, setEstimatedDate, upsertCalendarRow } from '../../src/db/repo.js';
 import type { JobContext, Sources } from '../../src/jobs/context.js';
 import { refreshCalendar, storeCalendarRows } from '../../src/jobs/refreshCalendar.js';
+import { refreshSectors } from '../../src/jobs/sectors.js';
 import { snapshotMoves } from '../../src/jobs/snapshotMoves.js';
 import { HttpError } from '../../src/sources/http.js';
 import type { CalendarRow, OptionChain } from '../../src/types.js';
@@ -26,7 +27,8 @@ const summary = (nextEarningsDate?: string) => ({
   priceCurrency: 'USD', financialCurrency: 'USD', epsHistory: [], revenueQuarters: [], revenueEstimates: [],
   ...(nextEarningsDate ? { nextEarningsDate } : {}),
 });
-const dates = (ctx: JobContext) => ctx.db.prepare('SELECT symbol, report_date AS d, date_status AS s, timing FROM reports ORDER BY symbol').all();
+const dates = (ctx: JobContext) => ctx.db.prepare('SELECT symbol, report_date AS d, date_status AS s, timing, rescheduled_from AS rf FROM reports ORDER BY symbol').all();
+const estimate = (ctx: JobContext) => ctx.db.prepare("UPDATE reports SET date_status = 'estimated'").run();
 const status = (ctx: JobContext, source: string) => listSourceStatus(ctx.db).find((x) => x.source === source);
 
 describe('Nasdaq calendar with a Yahoo backup', () => {
@@ -34,8 +36,9 @@ describe('Nasdaq calendar with a Yahoo backup', () => {
     const yahooSummary = vi.fn(async () => summary('2026-10-22'));
     const ctx = makeCtx({ calendar: async () => { throw new HttpError(429, 'https://api.nasdaq.com'); }, yahooSummary });
     upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
+    estimate(ctx); // only a date that is itself an estimate may be adjusted by Yahoo
     await refreshCalendar(ctx, 14);
-    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-22', s: 'estimated', timing: 'UNKNOWN' }]);
+    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-22', s: 'estimated', timing: 'UNKNOWN', rf: null }]);
     expect(status(ctx, 'nasdaq')).toMatchObject({ state: 'backup' });
     expect(status(ctx, 'nasdaq')!.blockedUntil).toBe('2026-10-15T20:31:00.000Z'); // 1 minute back-off
     // While blocked, the next run does not call Nasdaq at all.
@@ -48,6 +51,7 @@ describe('Nasdaq calendar with a Yahoo backup', () => {
   test('a 200 block page (HTML instead of JSON) counts as blocked too', async () => {
     const ctx = makeCtx({ calendar: async () => { throw new SyntaxError('Unexpected token < in JSON'); }, yahooSummary: async () => summary('2026-10-21') });
     upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
+    estimate(ctx);
     await refreshCalendar(ctx, 14);
     expect(status(ctx, 'nasdaq')).toMatchObject({ state: 'backup', blockedUntil: expect.any(String) });
   });
@@ -67,7 +71,7 @@ describe('Nasdaq calendar with a Yahoo backup', () => {
     upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
     ctx.db.prepare("UPDATE reports SET date_status = 'estimated'").run();
     storeCalendarRows(ctx, [cal()]);
-    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-20', s: null, timing: 'BMO' }]);
+    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-20', s: null, timing: 'BMO', rf: null }]);
   });
 
   test('Nasdaq working: Yahoo is not asked and the status is ok', async () => {
@@ -76,7 +80,63 @@ describe('Nasdaq calendar with a Yahoo backup', () => {
     await refreshCalendar(ctx, 6);
     expect(yahooSummary).not.toHaveBeenCalled();
     expect(status(ctx, 'nasdaq')).toMatchObject({ state: 'ok', lastSuccessAt: NOW });
-    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-20', s: null, timing: 'BMO' }]);
+    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-20', s: null, timing: 'BMO', rf: null }]);
+  });
+
+  test('one transient Nasdaq error on one date: Yahoo leaves the date Nasdaq stored alone', async () => {
+    const ctx = makeCtx({
+      calendar: async (d) => { if (d === '2026-10-16') throw new Error('timeout'); return d === '2026-10-20' ? [cal()] : []; },
+      yahooSummary: async () => summary('2026-10-22'),
+    });
+    await refreshCalendar(ctx, 14);
+    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-20', s: null, timing: 'BMO', rf: null }]);
+  });
+
+  test('a Nasdaq-confirmed date is not moved by Yahoo while Nasdaq is blocked', async () => {
+    const ctx = makeCtx({ calendar: async () => { throw new HttpError(429, 'u'); }, yahooSummary: async () => summary('2026-10-22') });
+    upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
+    await refreshCalendar(ctx, 14);
+    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-20', s: null, timing: 'BMO', rf: null }]);
+  });
+
+  test('a Yahoo date more than 14 days from the stored one, or outside the window, is ignored', async () => {
+    for (const [yahoo, expected] of [['2026-11-20', '2026-10-20'], ['2026-10-30', '2026-10-20'], ['2026-10-27', '2026-10-27']] as const) {
+      const ctx = makeCtx({ calendar: async () => { throw new HttpError(429, 'u'); }, yahooSummary: async () => summary(yahoo) });
+      upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
+      estimate(ctx);
+      await refreshCalendar(ctx, 14);
+      expect((dates(ctx)[0] as { d: string }).d, yahoo).toBe(expected);
+    }
+  });
+
+  test('D1 -> Yahoo D2 -> Nasdaq D1 is a correction, not a reschedule', () => {
+    const ctx = makeCtx();
+    upsertCalendarRow(ctx.db, cal(), NOW, TODAY);
+    const id = (ctx.db.prepare('SELECT id FROM reports').get() as { id: number }).id;
+    setEstimatedDate(ctx.db, id, '2026-10-22');
+    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-22', s: 'estimated', timing: 'UNKNOWN', rf: null }]);
+    storeCalendarRows(ctx, [cal()]);
+    expect(dates(ctx)).toEqual([{ symbol: 'SCHW', d: '2026-10-20', s: null, timing: 'BMO', rf: null }]);
+  });
+
+  test("one symbol's Yahoo error does not abort the backup run", async () => {
+    const ctx = makeCtx({
+      calendar: async () => { throw new HttpError(429, 'u'); },
+      yahooSummary: async (s) => { if (s === 'AAA') throw new Error('boom'); return summary('2026-10-22'); },
+    });
+    upsertCalendarRow(ctx.db, cal({ symbol: 'AAA', marketCap: 2e11 }), NOW, TODAY);
+    upsertCalendarRow(ctx.db, cal({ symbol: 'BBB' }), NOW, TODAY);
+    estimate(ctx);
+    await refreshCalendar(ctx, 14);
+    expect(dates(ctx).map((r) => (r as { d: string }).d)).toEqual(['2026-10-20', '2026-10-22']);
+  });
+});
+
+describe('Nasdaq sectors', () => {
+  test('a 200 HTML block page is recorded as blocked and backed off; stored sectors stay', async () => {
+    const ctx = makeCtx({ sectors: async () => { throw new SyntaxError('Unexpected token <'); } });
+    await refreshSectors(ctx);
+    expect(status(ctx, 'nasdaq')).toMatchObject({ state: 'blocked', blockedUntil: '2026-10-15T20:31:00.000Z' });
   });
 });
 

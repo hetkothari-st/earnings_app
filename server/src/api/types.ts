@@ -27,6 +27,7 @@ export interface ReportDto {
   timingSource: TimingSource;
   sessionClose: '16:00' | '13:00';
   rescheduledFrom: string | null;
+  dateStatus: 'confirmed' | 'estimated';
   releasedAt: string | null;
   exchange: string | null;
   sector: string | null;

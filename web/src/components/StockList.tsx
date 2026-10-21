@@ -153,7 +153,7 @@ function Details({ r, zone, note, onSaveNote, price }: {
         <dt>Your time</dt>
         <dd>{t.local}{t.nextDay ? ' (next day)' : ''}{r.timing !== 'UNKNOWN' ? ` ${zoneLabel(zone, r.reportDate)}` : ''}</dd>
         <dt>Result date</dt>
-        <dd>{formatDateHeading(r.reportDate)}{r.rescheduledFrom && <span className="note-text"> (moved from {formatDateHeading(r.rescheduledFrom)})</span>}</dd>
+        <dd>{formatDateHeading(r.reportDate)}{r.dateStatus === 'estimated' && <span className="muted"> estimated (Yahoo), not yet on the Nasdaq calendar</span>}{r.rescheduledFrom && <span className="note-text"> (moved from {formatDateHeading(r.rescheduledFrom)})</span>}</dd>
         <dt>Previous move</dt>
         <dd>
           {r.previousMove ? (
