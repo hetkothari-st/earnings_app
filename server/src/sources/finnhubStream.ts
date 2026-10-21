@@ -12,7 +12,7 @@ type SocketLike = {
 type SocketCtor = new (url: string) => SocketLike;
 
 const OPEN = 1;
-const toFinnhub = (s: string) => s.trim().toUpperCase().replace('/', '.');
+export const toFinnhub = (s: string) => s.trim().toUpperCase().replace(/[/-]/g, '.'); // keys are normalized (BRK-B); Finnhub writes BRK.B
 
 /**
  * Finnhub's free real-time US trade stream (WebSocket). Keeps the subscription in line with the wanted

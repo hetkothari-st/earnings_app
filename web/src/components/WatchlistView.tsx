@@ -7,6 +7,7 @@ import type { Watchlist } from '../hooks/useWatchlist';
 import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatInrCr, formatMoney } from '../lib/format';
 import type { Market } from '../lib/market';
 import { todayEt } from '../lib/time';
+import { priceKey } from '../lib/ticker';
 import { SymbolSearch } from './SymbolSearch';
 import { Star } from './Star';
 import { Tags } from './Tags';
@@ -89,7 +90,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
       {shown.length > 0 && (
         <ul className="stocks watch-rows">
           {shown.map((r) => {
-            const price = prices[r.symbol];
+            const price = market === 'US' ? prices[priceKey(r.symbol)] : prices[r.symbol];
             const next = r.next;
             const em = next?.expectedMove;
             const latestDate = r.latest && r.latest.reportDate ? formatDateHeading(r.latest.reportDate) : '—';

@@ -1,15 +1,19 @@
 import { type Db, liveSymbols } from '../db/repo.js';
 import { nextTradingDay } from '../domain/marketCalendar.js';
+import { normalizeTicker } from '../domain/ticker.js';
 import { type LivePrice, PriceBook, type PriceSource, type Trade } from '../domain/priceBook.js';
 import { createFailover } from '../sources/failover.js';
-import { FinnhubStream, parseQuote, todaysReference } from '../sources/finnhubStream.js';
+import { FinnhubStream, parseQuote, toFinnhub, todaysReference } from '../sources/finnhubStream.js';
 import type { Http } from '../sources/http.js';
 import { allWatched } from '../watchlist/store.js';
 
 /** Finnhub's free real-time stream allows 50 symbols per connection. */
 const MAX_SYMBOLS = 50;
-/** Finnhub's free REST allows 60 calls a minute; seeds and polling share it. */
-const QUOTES_PER_MINUTE = 60;
+/**
+ * Finnhub's free REST allows 60 calls a minute. Seeds and polling use at most 55: the earnings jobs call Finnhub
+ * on another client (every minute for results, every 5 minutes for the calendar) and need the remaining 5.
+ */
+const QUOTES_PER_MINUTE = 55;
 const REPICK_MS = 5000;
 const QUOTE_MS = 1100;
 const PUSH_MS = 1000;
@@ -100,7 +104,7 @@ export class LivePrices {
 
   /** What one signed-in user currently sees; counts for 2 minutes after the last call. */
   setVisible(userId: string, symbols: string[]): void {
-    this.visible.set(userId, { symbols, at: this.now() });
+    this.visible.set(userId, { symbols: symbols.map(normalizeTicker), at: this.now() });
   }
 
   private visibleUnion(): string[] {
@@ -127,8 +131,9 @@ export class LivePrices {
     let watch: string[] = [];
     let reporters: string[] = [];
     try {
-      watch = (this.opts.watched ?? (() => allWatched(this.db, 'US')))();
-      reporters = (this.opts.reporters ?? ((a, b) => liveSymbols(this.db, a, b, MAX_SYMBOLS)))(today, next);
+      // One key per security (BRK-B), whatever the source spells (BRK/B): one slot, one price, found by the web by that key.
+      watch = (this.opts.watched ?? (() => allWatched(this.db, 'US')))().map(normalizeTicker);
+      reporters = (this.opts.reporters ?? ((a, b) => liveSymbols(this.db, a, b, MAX_SYMBOLS)))(today, next).map(normalizeTicker);
     } catch (err) {
       console.error(`[prices] pick: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -167,12 +172,12 @@ export class LivePrices {
       const symbol = this.pickNextQuote(today);
       if (!symbol) return;
       const finnhub = this.opts.finnhubQuote ?? (async (s: string) =>
-        parseQuote(await this.http.json(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s.replace('/', '.'))}`)));
+        parseQuote(await this.http.json(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(toFinnhub(s))}`)));
       const yahoo = this.opts.yahooQuote;
       try {
         const r = await this.failover<Quote | null>(
           { name: 'finnhub-quote', run: () => { this.callTimes.push(this.now()); return finnhub(symbol); } },
-          yahoo ? { name: 'yahoo-quote', run: () => yahoo(symbol.replace('/', '-')) } : null,
+          yahoo ? { name: 'yahoo-quote', run: () => yahoo(symbol) } : null,
         );
         if (!r) { this.failedAt.set(symbol, this.now()); return; } // both failed: retry in a minute
         this.failedAt.delete(symbol);

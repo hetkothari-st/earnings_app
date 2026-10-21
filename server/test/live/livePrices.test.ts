@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { openDb } from '../../src/db/repo.js';
 import type { Trade } from '../../src/domain/priceBook.js';
 import { LivePrices, pickSlots } from '../../src/live/livePrices.js';
+import { toFinnhub } from '../../src/sources/finnhubStream.js';
 
 const names = (n: number, p = 'S') => Array.from({ length: n }, (_, i) => `${p}${i}`);
 const T0 = Date.parse('2026-10-21T15:00:00Z');
@@ -75,14 +76,31 @@ describe('LivePrices', () => {
     expect(streamed).toHaveLength(1);
   });
 
-  test('never more than 60 Finnhub calls in a rolling minute', async () => {
+  test('never more than 55 Finnhub price calls in a rolling minute (5 are left for the earnings jobs)', async () => {
     const { lp, clock, finnhubCalls } = setup({ watched: names(120, 'W') });
     await lp.repick();
     for (let i = 0; i < 200; i++) await lp.quoteOnce();
-    expect(finnhubCalls.length).toBe(60);
+    expect(finnhubCalls.length).toBe(55);
     clock.t += 60_001;
     for (let i = 0; i < 200; i++) await lp.quoteOnce();
-    expect(finnhubCalls.length).toBe(120);
+    expect(finnhubCalls.length).toBe(110);
+  });
+
+  test('a share-class ticker takes one slot under one key and is quoted as BRK.B', async () => {
+    const urls: string[] = [];
+    const lp = new LivePrices(openDb(':memory:'), 'tok', { json: async (u: string) => { urls.push(u); return { c: 10, pc: 9, t: T0 / 1000 }; } } as never, () => '2026-10-21', () => {}, {
+      now: () => T0,
+      watched: () => ['BRK-B'],
+      reporters: () => ['BRK/B', 'AAA'], // the calendar spells it BRK/B
+      makeStream: () => ({ setSymbols: () => {}, stop: () => {} }),
+    });
+    await lp.repick();
+    await lp.quoteOnce();
+    await lp.quoteOnce();
+    expect(urls[0]).toContain('symbol=BRK.B');
+    expect(Object.keys(lp.snapshot()).sort()).toEqual(['AAA', 'BRK-B']);
+    expect(toFinnhub('BRK-B')).toBe('BRK.B');
+    expect(toFinnhub('BRK/B')).toBe('BRK.B');
   });
 
   test('seeds come before round-robin polling', async () => {
