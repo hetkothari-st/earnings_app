@@ -1,6 +1,6 @@
 import type { SecTicker } from '../sources/sec.js';
 import type { Http } from '../sources/http.js';
-import { fetchKiteInstruments } from '../india/sources/foList.js';
+import { equityTokens, fetchKiteInstruments } from '../india/sources/foList.js';
 import type { SymbolEntry } from '../api/types.js';
 import type { Db } from '../db/repo.js';
 import type { WatchMarket } from './store.js';
@@ -56,12 +56,14 @@ export function usEntries(tickers: Map<string, SecTicker>, db?: Db): IndexEntry[
 }
 
 /** India weight = in_stocks market cap; F&O stocks without one still rank above the rest (weight 1). */
-export async function loadInEntries(http: Http, db?: Db): Promise<IndexEntry[]> {
+export async function loadInEntries(http: Http, db?: Db, tokensOut?: Map<string, number>): Promise<IndexEntry[]> {
   const w = new Map<string, number>();
   if (db) {
     for (const r of db.prepare('SELECT symbol, market_cap AS cap, active FROM in_stocks').all() as { symbol: string; cap: number | null; active: number }[]) w.set(r.symbol, r.cap ?? (r.active ? 1 : 0));
   }
-  return (await fetchKiteInstruments(http, 'NSE'))
+  const instruments = await fetchKiteInstruments(http, 'NSE');
+  if (tokensOut) for (const [s, t] of equityTokens(instruments)) tokensOut.set(s, t);
+  return instruments
     .filter((i) => i.exchange === 'NSE' && i.segment === 'NSE' && i.instrumentType === 'EQ')
     .map((i) => ({ symbol: i.tradingsymbol, name: i.name, exchange: 'NSE', weight: w.get(i.tradingsymbol) }));
 }

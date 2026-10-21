@@ -110,17 +110,21 @@ export function matchableStocks(db: DatabaseSync): InStock[] {
  * Marks exactly `symbols` as watched. A watched stock outside the F&O list gets an in_stocks row
  * (active = 0) so feed items can be matched to it; its name comes from `names` (Kite NSE list), else the symbol.
  */
-export function syncWatched(db: DatabaseSync, symbols: string[], names: Map<string, string> = new Map(), now: string = new Date().toISOString()): void {
+export function syncWatched(db: DatabaseSync, symbols: string[], names: Map<string, string> = new Map(), now: string = new Date().toISOString(), tokens: Map<string, number> = new Map()): void {
   db.exec('BEGIN');
   try {
     db.prepare('UPDATE in_stocks SET watched = 0 WHERE watched = 1').run();
     const ins = db.prepare('INSERT INTO in_stocks (symbol, name, active, watched, updated_at) VALUES (?, ?, 0, 1, ?) ON CONFLICT (symbol) DO UPDATE SET watched = 1');
     // A row first made without a name keeps getting a better one once the index knows it.
     const rename = db.prepare('UPDATE in_stocks SET name = ? WHERE symbol = ? AND active = 0 AND name = symbol');
+    // Kite NSE equity token, so a stock outside F&O is priced on the day it is added.
+    const setTok = db.prepare('UPDATE in_stocks SET eq_token = ? WHERE symbol = ?');
     for (const s of symbols) {
       const name = names.get(s)?.trim();
       ins.run(s, name || s, now);
       if (name && name !== s) rename.run(name, s);
+      const tok = tokens.get(s);
+      if (tok != null) setTok.run(tok, s);
     }
     db.exec('COMMIT');
   } catch (err) {

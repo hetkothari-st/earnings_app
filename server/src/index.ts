@@ -20,6 +20,7 @@ import { startInScheduler, warmUpIndia } from './india/jobs/scheduler.js';
 import { getInReport, saveInPrelim, syncWatched } from './india/db/inRepo.js';
 import { loadFoCache } from './india/jobs/stocks.js';
 import { createWatchBackfill } from './jobs/watchBackfill.js';
+import { refreshWatchedEstimates } from './jobs/refreshCalendar.js';
 import { allWatched } from './watchlist/store.js';
 import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js';
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
@@ -63,18 +64,24 @@ const kiteLogin = async () => {
 const symbolIndex = new SymbolIndex();
 // Watched stocks flow through the data jobs: US gets its past results once; India stocks join the matching cache.
 const backfillWatched = createWatchBackfill(ctx, (s) => symbolIndex.nameOf('US', s));
+const inTokens = new Map<string, number>(); // Kite NSE equity tokens, filled by the daily list load
 const syncInWatched = (): void => {
   const symbols = allWatched(db, 'IN');
   const names = new Map<string, string>();
   for (const s of symbols) { const n = symbolIndex.nameOf('IN', s); if (n) names.set(s, n); }
-  syncWatched(db, symbols, names);
+  syncWatched(db, symbols, names, new Date().toISOString(), inTokens);
   loadFoCache(db);
+  void inPrices.refresh().catch((e) => console.warn('india prices refresh:', e instanceof Error ? e.message : e));
 };
 const app = buildServer(db, {
   watchlist: {
     index: symbolIndex,
     onWatchAdded: (market, symbol) => {
-      if (market === 'US') void backfillWatched(symbol).catch((e) => console.warn(`watch backfill ${symbol}:`, e instanceof Error ? e.message : e));
+      if (market === 'US') {
+        void backfillWatched(symbol).catch((e) => console.warn(`watch backfill ${symbol}:`, e instanceof Error ? e.message : e));
+        // An off-calendar stock gets its estimated next date now, not at the next 6-hourly run.
+        void refreshWatchedEstimates(ctx).catch((e) => console.warn(`watch estimates ${symbol}:`, e instanceof Error ? e.message : e));
+      }
       else syncInWatched();
     },
   },
@@ -94,7 +101,7 @@ registerStream(app, live);
 startSymbolRefresh(symbolIndex, {
   ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers(), db) } : {}),
   IN: async () => {
-    const list = await loadInEntries(inCtx.http, db);
+    const list = await loadInEntries(inCtx.http, db, inTokens);
     // Names for watched stocks outside F&O come from this list.
     setTimeout(() => { try { syncInWatched(); } catch (e) { console.warn('india watched sync:', e); } }, 0); // after the list is set
     return list;

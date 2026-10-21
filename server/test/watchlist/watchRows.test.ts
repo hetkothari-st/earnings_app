@@ -60,6 +60,13 @@ describe('India: watched non-F&O stocks', () => {
     expect(getFoCache()!.symbols.has('RELAXO')).toBe(false);
   });
 
+  test('a new non-F&O watched stock gets its Kite equity token', () => {
+    const { db } = setup();
+    syncWatched(db, ['RELAXO'], new Map([['RELAXO', 'RELAXO FOOTWEARS']]), NOW, new Map([['RELAXO', 777], ['OTHER', 5]]));
+    expect(db.prepare('SELECT eq_token FROM in_stocks WHERE symbol = ?').get('RELAXO')).toEqual({ eq_token: 777 });
+    expect(db.prepare('SELECT 1 FROM in_stocks WHERE symbol = ?').get('OTHER')).toBeUndefined();
+  });
+
   test('watching an F&O stock keeps it active; the F&O list refresh keeps watched flags', () => {
     const { db } = setup();
     syncWatched(db, ['TATACOMM'], new Map(), NOW);
