@@ -1,0 +1,158 @@
+{
+  "ABSLAMC_21102026140813_Financials_Standalone_and_Consolidated_results.pdf": {
+    "symbol": "ABSLAMC",
+    "quarterEnd": "2026-09-30",
+    "type": "nbfc",
+    "basis": "Consolidated",
+    "eps": 7.64,
+    "revenue": 4838100000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 2209800000,
+    "xbrl": [
+      "INTEGRATED_FILING_NBFC_INDAS_1743426_21102026065736_WEB.xml",
+      "INTEGRATED_FILING_NBFC_INDAS_1743424_21102026065730_WEB.xml"
+    ]
+  },
+  "bakhtawar_irani_tajhotels_com_21102026164200_Outcome_of_BM.pdf": {
+    "symbol": "INDHOTEL",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Consolidated",
+    "eps": 2.46,
+    "revenue": 24843200000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 3798500000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1743364_21102026062714_WEB.xml",
+      "INTEGRATED_FILING_INDAS_1743363_21102026062701_WEB.xml"
+    ]
+  },
+  "IRFC_15102026151912_outcomeofmeeting15102026.pdf": {
+    "symbol": "IRFC",
+    "quarterEnd": "2026-09-30",
+    "type": "nbfc",
+    "basis": "Standalone",
+    "eps": 1.5,
+    "revenue": 78664100000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 19584800000,
+    "xbrl": [
+      "INTEGRATED_FILING_NBFC_INDAS_1739103_15102026052734_WEB.xml"
+    ],
+    "note": "NBFC; OCR text layer merges row labels; reader returns nothing"
+  },
+  "NURECA_21102026135447_StockExchnageIntimationQ2OutcomeofBMSigned.pdf": {
+    "symbol": "NURECA",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Consolidated",
+    "eps": 4.25,
+    "revenue": 585260000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 40510000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1743463_21102026071310_WEB.xml",
+      "INTEGRATED_FILING_INDAS_1743461_21102026071240_WEB.xml"
+    ]
+  },
+  "RAJRATAN_21102026162006_UFR.pdf": {
+    "symbol": "RAJRATAN",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Consolidated",
+    "eps": 4.75,
+    "revenue": 3708300000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 241400000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1743340_21102026061744_WEB.xml",
+      "INTEGRATED_FILING_INDAS_1743347_21102026061833_WEB.xml"
+    ]
+  },
+  "SPYL_21102026181610_OutcomeBM21102026.pdf": {
+    "symbol": "SHEKHAWATI",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Standalone",
+    "eps": -0.54,
+    "revenue": 40080000,
+    "revenueKind": "revenue-from-ops",
+    "profit": -18088000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1743367_21102026062737_WEB.xml"
+    ],
+    "note": "results tables are scanned images; only the cover letter has text"
+  },
+  "TATACOMM_15102026135741_18526.pdf": {
+    "symbol": "TATACOMM",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Consolidated",
+    "eps": 11.96,
+    "revenue": 66878900000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 3356100000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1739084_15102026052133_WEB.xml",
+      "INTEGRATED_FILING_INDAS_1739083_15102026052112_WEB.xml"
+    ]
+  },
+  "TECHM_15102026165627_Outcome_FINAL_Signed.pdf": {
+    "symbol": "TECHM",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Consolidated",
+    "eps": 17.88,
+    "revenue": 161802000000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 16097000000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1739120_15102026053428_WEB.xml",
+      "INTEGRATED_FILING_INDAS_1739118_15102026053405_WEB.xml"
+    ]
+  },
+  "UCOBANK_15102026131612_NSEFRSEpt.pdf": {
+    "symbol": "UCOBANK",
+    "quarterEnd": "2026-09-30",
+    "type": "bank",
+    "basis": "Standalone",
+    "eps": 0.63,
+    "revenue": 81740800000,
+    "revenueKind": "total-income",
+    "profit": 7856400000,
+    "xbrl": [
+      "INTEGRATED_FILING_BANKING_1739098_15102026052550_WEB.xml"
+    ],
+    "note": "bank; OCR text layer with misread digits (\"7,28,6t2\"); reader returns nothing"
+  },
+  "WENDT_21102026140141_outcoe_sd.pdf": {
+    "symbol": "WENDT",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Consolidated",
+    "eps": 27.45,
+    "revenue": 725100000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 54900000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1743414_21102026064955_WEB.xml",
+      "INTEGRATED_FILING_INDAS_1743411_21102026064904_WEB.xml"
+    ],
+    "note": "consolidated statement pages are scanned; standalone readable but withheld (wrong basis)"
+  },
+  "ZOMATO_21102026152051_OutcomeSIGNED.pdf": {
+    "symbol": "ETERNAL",
+    "quarterEnd": "2026-09-30",
+    "type": "company",
+    "basis": "Consolidated",
+    "eps": 0.14,
+    "revenue": 241380000000,
+    "revenueKind": "revenue-from-ops",
+    "profit": 1250000000,
+    "xbrl": [
+      "INTEGRATED_FILING_INDAS_1743410_21102026064843_WEB.xml",
+      "INTEGRATED_FILING_INDAS_1743409_21102026064836_WEB.xml"
+    ],
+    "note": "OCR text layer badly damaged (\"Septemher JO,\"); reader returns nothing"
+  }
+}

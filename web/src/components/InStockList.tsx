@@ -4,6 +4,7 @@ import type { InLivePriceDto, Note } from '../api';
 import { changeClass, formatChange, formatDateHeading, formatEpsInr, formatInrCr, formatPct } from '../lib/format';
 import { type SortKey, sortRows } from '../lib/sort';
 import { NoteEditor } from './NoteEditor';
+import { Tags } from './Tags';
 
 /** Expanded-list key for an Indian stock (keeps it apart from a US ticker with the same letters). */
 export const inKey = (symbol: string) => `IN:${symbol}`;
@@ -35,14 +36,15 @@ function byDate(rows: InReportDto[], sort: SortKey): [string, InReportDto[]][] {
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([d, list]) => [d, sortRows(list, sort)]);
 }
 
-function Result({ estimate, actual, result, surprisePct, format, analysts }: {
+function Result({ estimate, actual, result, surprisePct, format, analysts, preliminary, corrected }: {
   estimate: number | null; actual: number | null; result: BeatMiss | null; surprisePct: number | null;
-  format: (n: number | null) => string; analysts: number | null;
+  format: (n: number | null) => string; analysts: number | null; preliminary: boolean; corrected: boolean;
 }) {
   const arrow = result === 'beat' ? ' ▲' : result === 'miss' ? ' ▼' : '';
   return (
     <>
       {format(estimate)} / <span className={`act ${result ?? ''}`}>{actual == null ? '—' : `${format(actual)}${arrow}`}</span>
+      <Tags preliminary={preliminary} corrected={corrected} />
       {surprisePct != null && <span className="muted"> ({formatPct(surprisePct)})</span>}
       {analysts != null && estimate != null && <span className="muted"> · {analysts} analyst{analysts === 1 ? '' : 's'}</span>}
     </>
@@ -142,21 +144,25 @@ function InDetails({ r, zone, note, onSaveNote, price }: {
         <dt>EPS estimate / actual</dt>
         <dd>
           <Result estimate={r.eps.estimate} actual={r.eps.actual} result={r.eps.result} surprisePct={r.eps.surprisePct}
-            analysts={r.eps.analysts} format={formatEpsInr} />
+            analysts={r.eps.analysts} format={formatEpsInr} preliminary={r.eps.preliminary} corrected={r.eps.corrected} />
           {basis && <span className="muted"> · {basis}</span>}
         </dd>
 
         <dt>{revenueLabel}</dt>
         <dd>
           <Result estimate={r.revenue.estimate} actual={r.revenue.actual} result={r.revenue.result} surprisePct={r.revenue.surprisePct}
-            analysts={r.revenue.analysts} format={formatInrCr} />
+            analysts={r.revenue.analysts} format={formatInrCr} preliminary={r.revenue.preliminary} corrected={r.revenue.corrected} />
           {basis && <span className="muted"> · {basis}</span>}
           {r.revenue.kind === 'total-income' && <span className="basis"> * bank: total income, not comparable with the revenue estimate</span>}
           {r.basis === 'standalone' && r.eps.estimate != null && <span className="basis"> * standalone figures, estimate basis may differ</span>}
         </dd>
 
         <dt>Net profit</dt>
-        <dd>{formatInrCr(r.profit.actual)}{basis && r.profit.actual != null && <span className="muted"> · {basis}</span>}</dd>
+        <dd>
+          {formatInrCr(r.profit.actual)}
+          <Tags preliminary={r.profit.preliminary} corrected={r.profit.corrected} />
+          {basis && r.profit.actual != null && <span className="muted"> · {basis}</span>}
+        </dd>
 
         <dt>Expected move</dt>
         <dd>

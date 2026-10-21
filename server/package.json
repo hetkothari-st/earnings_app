@@ -8,6 +8,7 @@
     "backfill": "tsx src/cli/backfill.ts",
     "users": "tsx src/cli/users.ts",
     "reader-corpus": "tsx src/cli/readerCorpus.ts",
+    "collect-in-corpus": "tsx src/cli/collectInCorpus.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -15,6 +16,7 @@
     "fastify": "5.12.7",
     "luxon": "3.7.2",
     "node-cron": "4.6.0",
+    "pdfjs-dist": "6.3.289",
     "puppeteer-core": "^25.14.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

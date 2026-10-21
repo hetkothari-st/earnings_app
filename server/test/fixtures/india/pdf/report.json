@@ -1,0 +1,179 @@
+{
+  "files": 11,
+  "types": {
+    "company": 8,
+    "bank": 1,
+    "nbfc": 2
+  },
+  "tolerance": {
+    "eps": 0.01,
+    "revenuePct": 0.5,
+    "profitPct": 0.5
+  },
+  "gate": {
+    "minRate": 95,
+    "minCompared": 20
+  },
+  "fields": {
+    "eps": {
+      "accepted": 6,
+      "compared": 6,
+      "matched": 6,
+      "unverified": 0,
+      "rate": 100,
+      "gatePasses": false
+    },
+    "revenue": {
+      "accepted": 6,
+      "compared": 6,
+      "matched": 6,
+      "unverified": 0,
+      "rate": 100,
+      "gatePasses": false
+    },
+    "profit": {
+      "accepted": 5,
+      "compared": 5,
+      "matched": 5,
+      "unverified": 0,
+      "rate": 100,
+      "gatePasses": false
+    }
+  },
+  "mismatches": [],
+  "perFile": [
+    {
+      "file": "ABSLAMC_21102026140813_Financials_Standalone_and_Consolidated_results.pdf",
+      "symbol": "ABSLAMC",
+      "type": "nbfc",
+      "basis": "Consolidated",
+      "eps": 7.64,
+      "revenue": 4838100000,
+      "revenueKind": "revenue-from-ops",
+      "profit": 2209800000,
+      "notes": []
+    },
+    {
+      "file": "IRFC_15102026151912_outcomeofmeeting15102026.pdf",
+      "symbol": "IRFC",
+      "type": "nbfc",
+      "basis": null,
+      "eps": null,
+      "revenue": null,
+      "revenueKind": null,
+      "profit": null,
+      "notes": [
+        "no results table with a quarter column"
+      ]
+    },
+    {
+      "file": "NURECA_21102026135447_StockExchnageIntimationQ2OutcomeofBMSigned.pdf",
+      "symbol": "NURECA",
+      "type": "company",
+      "basis": "Consolidated",
+      "eps": 4.25,
+      "revenue": 585260000,
+      "revenueKind": "revenue-from-ops",
+      "profit": null,
+      "notes": []
+    },
+    {
+      "file": "RAJRATAN_21102026162006_UFR.pdf",
+      "symbol": "RAJRATAN",
+      "type": "company",
+      "basis": "Consolidated",
+      "eps": 4.75,
+      "revenue": 3708300000,
+      "revenueKind": "revenue-from-ops",
+      "profit": 241400000,
+      "notes": []
+    },
+    {
+      "file": "SPYL_21102026181610_OutcomeBM21102026.pdf",
+      "symbol": "SHEKHAWATI",
+      "type": "company",
+      "basis": null,
+      "eps": null,
+      "revenue": null,
+      "revenueKind": null,
+      "profit": null,
+      "notes": [
+        "no results table with a quarter column"
+      ]
+    },
+    {
+      "file": "TATACOMM_15102026135741_18526.pdf",
+      "symbol": "TATACOMM",
+      "type": "company",
+      "basis": "Consolidated",
+      "eps": 11.96,
+      "revenue": 66878900000,
+      "revenueKind": "revenue-from-ops",
+      "profit": 3356100000,
+      "notes": []
+    },
+    {
+      "file": "TECHM_15102026165627_Outcome_FINAL_Signed.pdf",
+      "symbol": "TECHM",
+      "type": "company",
+      "basis": "Consolidated",
+      "eps": 17.88,
+      "revenue": 161802000000,
+      "revenueKind": "revenue-from-ops",
+      "profit": 16097000000,
+      "notes": []
+    },
+    {
+      "file": "UCOBANK_15102026131612_NSEFRSEpt.pdf",
+      "symbol": "UCOBANK",
+      "type": "bank",
+      "basis": null,
+      "eps": null,
+      "revenue": null,
+      "revenueKind": null,
+      "profit": null,
+      "notes": [
+        "p2: no single quarter column for 2026-09-30",
+        "no results table with a quarter column"
+      ]
+    },
+    {
+      "file": "WENDT_21102026140141_outcoe_sd.pdf",
+      "symbol": "WENDT",
+      "type": "company",
+      "basis": null,
+      "eps": null,
+      "revenue": null,
+      "revenueKind": null,
+      "profit": null,
+      "notes": [
+        "consolidated results present but not read"
+      ]
+    },
+    {
+      "file": "ZOMATO_21102026152051_OutcomeSIGNED.pdf",
+      "symbol": "ETERNAL",
+      "type": "company",
+      "basis": null,
+      "eps": null,
+      "revenue": null,
+      "revenueKind": null,
+      "profit": null,
+      "notes": [
+        "p18: no single quarter column for 2026-09-30",
+        "no results table with a quarter column"
+      ]
+    },
+    {
+      "file": "bakhtawar_irani_tajhotels_com_21102026164200_Outcome_of_BM.pdf",
+      "symbol": "INDHOTEL",
+      "type": "company",
+      "basis": "Consolidated",
+      "eps": 2.46,
+      "revenue": 24843200000,
+      "revenueKind": "revenue-from-ops",
+      "profit": 3798500000,
+      "notes": []
+    }
+  ]
+}

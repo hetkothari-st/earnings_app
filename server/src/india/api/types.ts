@@ -23,15 +23,23 @@ export interface InReportDto {
   industry: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
-  /** Basis of the actuals. Beat/miss is shown only for consolidated actuals. */
+  /** Basis of the figures shown (of the preliminary ones while any are shown). Beat/miss only for consolidated figures. */
   basis: 'consolidated' | 'standalone' | null;
-  eps: { estimate: number | null; analysts: number | null; actual: number | null; surprisePct: number | null; result: BeatMiss | null };
+  /**
+   * `preliminary`: read from the results PDF, not yet confirmed by the XBRL filing.
+   * `corrected`: the filing differed from the preliminary value and replaced it.
+   */
+  eps: {
+    estimate: number | null; analysts: number | null; actual: number | null; surprisePct: number | null; result: BeatMiss | null;
+    preliminary: boolean; corrected: boolean;
+  };
   /** Banks file total income instead of revenue from operations (kind 'total-income'): no beat/miss for them. */
   revenue: {
     estimate: number | null; analysts: number | null; actual: number | null;
     kind: 'revenue-from-ops' | 'total-income' | null; surprisePct: number | null; result: BeatMiss | null;
+    preliminary: boolean; corrected: boolean;
   };
-  profit: { actual: number | null };
+  profit: { actual: number | null; preliminary: boolean; corrected: boolean };
   expectedMove: {
     expiry: string; strike: number; callMid: number; putMid: number; underlying: number;
     movePct: number; illiquid: boolean; final: boolean; snapshotAt: string;

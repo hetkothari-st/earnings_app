@@ -215,8 +215,9 @@ export function parseIntegratedFiling(xml: string): IntegratedFiling {
   // Banking-specific
   const interestEarned = parseNumber(quarterFact(xml, 'InterestEarned'));
   const totalIncome = parseNumber(quarterFact(xml, 'Income'));
-  // Banks are identified by the presence of InterestEarned (not just Income — Ind AS companies also have Income)
-  const isBank = interestEarned != null;
+  // Banks are identified by the presence of InterestEarned (not just Income — Ind AS companies also have Income).
+  // NBFCs also file InterestEarned, but under Ind AS with revenue from operations: they are not banks.
+  const isBank = interestEarned != null && revOps == null;
 
   return {
     symbol: symbolRaw.trim().toUpperCase(),

@@ -17,6 +17,8 @@ import { fetchIndexQuote } from './sources/yahoo.js';
 import { todayIST } from './india/domain/nseCalendar.js';
 import type { InJobContext } from './india/jobs/context.js';
 import { startInScheduler, warmUpIndia } from './india/jobs/scheduler.js';
+import { getInReport, saveInPrelim } from './india/db/inRepo.js';
+import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js';
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
 import { createKiteApi } from './india/sources/kiteApi.js';
 import { ensureSession, getKiteCredentials, getSession, kiteStatus } from './india/sources/kiteLogin.js';
@@ -98,6 +100,20 @@ void (async () => {
   await warmUpIndia(inCtx, job);
   // Flips India reports within seconds; ticks no-op until the F&O list is loaded. Own client: 1 request/s to nsearchives.
   const nseHttp = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA } });
-  new NseWatch({ ...inCtx, http: nseHttp }, (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); }).start(5000);
+  // Quick read of the results PDF: preliminary EPS / revenue / profit until the XBRL filing confirms them.
+  // Downloads go one at a time, a second apart, however many results come out together.
+  let pdfQueue: Promise<unknown> = Promise.resolve();
+  const queuedPdf = (url: string): Promise<Uint8Array> => {
+    const next = pdfQueue.then(() => fetchResultsPdf(url, BROWSER_UA));
+    pdfQueue = next.catch(() => undefined).then(() => new Promise((r) => setTimeout(r, 1000)));
+    return next;
+  };
+  const inReader = async (pdfUrl: string, reportId: number): Promise<void> => {
+    const rep = getInReport(db, reportId);
+    if (!rep) return;
+    const v = await readInResultsPdf(await queuedPdf(pdfUrl), rep.quarterEnd);
+    if (saveInPrelim(db, reportId, v, new Date().toISOString())) live.publish('in-results', { ids: [reportId] });
+  };
+  new NseWatch({ ...inCtx, http: nseHttp }, (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); }, inReader).start(5000);
   inPrices.refresh();
 })();

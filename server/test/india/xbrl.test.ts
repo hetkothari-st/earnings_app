@@ -56,6 +56,11 @@ describe('parseIntegratedFiling - Banking (UCOBANK standalone)', () => {
     expect(f.revenueKind).toBe('total-income');
   });
 
+  it('an NBFC (interest earned, but revenue from operations) is not a bank', () => {
+    const f = parseIntegratedFiling(fixture('xbrl_nbfc_IRFC_Q2FY27_standalone.xml'));
+    expect(f).toMatchObject({ symbol: 'IRFC', isBank: false, revenueKind: 'revenue-from-ops', revenueFromOperations: 78_664_100_000 });
+  });
+
   it('throws SourceFormatError on non-XBRL', () => {
     expect(() => parseIntegratedFiling('<html>not xml</html>')).toThrow();
   });

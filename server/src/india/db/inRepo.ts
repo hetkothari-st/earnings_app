@@ -4,6 +4,7 @@ import { IN_ADDED_COLUMNS, IN_SCHEMA } from './schema.js';
 import { IST, type InTiming, timingForRelease } from '../domain/nseCalendar.js';
 import type { InExpectedMove } from '../domain/inMoves.js';
 import { quarterLabel } from '../domain/quarter.js';
+import { config } from '../../config.js';
 
 /** India report ids start here, so they never collide with US report ids (notes, live events). */
 export const IN_ID_BASE = 1_000_000_001;
@@ -112,6 +113,14 @@ export interface InReport {
   pnlActual: number | null;
   epsActual: number | null;
   nature: string | null;
+  /** Preliminary values from the results PDF (null once the XBRL filing confirmed or corrected them). */
+  epsPrelim: number | null;
+  revenuePrelim: number | null;
+  pnlPrelim: number | null;
+  prelimBasis: 'Consolidated' | 'Standalone' | null;
+  epsCorrected: boolean;
+  revenueCorrected: boolean;
+  pnlCorrected: boolean;
   epsEstimate: number | null;
   epsAnalysts: number | null;
   revenueEstimate: number | null;
@@ -134,6 +143,8 @@ interface InReportRow {
   report_date: string | null; date_status: string; timing: string; timing_source: string | null; released_at: string | null;
   rescheduled_from: string | null; revenue_actual: number | null; revenue_kind: string | null;
   pnl_actual: number | null; eps_actual: number | null; nature: string | null;
+  eps_prelim: number | null; revenue_prelim: number | null; pnl_prelim: number | null; prelim_basis: string | null;
+  eps_corrected: number | null; revenue_corrected: number | null; pnl_corrected: number | null;
   eps_estimate: number | null; eps_analysts: number | null; revenue_estimate: number | null; revenue_analysts: number | null;
   prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: string | null;
   s_sector: string | null; s_industry: string | null; s_market_cap: number | null; s_market_cap_as_of: string | null;
@@ -174,6 +185,13 @@ function toInReport(r: InReportRow): InReport {
     pnlActual: r.pnl_actual,
     epsActual: r.eps_actual,
     nature: r.nature,
+    epsPrelim: r.eps_prelim,
+    revenuePrelim: r.revenue_prelim,
+    pnlPrelim: r.pnl_prelim,
+    prelimBasis: r.prelim_basis === 'Consolidated' || r.prelim_basis === 'Standalone' ? r.prelim_basis : null,
+    epsCorrected: r.eps_corrected === 1,
+    revenueCorrected: r.revenue_corrected === 1,
+    pnlCorrected: r.pnl_corrected === 1,
     epsEstimate: r.eps_estimate,
     epsAnalysts: r.eps_analysts,
     revenueEstimate: r.revenue_estimate,
@@ -288,7 +306,79 @@ export function mergeInFiling(
     .run(properName(row.name, row.symbol) ?? existing.name, moved ? row.reportDate : existing.report_date ?? row.reportDate,
       moved && existing.date_status === 'confirmed' && existing.report_date != null ? 1 : 0,
       next.revenue, next.kind, next.pnl, next.eps, next.nature, now, existing.id);
+  confirmInPrelim(db, existing.id);
   return { id: existing.id, changed };
+}
+
+// ---------- Preliminary values (results PDF) ----------
+
+export interface InPrelimValues {
+  basis: 'Consolidated' | 'Standalone' | null;
+  eps: number | null;
+  revenue: number | null;
+  revenueKind: 'revenue-from-ops' | 'total-income' | null;
+  profit: number | null;
+}
+export type InFastGates = Pick<typeof config.fastFields, 'inEps' | 'inRevenue' | 'inProfit'>;
+
+interface PrelimRow {
+  eps_actual: number | null; revenue_actual: number | null; pnl_actual: number | null; nature: string | null;
+  eps_prelim: number | null; revenue_prelim: number | null; pnl_prelim: number | null; prelim_basis: string | null; prelim_at: string | null;
+}
+const PRELIM_SELECT = `SELECT eps_actual, revenue_actual, pnl_actual, nature, eps_prelim, revenue_prelim, pnl_prelim, prelim_basis, prelim_at
+  FROM in_reports WHERE id = ?`;
+
+/**
+ * Store values read from the results PDF, only for fields whose gate is open and that have no official
+ * figure yet. Never replaces or adds to an earlier prelim (one read per report), and needs a basis.
+ * A revenue prelim sets the revenue kind while no official revenue exists. Returns true if anything was stored.
+ */
+export function saveInPrelim(db: DatabaseSync, id: number, v: InPrelimValues, at: string, gates: InFastGates = config.fastFields): boolean {
+  const r = db.prepare(PRELIM_SELECT).get(id) as unknown as PrelimRow | undefined;
+  if (!r || !v.basis || r.prelim_at != null) return false;
+  const eps = gates.inEps && r.eps_actual == null ? v.eps : null;
+  const revenue = gates.inRevenue && r.revenue_actual == null && v.revenueKind ? v.revenue : null;
+  const pnl = gates.inProfit && r.pnl_actual == null ? v.profit : null;
+  if (eps == null && revenue == null && pnl == null) return false;
+  db.prepare(`UPDATE in_reports SET eps_prelim = ?, revenue_prelim = ?, pnl_prelim = ?, prelim_basis = ?, prelim_at = ?,
+      revenue_kind = CASE WHEN ? IS NOT NULL AND revenue_actual IS NULL THEN ? ELSE revenue_kind END WHERE id = ?`)
+    .run(eps, revenue, pnl, v.basis, at, revenue, v.revenueKind, id);
+  return true;
+}
+
+/**
+ * Called after an official (XBRL) figure is written. On the same basis a match (EPS within 0.01, revenue and
+ * profit within 0.5%) clears the prelim and a mismatch clears it with the field marked corrected. A consolidated
+ * official figure clears a standalone prelim without a correction (another basis); a standalone official figure
+ * leaves a consolidated prelim in place (consolidated wins) until the consolidated filing arrives.
+ */
+export function confirmInPrelim(db: DatabaseSync, id: number): void {
+  const r = db.prepare(PRELIM_SELECT).get(id) as unknown as PrelimRow | undefined;
+  if (!r || r.prelim_at == null) return;
+  if (r.nature == null || (r.prelim_basis === 'Consolidated' && r.nature !== 'Consolidated')) return;
+  const sameBasis = r.nature === r.prelim_basis;
+  const check = (prelim: number | null, actual: number | null, off: (a: number, p: number) => boolean) => {
+    if (prelim == null || actual == null) return { clear: false, corrected: false };
+    return { clear: true, corrected: sameBasis && off(actual, prelim) };
+  };
+  const pct = (a: number, p: number) => Math.abs(a - p) > Math.abs(a) * 0.005 + 1e-9;
+  const eps = check(r.eps_prelim, r.eps_actual, (a, p) => Math.abs(a - p) > 0.01 + 1e-9);
+  const rev = check(r.revenue_prelim, r.revenue_actual, pct);
+  const pnl = check(r.pnl_prelim, r.pnl_actual, pct);
+  if (!eps.clear && !rev.clear && !pnl.clear) return;
+  const left = (r.eps_prelim != null && !eps.clear) || (r.revenue_prelim != null && !rev.clear) || (r.pnl_prelim != null && !pnl.clear);
+  const b = (x: boolean) => (x ? 1 : 0);
+  // prelim_at stays set even when everything is cleared, so a later fast read never stores again.
+  db.prepare(`UPDATE in_reports SET
+      eps_prelim = CASE WHEN ? THEN NULL ELSE eps_prelim END,
+      revenue_prelim = CASE WHEN ? THEN NULL ELSE revenue_prelim END,
+      pnl_prelim = CASE WHEN ? THEN NULL ELSE pnl_prelim END,
+      eps_corrected = CASE WHEN ? THEN 1 ELSE eps_corrected END,
+      revenue_corrected = CASE WHEN ? THEN 1 ELSE revenue_corrected END,
+      pnl_corrected = CASE WHEN ? THEN 1 ELSE pnl_corrected END,
+      prelim_basis = CASE WHEN ? THEN prelim_basis ELSE NULL END
+    WHERE id = ?`)
+    .run(b(eps.clear), b(rev.clear), b(pnl.clear), b(eps.corrected), b(rev.corrected), b(pnl.corrected), b(left), id);
 }
 
 /**

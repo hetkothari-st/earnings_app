@@ -87,6 +87,15 @@ export const IN_ADDED_COLUMNS: Record<string, [string, string][]> = {
     ['revenue_analysts', 'INTEGER'],
     ['estimates_fetched_at', 'TEXT'],
     ['prev_move_basis', 'TEXT'],
+    // Preliminary values from the results PDF, shown until the XBRL filing confirms or corrects them.
+    ['eps_prelim', 'REAL'],
+    ['revenue_prelim', 'REAL'],
+    ['pnl_prelim', 'REAL'],
+    ['prelim_basis', 'TEXT'],
+    ['prelim_at', 'TEXT'],
+    ['eps_corrected', 'INTEGER'],
+    ['revenue_corrected', 'INTEGER'],
+    ['pnl_corrected', 'INTEGER'],
   ],
   in_expected_moves: [['final', 'INTEGER NOT NULL DEFAULT 0']],
 };
