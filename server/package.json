@@ -7,6 +7,7 @@
     "start": "tsx src/index.ts",
     "backfill": "tsx src/cli/backfill.ts",
     "users": "tsx src/cli/users.ts",
+    "reader-corpus": "tsx src/cli/readerCorpus.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -24,6 +24,15 @@ export const config = {
   kiteUserId: process.env.KITE_USER_ID ?? '',
   kitePassword: process.env.KITE_PASSWORD ?? '',
   kiteTotpSecret: process.env.KITE_TOTP_SECRET ?? '',
+  /**
+   * Fast-reader gate: a field read from the press release goes live only if its
+   * corpus match rate is >= 95% (npm run reader-corpus -w server).
+   * US corpus (48 releases): adjusted EPS 8/11 = 72.7% (company non-GAAP often differs
+   * from Nasdaq's), revenue 24/24 = 100%. India reader not built yet.
+   */
+  fastFields: { usEps: false, usRevenue: true, inEps: false, inRevenue: false, inProfit: false } as {
+    usEps: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean;
+  },
 };
 
 export type Config = typeof config;

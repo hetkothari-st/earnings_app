@@ -1,0 +1,606 @@
+{
+  "ACI_Aug2026.htm": {
+    "symbol": "ACI",
+    "quarterEnd": "2026-09-12",
+    "epsAdjusted": 0.34,
+    "epsGaap": 0.11,
+    "revenue": 18894700000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "ACN_Aug2026.htm": {
+    "symbol": "ACN",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 3.29,
+    "epsGaap": 3.29,
+    "revenue": 18679110000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "AZO_Aug2026.htm": {
+    "symbol": "AZO",
+    "quarterEnd": "2026-08-29",
+    "epsAdjusted": 56.05,
+    "epsGaap": 56.05,
+    "revenue": 6594879000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "AZZ_Aug2026.htm": {
+    "symbol": "AZZ",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 2,
+    "epsGaap": 1.94,
+    "revenue": 486892000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "BAC_Sep2026.htm": {
+    "symbol": "BAC",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 1.08,
+    "epsGaap": 0.91,
+    "revenue": 30119000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "tables are images; Finnhub revenue 30,119M is FTE basis (release: $30.0B GAAP)"
+  },
+  "BLK_Sep2026.htm": {
+    "symbol": "BLK",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 15.93,
+    "epsGaap": 10.57,
+    "revenue": 7752000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "C_Sep2026.htm": {
+    "symbol": "C",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 2.85,
+    "epsGaap": 2.85,
+    "revenue": 23845000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "CAG_Aug2026.htm": {
+    "symbol": "CAG",
+    "quarterEnd": "2026-08-30",
+    "epsAdjusted": 0.41,
+    "epsGaap": 0.36,
+    "revenue": 2595900000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "CCL_Aug2026.htm": {
+    "symbol": "CCL",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 1.43,
+    "epsGaap": 1.4,
+    "revenue": 8435000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "COST_Aug2026.htm": {
+    "symbol": "COST",
+    "quarterEnd": "2026-08-30",
+    "epsAdjusted": 6.6,
+    "epsGaap": 6.75,
+    "revenue": 95723000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "GAAP-only release; Nasdaq EPS 6.60 excludes $0.15 tariff refund"
+  },
+  "CTAS_Aug2026.htm": {
+    "symbol": "CTAS",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 1.39,
+    "epsGaap": 1.36,
+    "revenue": 3013981000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "DAL_Sep2026.htm": {
+    "symbol": "DAL",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 1.72,
+    "epsGaap": 1.15,
+    "revenue": 20186000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "Finnhub revenue 17,585M is adjusted operating revenue (ex refinery); release GAAP total operating revenue 20,186M"
+  },
+  "DLR_Jun2026.htm": {
+    "symbol": "DLR",
+    "quarterEnd": "2026-06-30",
+    "epsAdjusted": 2.13,
+    "epsGaap": 1.21,
+    "revenue": 1924040000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "REIT; Nasdaq EPS = Core FFO ex promote"
+  },
+  "DPZ_Sep2026.htm": {
+    "symbol": "DPZ",
+    "quarterEnd": "2026-09-06",
+    "epsAdjusted": 4.6,
+    "epsGaap": 4.6,
+    "revenue": 1185598000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "DRI_Aug2026.htm": {
+    "symbol": "DRI",
+    "quarterEnd": "2026-08-30",
+    "epsAdjusted": 2.05,
+    "epsGaap": 2.05,
+    "revenue": 3200300000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "FAST_Sep2026.htm": {
+    "symbol": "FAST",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 0.35,
+    "epsGaap": 0.35,
+    "revenue": 2463300000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "GAAP-only release"
+  },
+  "FDS_Aug2026.htm": {
+    "symbol": "FDS",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 4.52,
+    "epsGaap": 3.41,
+    "revenue": 634698000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "GIS_Aug2026.htm": {
+    "symbol": "GIS",
+    "quarterEnd": "2026-08-30",
+    "epsAdjusted": 0.75,
+    "epsGaap": 0.74,
+    "revenue": 4389500000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "GS_Sep2026.htm": {
+    "symbol": "GS",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 17.01,
+    "epsGaap": 17.01,
+    "revenue": 18679000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "JBL_Aug2026.htm": {
+    "symbol": "JBL",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 4.17,
+    "epsGaap": 3.76,
+    "revenue": 10616000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "release core EPS 4.40 differs from Nasdaq 4.17",
+    "knownMismatch": [
+      "epsAdjusted"
+    ]
+  },
+  "JEF_Aug2026.htm": {
+    "symbol": "JEF",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 1.09,
+    "epsGaap": 1.08,
+    "revenue": 2221934000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "JNJ_Sep2026.htm": {
+    "symbol": "JNJ",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 2.59,
+    "epsGaap": 0.09,
+    "revenue": 25399000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "release states Q3 2026 only; quarterEnd = month-end of Nasdaq fiscal quarter"
+  },
+  "JPM_Sep2026.htm": {
+    "symbol": "JPM",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 5.75,
+    "epsGaap": 5.57,
+    "revenue": 50172000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "Finnhub revenue 50,907M is managed basis; release reported net revenue 50,172M"
+  },
+  "KBH_Aug2026.htm": {
+    "symbol": "KBH",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 1.05,
+    "epsGaap": 1.05,
+    "revenue": 1297101000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "KMX_Aug2026.htm": {
+    "symbol": "KMX",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 1.16,
+    "epsGaap": 1.16,
+    "revenue": 7877910000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "KO_Jun2026.htm": {
+    "symbol": "KO",
+    "quarterEnd": "2026-07-03",
+    "epsAdjusted": 0.97,
+    "epsGaap": 1.03,
+    "revenue": 13380000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "Nasdaq EPS = comparable EPS"
+  },
+  "LEN_Aug2026.htm": {
+    "symbol": "LEN",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 1.23,
+    "epsGaap": 1.19,
+    "revenue": 8046119000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "LEVI_Aug2026.htm": {
+    "symbol": "LEVI",
+    "quarterEnd": "2026-08-30",
+    "epsAdjusted": 0.48,
+    "epsGaap": 0.43,
+    "revenue": 1609700000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "LW_Aug2026.htm": {
+    "symbol": "LW",
+    "quarterEnd": "2026-08-30",
+    "epsAdjusted": 0.75,
+    "epsGaap": 0.21,
+    "revenue": 1670300000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "MKC_Aug2026.htm": {
+    "symbol": "MKC",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 0.86,
+    "epsGaap": 0.36,
+    "revenue": 2024800000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "tables are images"
+  },
+  "MS_Sep2026.htm": {
+    "symbol": "MS",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 3.03,
+    "epsGaap": 3.03,
+    "revenue": 20338000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "MU_Aug2026.htm": {
+    "symbol": "MU",
+    "quarterEnd": "2026-09-03",
+    "epsAdjusted": 33.19,
+    "epsGaap": 32.87,
+    "revenue": 54229000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "release non-GAAP EPS 33.42 differs from Nasdaq 33.19",
+    "knownMismatch": [
+      "epsAdjusted"
+    ]
+  },
+  "NEE_Jun2026.htm": {
+    "symbol": "NEE",
+    "quarterEnd": "2026-06-30",
+    "epsAdjusted": 1.15,
+    "epsGaap": 1.5,
+    "revenue": 7534000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    }
+  },
+  "NKE_Aug2026.htm": {
+    "symbol": "NKE",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 0.48,
+    "epsGaap": 0.48,
+    "revenue": 11213000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "PAYX_Aug2026.htm": {
+    "symbol": "PAYX",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 1.34,
+    "epsGaap": 1.21,
+    "revenue": 1630500000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "PGR_Sep2026.htm": {
+    "symbol": "PGR",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 4.6,
+    "epsGaap": 4.37,
+    "revenue": null,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": null
+    },
+    "note": "Finnhub revenue 22,301M is quarterly net premiums written, not total revenues; quarterly total revenues not in release tables"
+  },
+  "PLD_Jun2026.htm": {
+    "symbol": "PLD",
+    "quarterEnd": "2026-06-30",
+    "epsAdjusted": 1.63,
+    "epsGaap": 1.13,
+    "revenue": 2425452000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "REIT; tables are not HTML tables; Nasdaq EPS = Core FFO"
+  },
+  "PSA_Jun2026.htm": {
+    "symbol": "PSA",
+    "quarterEnd": "2026-06-30",
+    "epsAdjusted": 4.17,
+    "epsGaap": 2.55,
+    "revenue": 1232881000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "REIT; Nasdaq EPS = Core FFO"
+  },
+  "SNX_Aug2026.htm": {
+    "symbol": "SNX",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 5.53,
+    "epsGaap": 5.18,
+    "revenue": 21558406000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "release non-GAAP EPS 5.68 differs from Nasdaq 5.53",
+    "knownMismatch": [
+      "epsAdjusted"
+    ]
+  },
+  "STT_Sep2026.htm": {
+    "symbol": "STT",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 3.69,
+    "epsGaap": 3.69,
+    "revenue": 4004000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "STZ_Aug2026.htm": {
+    "symbol": "STZ",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 3.74,
+    "epsGaap": 3.32,
+    "revenue": 2633000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "THO_Jul2026.htm": {
+    "symbol": "THO",
+    "quarterEnd": "2026-07-31",
+    "epsAdjusted": 0.78,
+    "epsGaap": 0.78,
+    "revenue": 2311628000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "UNH_Sep2026.htm": {
+    "symbol": "UNH",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 4.69,
+    "epsGaap": 4.56,
+    "revenue": 112694000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    },
+    "note": "tables are images"
+  },
+  "VTR_Jun2026.htm": {
+    "symbol": "VTR",
+    "quarterEnd": "2026-06-30",
+    "epsAdjusted": 0.97,
+    "epsGaap": 0.14,
+    "revenue": 1729614000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "REIT; Nasdaq EPS = Normalized FFO"
+  },
+  "WELL_Jun2026.htm": {
+    "symbol": "WELL",
+    "quarterEnd": "2026-06-30",
+    "epsAdjusted": 1.6,
+    "epsGaap": 0.61,
+    "revenue": 3544586000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "release"
+    },
+    "note": "REIT; Nasdaq EPS = Normalized FFO"
+  },
+  "WFC_Sep2026.htm": {
+    "symbol": "WFC",
+    "quarterEnd": "2026-09-30",
+    "epsAdjusted": 1.87,
+    "epsGaap": 1.87,
+    "revenue": 21870000000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "WOR_Aug2026.htm": {
+    "symbol": "WOR",
+    "quarterEnd": "2026-08-31",
+    "epsAdjusted": 0.82,
+    "epsGaap": 0.87,
+    "revenue": 343886000,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": "finnhub"
+    }
+  },
+  "XOM_Jun2026.htm": {
+    "symbol": "XOM",
+    "quarterEnd": "2026-06-30",
+    "epsAdjusted": 3.52,
+    "epsGaap": 3.48,
+    "revenue": null,
+    "sources": {
+      "eps": "nasdaq",
+      "epsGaap": "release",
+      "revenue": null
+    },
+    "note": "revenue not checked"
+  }
+}
