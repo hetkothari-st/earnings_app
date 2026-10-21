@@ -1,6 +1,6 @@
 // Type-only module shared with the web app. No runtime code here.
 export type Timing = 'BMO' | 'AMC' | 'DMH' | 'UNKNOWN';
-export type TimingSource = 'nasdaq' | 'finnhub' | 'sec' | null;
+export type TimingSource = 'nasdaq' | 'finnhub' | 'sec' | 'investing' | null;
 export type SecCheck = 'verified' | 'consistent' | 'derived' | 'contradicted' | 'unverifiable';
 export type BeatMiss = 'beat' | 'miss' | 'inline';
 

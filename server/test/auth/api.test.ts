@@ -173,7 +173,7 @@ describe('expanded list', () => {
   test('PUT validates the payload', async () => {
     const a = sessionHeader(await login('1A', '00000000'));
     for (const payload of [
-      {}, { symbols: 'TSM' }, { symbols: [1] }, { symbols: ['A'.repeat(13)] }, { symbols: [''] },
+      {}, { symbols: 'TSM' }, { symbols: [1] }, { symbols: ['A'.repeat(25)] }, { symbols: [''] },
       { symbols: Array.from({ length: 2001 }, (_, i) => `S${i}`) },
     ]) {
       const res = await app.inject({ method: 'PUT', url: '/api/expanded', headers: a, payload });

@@ -2,7 +2,7 @@ import type { Db } from '../db/repo.js';
 import { recordSourceError, recordSourceSuccess } from '../db/repo.js';
 import type { SecTicker } from '../sources/sec.js';
 import type { YahooSummary } from '../sources/yahooEarnings.js';
-import type { CalendarRow, Filing, OptionChain, RevenueRow } from '../types.js';
+import type { CalendarRow, Filing, InvestingRow, OptionChain, RevenueRow } from '../types.js';
 
 /** Every external data source the jobs use. Paid sources later implement the same interface. */
 export interface Sources {
@@ -15,6 +15,7 @@ export interface Sources {
   dailyCloses(symbol: string, from: string, to: string): Promise<Map<string, number>>;
   sectors(): Promise<Map<string, { sector: string | null; industry: string | null }>>;
   yahooSummary(symbol: string): Promise<YahooSummary | null>;
+  investing?(tab: 'today' | 'yesterday', date: string): Promise<InvestingRow[]>;
 }
 
 export interface JobContext {

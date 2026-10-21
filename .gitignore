@@ -5,3 +5,12 @@ data/
 *.log
 .superpowers/
 .playwright-mcp/
+
+# Local scripts that hold secrets
+gen_totp.mjs
+totp_live.mjs
+server/debug_*.mjs
+/nke.pdf
+.jetro/
+.claude/
+.superpowers/

@@ -1,5 +1,12 @@
 import { useEffect, useRef } from 'react';
-import type { LivePrice } from '../api';
+import type { InLivePriceDto, LivePrice } from '../api';
+
+/** India events: results and moves by report id, prices by NSE symbol. */
+export interface IndiaLive {
+  onIds?: (ids: number[]) => void;
+  onMoves?: (ids: number[]) => void;
+  onPrices?: (prices: Record<string, InLivePriceDto>) => void;
+}
 
 /**
  * Listens to the server's live stream. `onIds` gets report ids whose results just arrived;
@@ -9,9 +16,10 @@ export function useLiveResults(
   onIds: (ids: number[]) => void,
   onMoves?: (ids: number[]) => void,
   onPrices?: (prices: Record<string, LivePrice>) => void,
+  india?: IndiaLive,
 ): void {
-  const cb = useRef({ onIds, onMoves, onPrices });
-  cb.current = { onIds, onMoves, onPrices };
+  const cb = useRef({ onIds, onMoves, onPrices, india });
+  cb.current = { onIds, onMoves, onPrices, india };
   useEffect(() => {
     if (typeof EventSource === 'undefined') return;
     const source = new EventSource('/api/stream');
@@ -26,14 +34,19 @@ export function useLiveResults(
       });
     listen('results', () => cb.current.onIds);
     listen('moves', () => cb.current.onMoves);
-    source.addEventListener('prices', (e: MessageEvent) => {
-      try {
-        const { prices } = JSON.parse(e.data) as { prices: Record<string, LivePrice> };
-        if (prices && typeof prices === 'object') cb.current.onPrices?.(prices);
-      } catch {
-        // malformed frame: ignore
-      }
-    });
+    listen('in-results', () => cb.current.india?.onIds);
+    listen('in-moves', () => cb.current.india?.onMoves);
+    const prices = <T,>(event: string, pick: () => ((p: Record<string, T>) => void) | undefined) =>
+      source.addEventListener(event, (e: MessageEvent) => {
+        try {
+          const { prices: p } = JSON.parse(e.data) as { prices: Record<string, T> };
+          if (p && typeof p === 'object') pick()?.(p);
+        } catch {
+          // malformed frame: ignore
+        }
+      });
+    prices<LivePrice>('prices', () => cb.current.onPrices);
+    prices<InLivePriceDto>('in-prices', () => cb.current.india?.onPrices);
     return () => source.close();
   }, []);
 }

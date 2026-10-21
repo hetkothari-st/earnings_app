@@ -10,6 +10,9 @@ Shows US earnings reports by day/week/month/quarter with BMO/AMC timing in ET an
 2. Copy `.env.example` to `.env` and set:
    - `SEC_USER_AGENT` — required by SEC, e.g. `EarningsCalendar/0.1 you@example.com`
    - `FINNHUB_TOKEN` — free key from https://finnhub.io/register (revenue data)
+   - India (optional): `KITE_API_KEY`, `KITE_API_SECRET`, `KITE_USER_ID`, `KITE_PASSWORD`, `KITE_TOTP_SECRET` — Zerodha Kite Connect.
+     Without them the India calendar, estimates and results still work; prices and expected moves show "—".
+   - `INVESTING_SCRAPER=1` (optional, off by default) — Investing.com actuals; needs Chrome (`CHROME_PATH`). Its terms forbid scraping.
 3. `npm run dev` — API on :3001, web app on http://localhost:5173
 4. Optional history: `npm run backfill` (2 years; takes a few hours, resumable) or `npm run backfill -- 2026-09-01`
 

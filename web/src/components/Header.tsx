@@ -2,6 +2,7 @@ import { DateTime } from 'luxon';
 import { useAccount } from '../lib/account';
 import type { View } from '../lib/ranges';
 import type { SortKey } from '../lib/sort';
+import type { Market } from '../lib/market';
 
 export const CAP_OPTIONS: { label: string; value: number | null }[] = [
   { label: 'Any size', value: null },
@@ -25,6 +26,7 @@ interface Props {
   query: string; onQuery: (q: string) => void;
   sort: SortKey; onSort: (s: SortKey) => void;
   zone: string; zoneText: string; isOverride: boolean; onZone: (z: string | null) => void;
+  market: Market; onMarket: (m: Market) => void;
 }
 
 const ZONES: string[] = (() => {
@@ -48,7 +50,24 @@ export function Header(p: Props) {
   return (
     <header className="header">
       <div className="masthead">
-        <div className="brand">US earnings</div>
+        <div className="brand">
+          <button
+            id="market-us"
+            className={`market-btn${p.market === 'US' ? ' on' : ''}`}
+            onClick={() => p.onMarket('US')}
+            aria-pressed={p.market === 'US'}
+          >
+            US
+          </button>
+          <button
+            id="market-in"
+            className={`market-btn${p.market === 'IN' ? ' on' : ''}`}
+            onClick={() => p.onMarket('IN')}
+            aria-pressed={p.market === 'IN'}
+          >
+            India
+          </button>
+        </div>
         <label className="zone">
           <span>Times shown in {p.zoneText}</span>
           <select value={p.isOverride ? p.zone : ''} onChange={(e) => p.onZone(e.target.value || null)} aria-label="Time zone">
@@ -91,10 +110,12 @@ export function Header(p: Props) {
           ))}
         </div>
         <div className="filters">
-          <select value={p.minCap ?? ''} onChange={(e) => p.onMinCap(e.target.value === '' ? null : Number(e.target.value))} aria-label="Market cap">
-            {CAP_OPTIONS.map((o) => <option key={o.label} value={o.value ?? ''}>{o.label}</option>)}
-          </select>
-          <input type="search" placeholder="Find a ticker or company" value={p.query} onChange={(e) => p.onQuery(e.target.value)} aria-label="Search" />
+          {p.market === 'US' && (
+            <select value={p.minCap ?? ''} onChange={(e) => p.onMinCap(e.target.value === '' ? null : Number(e.target.value))} aria-label="Market cap">
+              {CAP_OPTIONS.map((o) => <option key={o.label} value={o.value ?? ''}>{o.label}</option>)}
+            </select>
+          )}
+          <input type="search" placeholder={p.market === 'IN' ? 'Find a symbol or company' : 'Find a ticker or company'} value={p.query} onChange={(e) => p.onQuery(e.target.value)} aria-label="Search" />
           <select value={p.sort} onChange={(e) => p.onSort(e.target.value as SortKey)} aria-label="Sort">
             <option value="date">Sort by date</option>
             <option value="cap">Sort by market cap</option>

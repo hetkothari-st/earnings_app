@@ -3,8 +3,9 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { SourceStatusDto } from '../api/types.js';
 import { normalizeTicker } from '../domain/ticker.js';
+import { ensureInSchema } from '../india/db/inRepo.js';
 import type {
-  CalendarRow, ExpectedMove, LiveMove, PrevMoveBasis, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
+  CalendarRow, ExpectedMove, InvestingRow, LiveMove, PrevMoveBasis, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
 } from '../types.js';
 
 export type Db = DatabaseSync;
@@ -92,6 +93,7 @@ export function openDb(path: string): Db {
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 10000;');
   db.exec(SCHEMA);
   addMissingColumns(db);
+  ensureInSchema(db);
   return db;
 }
 
@@ -205,8 +207,8 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
   let epsSource = existing.eps_actual_source;
   let epsConflict = existing.eps_conflict;
   if (row.epsActual != null) {
-    if ((existing.eps_actual_source === 'finnhub' || existing.eps_actual_source === 'yahoo') && existing.eps_actual != null) {
-      epsConflict = epsDisagreement(row.epsActual, existing.eps_actual, existing.eps_actual_source === 'yahoo' ? 'Yahoo' : 'Finnhub');
+    if ((existing.eps_actual_source === 'finnhub' || existing.eps_actual_source === 'yahoo' || existing.eps_actual_source === 'investing') && existing.eps_actual != null) {
+      epsConflict = epsDisagreement(row.epsActual, existing.eps_actual, sourceName(existing.eps_actual_source));
     }
     epsActual = row.epsActual;
     epsSource = 'nasdaq';
@@ -287,6 +289,46 @@ export function mergeFinnhubRow(db: Db, r: RevenueRow, now: string): boolean {
     .run(usdRow ? r.revenueEstimate : null, usdRow ? r.revenueActual : null, timing, source, conflict, epsActual, epsSource, epsConflict, now, existing.id);
   if (timing !== existing.timing) dropExpectedMove(db, existing.id);
   return true;
+}
+
+/**
+ * Investing.com fills gaps only: an EPS or revenue actual is written when none is stored yet, and a
+ * different value from another source is flagged as a conflict instead of replacing it. Estimates,
+ * surprise % and timing are not taken (their basis may differ from the stored consensus).
+ */
+export function mergeInvestingRow(db: Db, r: InvestingRow, now: string): boolean {
+  const existing = db.prepare('SELECT * FROM reports WHERE symbol_key = ? AND report_date = ?')
+    .get(normalizeTicker(r.symbol), r.reportDate) as unknown as ReportRow | undefined;
+  if (!existing) return false;
+
+  let epsActual = existing.eps_actual;
+  let epsSource = existing.eps_actual_source;
+  let epsConflict = existing.eps_conflict;
+  if (r.epsActual != null) {
+    if (existing.eps_actual == null) {
+      epsActual = r.epsActual;
+      epsSource = 'investing';
+    } else if (existing.eps_actual_source !== 'investing' && epsConflict == null) {
+      epsConflict = sourceDisagreement(sourceName(existing.eps_actual_source), existing.eps_actual, 'Investing.com', r.epsActual);
+    }
+  }
+  // Investing.com revenue is in USD; never mix it into a row held in another currency.
+  const usdRow = existing.revenue_currency == null || existing.revenue_currency === 'USD';
+  const revenueActual = existing.revenue_actual ?? (usdRow ? r.revenueActual : null);
+
+  if (epsActual === existing.eps_actual && epsConflict === existing.eps_conflict && revenueActual === existing.revenue_actual) return false;
+  db.prepare(`UPDATE reports SET eps_actual = ?, eps_actual_source = ?, eps_conflict = ?, revenue_actual = ?,
+      revenue_fetched_at = ? WHERE id = ?`)
+    .run(epsActual, epsSource, epsConflict, revenueActual, now, existing.id);
+  return true;
+}
+
+function sourceName(source: string | null): string {
+  return source === 'nasdaq' ? 'Nasdaq' : source === 'yahoo' ? 'Yahoo' : source === 'investing' ? 'Investing.com' : 'Finnhub';
+}
+
+function sourceDisagreement(aName: string, a: number, bName: string, b: number): string | null {
+  return Math.abs(a - b) > 0.005 ? `${aName} reports EPS ${a}, ${bName} ${b} (often adjusted vs GAAP)` : null;
 }
 
 export function listRange(

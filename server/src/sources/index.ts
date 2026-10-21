@@ -30,5 +30,10 @@ export function createSources(cfg: Config): Sources {
     dailyCloses: (symbol, from, to) => fetchDailyCloses(nasdaq, symbol, from, to),
     sectors: () => fetchSectors(nasdaq),
     yahooSummary: createYahooSummaryFetcher(),
+    // Opt-in only: Investing.com's terms forbid automated access, and it needs a local Chrome.
+    ...(cfg.investingScraper ? {
+      investing: async (tab: 'today' | 'yesterday', date: string) =>
+        (await import('./investingScraper.js')).investingScraper().fetchCalendar(tab, date),
+    } : {}),
   };
 }

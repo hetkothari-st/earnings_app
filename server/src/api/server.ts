@@ -4,6 +4,7 @@ import { counts, type Db, getReport, listRange, listSourceStatus } from '../db/r
 import { registerAdmin } from '../auth/adminRoutes.js';
 import { registerAuth } from '../auth/routes.js';
 import { registerNotes } from '../notes/routes.js';
+import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
 import { toDto } from './dto.js';
 import { registerWebApp } from './static.js';
 import type { IndexQuote } from '../sources/yahoo.js';
@@ -34,6 +35,8 @@ export interface ServerOptions {
   trustProxy?: boolean;
   /** Live price snapshot (real-time stream). */
   prices?: () => Record<string, unknown>;
+  /** India live data and Zerodha controls. */
+  india?: InServerOptions;
 }
 
 const MAX_RANGE_DAYS = 400;
@@ -49,6 +52,7 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   const currentUser = registerAuth(app, db, { requireAuth: opts.requireAuth ?? false, now: opts.now });
   registerNotes(app, db, currentUser, opts.now ?? Date.now);
   registerAdmin(app, db, currentUser, opts.now ?? Date.now);
+  registerInRoutes(app, db, currentUser, opts.now ?? Date.now, opts.india);
   let marketsCache: { at: number; body: MarketsResponse } | null = null;
 
   app.get('/api/markets', async () => {

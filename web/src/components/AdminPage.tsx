@@ -1,8 +1,9 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from 'react';
 import {
-  type AdminUser, bulkIds, bulkPreview, createUser, createUsersBulk, deleteUser, listUsers, MAX_BULK, normalizeId,
-  passwordProblem, updateUser, validId,
+  type AdminUser, bulkIds, bulkPreview, createUser, createUsersBulk, deleteUser, fetchKiteStatus, kiteLoginNow, listUsers,
+  MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
 } from '../adminApi';
+import type { KiteStatusDto } from '../api';
 import { useAccount } from '../lib/account';
 import '../admin.css';
 
@@ -266,6 +267,40 @@ function UserRows({ user, self, editing, onEdit, onSaved, onDeleted, onCancel }:
   );
 }
 
+/** Zerodha (Kite) connection for India prices and option quotes. */
+function ZerodhaPanel() {
+  const [status, setStatus] = useState<KiteStatusDto | null>(null);
+  const [msg, setMsg] = useState<Msg>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void fetchKiteStatus().then((r) => (r.ok ? setStatus(r.data) : setMsg({ kind: 'error', text: r.error })));
+  }, []);
+  const login = async () => {
+    setBusy(true);
+    setMsg(null);
+    const r = await kiteLoginNow();
+    setBusy(false);
+    if (!r.ok) return setMsg({ kind: 'error', text: r.error });
+    setStatus(r.data);
+    setMsg(r.data.connected ? { kind: 'ok', text: 'Connected to Zerodha' } : { kind: 'error', text: r.data.lastError ?? 'Login failed' });
+  };
+  return (
+    <section className="admin-card" aria-label="Zerodha">
+      <h2>Zerodha (India)</h2>
+      <Message msg={msg} />
+      {!status ? <p className="admin-muted">Loading…</p> : !status.configured ? (
+        <p className="admin-muted">Not configured. Set KITE_API_KEY, KITE_API_SECRET, KITE_USER_ID, KITE_PASSWORD and KITE_TOTP_SECRET on the server.</p>
+      ) : (
+        <>
+          <p>{status.connected ? 'Connected' : 'Not connected'} · last login {when(status.lastLoginAt)}</p>
+          {status.lastError && <p className="admin-msg admin-msg-error">Last error ({when(status.lastErrorAt)}): {status.lastError}</p>}
+          <button type="button" onClick={() => void login()} disabled={busy}>{busy ? 'Logging in…' : 'Log in now'}</button>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function AdminPage() {
   const account = useAccount();
   const isAdmin = account?.isAdmin === true;
@@ -298,7 +333,7 @@ export function AdminPage() {
   return (
     <div className="admin">
       <header className="admin-top">
-        <div className="admin-brand">US earnings</div>
+        <div className="admin-brand">Earnings</div>
         <nav className="admin-nav" aria-label="Account">
           <a href="/">Back to the calendar</a>
           <span className="admin-muted">{account.userId}</span>
@@ -354,6 +389,7 @@ export function AdminPage() {
           <aside className="admin-forms">
             <AddUserForm onAdded={() => void load()} />
             <AddManyForm onAdded={() => void load()} />
+            <ZerodhaPanel />
           </aside>
         </div>
       </main>

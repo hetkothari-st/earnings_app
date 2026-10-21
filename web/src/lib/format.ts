@@ -51,3 +51,16 @@ export function formatMoney(n: number | null, currency: string): string {
   const prefix = CURRENCY_PREFIX[currency] ?? `${currency} `;
   return usd.replace('$', prefix);
 }
+
+/** Rupees in crore with Indian grouping: "₹1,23,456.78 Cr"; losses "−₹12.5 Cr". */
+export function formatInrCr(rupees: number | null): string {
+  if (rupees == null) return '—';
+  const cr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(Math.abs(rupees) / 1e7);
+  return `${rupees < 0 ? '−' : ''}₹${cr} Cr`;
+}
+
+/** EPS in rupees: "₹12.34", "−₹0.50". */
+export function formatEpsInr(eps: number | null): string {
+  if (eps == null) return '—';
+  return `${eps < 0 ? '−' : ''}₹${Math.abs(eps).toFixed(2)}`;
+}

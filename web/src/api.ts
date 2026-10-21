@@ -1,4 +1,5 @@
 import type { EarningsResponse, StatusResponse } from '../../server/src/api/types';
+import type { InEarningsResponse, InLivePriceDto, KiteStatusDto } from '../../server/src/india/api/types';
 
 /** Fired on window whenever an API call answers 401, so the app can show the login page. */
 export const UNAUTHORIZED_EVENT = 'auth:unauthorized';
@@ -106,4 +107,23 @@ export async function fetchPrices(): Promise<Record<string, LivePrice>> {
   const res = await apiFetch('/api/prices');
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return ((await res.json()) as { prices: Record<string, LivePrice> }).prices;
+}
+
+export type { InEarningsResponse, InLivePriceDto, KiteStatusDto };
+
+export async function fetchInEarnings(
+  p: { from: string; to: string; q: string },
+  signal: AbortSignal,
+): Promise<InEarningsResponse> {
+  const qs = new URLSearchParams({ from: p.from, to: p.to });
+  if (p.q.trim()) qs.set('q', p.q.trim());
+  const res = await apiFetch(`/api/in/earnings?${qs}`, { signal });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return res.json() as Promise<InEarningsResponse>;
+}
+
+export async function fetchInPrices(): Promise<Record<string, InLivePriceDto>> {
+  const res = await apiFetch('/api/in/prices');
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { prices: Record<string, InLivePriceDto> }).prices;
 }

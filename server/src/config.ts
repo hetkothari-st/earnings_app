@@ -16,6 +16,14 @@ export const config = {
   dbPath: process.env.DB_PATH ?? fileURLToPath(new URL('../../data/earnings.db', import.meta.url)),
   finnhubToken: process.env.FINNHUB_TOKEN ?? '',
   secUserAgent: process.env.SEC_USER_AGENT ?? '',
+  /** Investing.com scraper (needs Chrome; ToS forbids scraping): off unless INVESTING_SCRAPER=1. */
+  investingScraper: process.env.INVESTING_SCRAPER === '1',
+  // Kite credentials (India). All optional — India features degrade gracefully without them.
+  kiteApiKey: process.env.KITE_API_KEY ?? '',
+  kiteApiSecret: process.env.KITE_API_SECRET ?? '',
+  kiteUserId: process.env.KITE_USER_ID ?? '',
+  kitePassword: process.env.KITE_PASSWORD ?? '',
+  kiteTotpSecret: process.env.KITE_TOTP_SECRET ?? '',
 };
 
 export type Config = typeof config;

@@ -1,0 +1,39 @@
+import type { DatabaseSync } from 'node:sqlite';
+import { activeStocks, saveFoList, setEqTokens } from '../db/inRepo.js';
+import { equityTokens, fetchFoList, fetchKiteInstruments } from '../sources/foList.js';
+import { buildSymbolIndex } from '../sources/symbolMatch.js';
+import { type InJobContext, trackIn } from './context.js';
+
+/** The current F&O list in memory, for matching feed items to symbols. */
+export interface FoCache {
+  symbols: Set<string>;
+  nameIndex: Map<string, string>;
+  names: Map<string, string>;   // symbol -> F&O list name
+}
+
+let _cache: FoCache | null = null;
+
+export function loadFoCache(db: DatabaseSync): FoCache | null {
+  const stocks = activeStocks(db);
+  _cache = stocks.length
+    ? {
+        symbols: new Set(stocks.map((s) => s.symbol)),
+        nameIndex: buildSymbolIndex(stocks.map((s) => ({ symbol: s.symbol, name: s.name }))),
+        names: new Map(stocks.map((s) => [s.symbol, s.name])),
+      }
+    : null;
+  return _cache;
+}
+
+export function getFoCache(): FoCache | null {
+  return _cache;
+}
+
+/** NSE F&O list (the universe) and Kite NSE equity tokens (for prices and candles). */
+export async function refreshInStocks(ctx: InJobContext): Promise<void> {
+  const list = await trackIn(ctx, 'nse-fo-list', () => fetchFoList(ctx.http));
+  if (list) saveFoList(ctx.db, list, ctx.now());
+  const nse = await trackIn(ctx, 'kite-instruments', () => fetchKiteInstruments(ctx.http, 'NSE'));
+  if (nse) setEqTokens(ctx.db, equityTokens(nse));
+  loadFoCache(ctx.db);
+}

@@ -1,4 +1,4 @@
-import { apiFetch, fetchMe } from './api';
+import { apiFetch, fetchMe, type KiteStatusDto } from './api';
 
 /** Admin user management. Mirrors the rules in server/src/auth (IDs stored uppercase, 1-64 chars). */
 
@@ -78,3 +78,18 @@ export const updateUser = (id: string, change: { password?: string; newId?: stri
   send<AdminUser>(userUrl(id), 'PATCH', change);
 
 export const deleteUser = (id: string) => send<undefined>(userUrl(id), 'DELETE');
+
+export async function fetchKiteStatus(): Promise<Result<KiteStatusDto>> {
+  const res = await apiFetch('/api/admin/kite');
+  if (!res.ok) return { ok: false, error: `Server returned ${res.status}` };
+  return { ok: true, data: (await res.json()) as KiteStatusDto };
+}
+
+export async function kiteLoginNow(): Promise<Result<KiteStatusDto>> {
+  const res = await apiFetch('/api/admin/kite/login', { method: 'POST' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, error: body.error ?? `Server returned ${res.status}` };
+  }
+  return { ok: true, data: (await res.json()) as KiteStatusDto };
+}

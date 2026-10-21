@@ -14,7 +14,7 @@ const NOT_SIGNED_IN = { error: 'Not signed in' };
 /** Reachable without a session. */
 const PUBLIC_PATHS = new Set(['/api/login', '/api/logout', '/api/me']);
 const MAX_EXPANDED = 2000;
-const MAX_SYMBOL_LEN = 12;
+const MAX_SYMBOL_LEN = 24;
 
 export interface AuthOptions {
   /** Require a session for every /api route except login, logout and me. */

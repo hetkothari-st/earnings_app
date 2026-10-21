@@ -29,6 +29,19 @@ export interface RevenueRow {
   epsActual: number | null;
 }
 
+/** One item scraped in real-time from Investing.com. */
+export interface InvestingRow {
+  symbol: string;
+  name?: string | null;
+  reportDate: string; // YYYY-MM-DD
+  timing: Timing;
+  epsActual: number | null;
+  epsEstimate: number | null;
+  epsSurprisePct: number | null;
+  revenueActual: number | null;
+  revenueEstimate: number | null;
+}
+
 export interface OptionQuote {
   expiry: string;            // YYYY-MM-DD
   type: 'C' | 'P';

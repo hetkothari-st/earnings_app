@@ -97,24 +97,29 @@ export function yahooFill(s: YahooSummary, report: { reportDate: string; fiscalQ
  * Yahoo's quoteSummary needs a session cookie and a "crumb". One session is reused and renewed
  * when Yahoo rejects it. Unknown symbols return null.
  */
-export function createYahooSummaryFetcher(): (symbol: string) => Promise<YahooSummary | null> {
+/** A Yahoo session: cookie-carrying Http plus the crumb its API calls need. */
+export async function openYahooSession(): Promise<{ http: Http; crumb: string }> {
+  const res = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': BROWSER_UA }, redirect: 'manual' });
+  const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
+  const headers = { 'User-Agent': BROWSER_UA, Cookie: cookie };
+  const crumb = await (await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', { headers })).text();
+  if (!crumb || crumb.includes('<')) throw new SourceFormatError('Yahoo: could not obtain a session crumb');
+  return { http: makeHttp({ minIntervalMs: 1000, headers }), crumb };
+}
+
+/**
+ * quoteSummary for one symbol with the given modules, parsed by `parse`. One session is reused
+ * and renewed when Yahoo rejects it. Unknown symbols return null.
+ */
+export function createQuoteSummaryFetcher<T>(modules: string, parse: (json: unknown) => T): (symbol: string) => Promise<T | null> {
   let session: { http: Http; crumb: string } | null = null;
-  const open = async () => {
-    const res = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': BROWSER_UA }, redirect: 'manual' });
-    const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
-    const headers = { 'User-Agent': BROWSER_UA, Cookie: cookie };
-    const crumb = await (await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', { headers })).text();
-    if (!crumb || crumb.includes('<')) throw new SourceFormatError('Yahoo: could not obtain a session crumb');
-    return { http: makeHttp({ minIntervalMs: 1000, headers }), crumb };
-  };
   return async (symbol) => {
-    const s = symbol.trim().toUpperCase().replace('/', '-');
     for (let attempt = 0; attempt < 2; attempt++) {
-      session ??= await open();
-      const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(s)}`
-        + `?modules=price,earnings,earningsHistory,earningsTrend&crumb=${encodeURIComponent(session.crumb)}`;
+      session ??= await openYahooSession();
+      const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`
+        + `?modules=${modules}&crumb=${encodeURIComponent(session.crumb)}`;
       try {
-        return parseQuoteSummary(await session.http.json(url));
+        return parse(await session.http.json(url));
       } catch (err) {
         if (err instanceof HttpError && err.status === 404) return null;
         if (err instanceof HttpError && (err.status === 401 || err.status === 403) && attempt === 0) { session = null; continue; }
@@ -123,4 +128,9 @@ export function createYahooSummaryFetcher(): (symbol: string) => Promise<YahooSu
     }
     return null;
   };
+}
+
+export function createYahooSummaryFetcher(): (symbol: string) => Promise<YahooSummary | null> {
+  const get = createQuoteSummaryFetcher('price,earnings,earningsHistory,earningsTrend', parseQuoteSummary);
+  return (symbol) => get(symbol.trim().toUpperCase().replace('/', '-'));
 }
