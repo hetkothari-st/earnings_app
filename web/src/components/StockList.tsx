@@ -4,6 +4,7 @@ import { changeClass, formatChange, formatDateHeading, formatEps, formatMoney, f
 import { type SortKey, sortRows } from '../lib/sort';
 import { describeTiming, zoneLabel } from '../lib/time';
 import { NoteEditor } from './NoteEditor';
+import { Tags } from './Tags';
 
 interface Props {
   rows: ReportDto[];
@@ -42,11 +43,14 @@ export function Warn({ flags }: { flags: Flag[] }) {
 
 const pct1 = (n: number) => (Math.round(n * 10 + 1e-9) / 10).toFixed(1);
 
-function Result({ part, format }: { part: ResultPart; format: (n: number | null) => string }) {
+type Part = ResultPart & { preliminary: boolean; corrected: boolean; basis?: 'adjusted' | 'gaap' | null };
+
+function Result({ part, format }: { part: Part; format: (n: number | null) => string }) {
   const arrow = part.result === 'beat' ? ' ▲' : part.result === 'miss' ? ' ▼' : '';
   return (
     <>
       {format(part.estimate)} / <span className={`act ${part.result ?? ''}`}>{part.actual == null ? '—' : `${format(part.actual)}${arrow}`}</span>
+      <Tags preliminary={part.preliminary} corrected={part.corrected} basis={part.basis} />
       {part.surprisePct != null && <span className="muted"> ({formatPct(part.surprisePct)})</span>}
     </>
   );

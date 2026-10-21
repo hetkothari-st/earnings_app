@@ -156,6 +156,7 @@ table.earnings { width: 100%; border-collapse: separate; border-spacing: 0; back
 .warn { color: var(--amber); cursor: help; margin-left: 2px; }
 .plus1 { color: var(--muted); margin-left: 3px; font-size: 10px; }
 .muted { color: var(--muted); }
+.tag { color: var(--muted); font-size: 0.85em; }
 .warn-text { color: var(--amber); }
 .empty { padding: 56px 16px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; }
 

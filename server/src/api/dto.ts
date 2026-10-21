@@ -35,6 +35,12 @@ export function toDto(r: ReportRecord): ReportDto {
     flags.push({ field: 'expectedMove', message: 'Illiquid options: zero bid or spread over 30% of mid' });
   }
 
+  const epsPre = r.epsActual == null && r.epsPrelim != null;
+  const epsActual = epsPre ? r.epsPrelim : r.epsActual;
+  const gaap = epsPre && r.epsPrelimBasis === 'gaap'; // different basis from the consensus: no colour
+  const revPre = r.revenueActual == null && r.revenuePrelim != null;
+  const revenueActual = revPre ? r.revenuePrelim : r.revenueActual;
+
   return {
     id: r.id,
     symbol: r.symbol,
@@ -53,18 +59,23 @@ export function toDto(r: ReportRecord): ReportDto {
     marketCapAsOf: r.marketCapAsOf,
     eps: {
       estimate: r.epsEstimate,
-      actual: r.epsActual,
-      surprisePct: surprisePct(r.epsActual, r.epsEstimate),
-      result: beatMiss(r.epsActual, r.epsEstimate),
+      actual: epsActual,
+      surprisePct: gaap ? null : surprisePct(epsActual, r.epsEstimate),
+      result: gaap ? null : beatMiss(epsActual, r.epsEstimate),
+      preliminary: epsPre,
+      corrected: r.epsCorrected,
+      basis: epsPre ? r.epsPrelimBasis : null,
       noOfEsts: r.noOfEsts,
       lastYear: r.lastYearEps,
       lastYearReportDate: r.lastYearReportDate,
     },
     revenue: {
       estimate: r.revenueEstimate,
-      actual: r.revenueActual,
-      surprisePct: surprisePct(r.revenueActual, r.revenueEstimate),
-      result: beatMiss(r.revenueActual, r.revenueEstimate),
+      actual: revenueActual,
+      surprisePct: surprisePct(revenueActual, r.revenueEstimate),
+      result: beatMiss(revenueActual, r.revenueEstimate),
+      preliminary: revPre,
+      corrected: r.revenueCorrected,
       currency: r.revenueCurrency ?? 'USD',
     },
     expectedMove: em,

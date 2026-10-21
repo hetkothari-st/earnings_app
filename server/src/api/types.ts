@@ -32,8 +32,8 @@ export interface ReportDto {
   industry: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
-  eps: ResultPart & { noOfEsts: number | null; lastYear: number | null; lastYearReportDate: string | null };
-  revenue: ResultPart & { currency: string };
+  eps: ResultPart & { preliminary: boolean; corrected: boolean; basis: 'adjusted' | 'gaap' | null; noOfEsts: number | null; lastYear: number | null; lastYearReportDate: string | null };
+  revenue: ResultPart & { preliminary: boolean; corrected: boolean; currency: string };
   expectedMove: {
     movePct: number;
     illiquid: boolean;

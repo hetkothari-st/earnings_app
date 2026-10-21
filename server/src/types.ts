@@ -117,6 +117,11 @@ export interface ReportRecord {
   secDocUrl: string | null;
   secIndexUrl: string | null;
   releasedAt: string | null;
+  epsPrelim: number | null;
+  epsPrelimBasis: 'adjusted' | 'gaap' | null;
+  revenuePrelim: number | null;
+  epsCorrected: boolean;
+  revenueCorrected: boolean;
   calendarFetchedAt: string | null;
   revenueFetchedAt: string | null;
   secCheckedAt: string | null;

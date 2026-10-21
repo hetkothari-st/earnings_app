@@ -3,7 +3,10 @@ import { Broadcaster, registerStream } from './api/stream.js';
 import { LivePrices } from './live/livePrices.js';
 import { SecWatch } from './live/secWatch.js';
 import { config } from './config.js';
-import { openDb } from './db/repo.js';
+import { savePrelim } from './db/prelim.js';
+import { getReport, openDb } from './db/repo.js';
+import { readUsRelease } from './sources/releaseReader.js';
+import { DateTime } from 'luxon';
 import { todayET } from './domain/marketCalendar.js';
 import type { JobContext } from './jobs/context.js';
 import { startScheduler, warmUp } from './jobs/scheduler.js';
@@ -61,6 +64,7 @@ registerStream(app, live);
 await app.listen({ port: config.port, host: config.host });
 console.log(`API listening on http://${config.host}:${config.port}`);
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const job = startScheduler(ctx, (ids) => live.publish('results', { ids }), (ids) => live.publish('moves', { ids }));
 // Warm the cache on start, under the scheduler's overlap guard; failures are recorded in /api/status.
 void warmUp(ctx, job);
@@ -68,7 +72,17 @@ if (config.finnhubToken) prices.start();
 // One shared SEC client (<= 10 req/s overall). The 8-K watcher flips US reports to released within seconds.
 if (config.secUserAgent) {
   const secHttp = makeHttp({ minIntervalMs: 120, headers: { 'User-Agent': config.secUserAgent } });
-  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids })).start(5000);
+  // Quick read of the press release: preliminary values until an official source confirms them.
+  const reader = async (exhibitUrl: string, reportId: number): Promise<void> => {
+    const rep = getReport(db, reportId);
+    const m = rep?.fiscalQuarter.match(/^([A-Z][a-z]{2})\/(\d{4})$/);
+    const month = m ? MONTHS.indexOf(m[1]!) : -1;
+    if (!rep || month < 0) return;
+    const quarterEnd = DateTime.utc(Number(m![2]), month + 1, 1).endOf('month').toISODate()!;
+    const v = readUsRelease(await secHttp.text(exhibitUrl), quarterEnd);
+    if (savePrelim(db, reportId, v, new Date().toISOString())) live.publish('results', { ids: [reportId] });
+  };
+  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids }), reader).start(5000);
 }
 
 startInScheduler(inCtx, job, {

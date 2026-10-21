@@ -7,8 +7,8 @@ const dto = (over: Partial<ReportDto>): ReportDto => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
   releasedAt: null, timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
   sector: 'Technology', industry: 'Semiconductors', marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
-  eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6, lastYear: 2.92, lastYearReportDate: '2025-10-16' },
-  revenue: { estimate: 3.3e10, actual: null, surprisePct: null, result: null, currency: 'USD' },
+  eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, preliminary: false, corrected: false, basis: null, noOfEsts: 6, lastYear: 2.92, lastYearReportDate: '2025-10-16' },
+  revenue: { estimate: 3.3e10, actual: null, surprisePct: null, result: null, preliminary: false, corrected: false, currency: 'USD' },
   expectedMove: null, liveMove: null, previousMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
   fetched: { calendar: null, revenue: null, sec: null }, flags: [], ...over,
 });
@@ -16,7 +16,7 @@ const dto = (over: Partial<ReportDto>): ReportDto => ({
 const rows = [
   dto({ id: 1, symbol: 'TSM' }),
   dto({ id: 2, symbol: 'SCHW', name: 'Charles Schwab', marketCap: 1.6e11,
-    eps: { estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', noOfEsts: 10, lastYear: null, lastYearReportDate: null },
+    eps: { estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', preliminary: false, corrected: false, basis: null, noOfEsts: 10, lastYear: null, lastYearReportDate: null },
     previousMove: { pct: -2.5, reportDate: '2026-07-21', basis: 'assumed' } }),
   dto({ id: 3, symbol: 'AA', name: 'Alcoa', reportDate: '2026-10-16', timing: 'AMC', marketCap: 1e10,
     expectedMove: { movePct: 6.19, illiquid: false, expiry: '2026-10-17', strike: 40, callMid: 1.3, putMid: 1.2, underlying: 40, provisional: true, quoteDate: '2026-10-15', snapshotAt: 'x' },
@@ -77,7 +77,7 @@ describe('StockList', () => {
     expect(within(oct15).getAllByRole('button').map((b) => b.querySelector('.ticker')!.textContent)).toEqual(['TSM', 'SCHW']);
   });
   test('revenue in a non-USD reporting currency is labelled, never shown as dollars', () => {
-    renderList({ expanded: new Set(['TSM']), rows: [dto({ revenue: { estimate: 1.46e12, actual: null, surprisePct: null, result: null, currency: 'TWD' } })] });
+    renderList({ expanded: new Set(['TSM']), rows: [dto({ revenue: { estimate: 1.46e12, actual: null, surprisePct: null, result: null, preliminary: false, corrected: false, currency: 'TWD' } })] });
     const item = screen.getByRole('button', { name: /TSM/ }).closest('li')!;
     expect(within(item).getByText('Revenue estimate / actual').nextElementSibling!.textContent).toBe('NT$1.46T / —');
   });
@@ -96,5 +96,20 @@ describe('StockList', () => {
   test('empty state', () => {
     renderList({ rows: [] });
     expect(screen.getByText('No earnings reports match this range and filter.')).toBeTruthy();
+  });
+
+  test('preliminary and corrected tags render next to EPS', () => {
+    renderList({
+      expanded: new Set(['TSM', 'SCHW']),
+      rows: [
+        dto({ id: 1, symbol: 'TSM', eps: { estimate: 1.66, actual: 1.5, surprisePct: null, result: null, preliminary: true, corrected: false, basis: 'gaap', noOfEsts: 6, lastYear: null, lastYearReportDate: null },
+          revenue: { estimate: 3e10, actual: 3.1e10, surprisePct: 3.3, result: 'beat', preliminary: true, corrected: false, currency: 'USD' } }),
+        dto({ id: 2, symbol: 'SCHW', name: 'Charles Schwab',
+          eps: { estimate: 1.66, actual: 1.71, surprisePct: 3, result: 'beat', preliminary: false, corrected: true, basis: null, noOfEsts: 10, lastYear: null, lastYearReportDate: null } }),
+      ],
+    });
+    expect(screen.getAllByText('preliminary').length).toBe(2); // EPS and revenue of TSM
+    expect(screen.getByText('GAAP').className).toContain('tag');
+    expect(screen.getAllByText('corrected').length).toBe(1);
   });
 });

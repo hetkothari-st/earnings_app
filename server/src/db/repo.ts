@@ -6,6 +6,7 @@ import { DateTime } from 'luxon';
 import { ET, sessionClose } from '../domain/marketCalendar.js';
 import { normalizeTicker } from '../domain/ticker.js';
 import { ensureInSchema } from '../india/db/inRepo.js';
+import { confirmPrelim } from './prelim.js';
 import type {
   CalendarRow, ExpectedMove, InvestingRow, LiveMove, PrevMoveBasis, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
 } from '../types.js';
@@ -53,6 +54,12 @@ CREATE TABLE IF NOT EXISTS reports (
   prev_move_basis TEXT,
   sector TEXT,
   industry TEXT,
+  eps_prelim REAL,
+  eps_prelim_basis TEXT,
+  revenue_prelim REAL,
+  prelim_at TEXT,
+  eps_corrected INTEGER,
+  revenue_corrected INTEGER,
   UNIQUE (symbol_key, fiscal_quarter)
 );
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports (report_date);
@@ -137,6 +144,7 @@ interface ReportRow {
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
   sec_index_url: string | null; released_at: string | null; release_source: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
   prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: PrevMoveBasis | null; sector: string | null; industry: string | null;
+  eps_prelim: number | null; eps_prelim_basis: 'adjusted' | 'gaap' | null; revenue_prelim: number | null; eps_corrected: number | null; revenue_corrected: number | null;
 }
 
 interface JoinedRow extends ReportRow {
@@ -161,6 +169,8 @@ function toRecord(r: JoinedRow): ReportRecord {
     revenueEstimate: r.revenue_estimate, revenueActual: r.revenue_actual, revenueCurrency: r.revenue_currency, exchange: r.exchange,
     secCheck: r.sec_check, secAcceptedAt: r.sec_accepted_at, secDocUrl: r.sec_doc_url, secIndexUrl: r.sec_index_url,
     releasedAt: r.released_at,
+    epsPrelim: r.eps_prelim, epsPrelimBasis: r.eps_prelim_basis, revenuePrelim: r.revenue_prelim,
+    epsCorrected: r.eps_corrected === 1, revenueCorrected: r.revenue_corrected === 1,
     calendarFetchedAt: r.calendar_fetched_at, revenueFetchedAt: r.revenue_fetched_at, secCheckedAt: r.sec_checked_at,
     expectedMove: r.em_snapshot_at == null ? null : {
       expiry: r.em_expiry!, strike: r.em_strike!, callMid: r.em_call_mid!, putMid: r.em_put_mid!,
@@ -247,6 +257,7 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
     row.epsEstimate, epsActual, epsSource, epsConflict, row.epsSurprisePct, row.noOfEsts, row.lastYearEps, row.lastYearReportDate,
     rescheduled ? 1 : 0, rescheduled ? 1 : 0, rescheduled ? 1 : 0, rescheduled ? 1 : 0, rescheduled ? 1 : 0,
     now, existing.id);
+  confirmPrelim(db, existing.id);
 
   // A snapshot's expiry was chosen for the old date/timing; it may no longer capture the release.
   if (rescheduled || timing !== existing.timing) dropExpectedMove(db, existing.id);
@@ -299,6 +310,7 @@ export function mergeFinnhubRow(db: Db, r: RevenueRow, now: string): boolean {
       revenue_actual = COALESCE(?, revenue_actual), timing = ?, timing_source = ?, timing_conflict = ?,
       eps_actual = ?, eps_actual_source = ?, eps_conflict = ?, revenue_fetched_at = ? WHERE id = ?`)
     .run(usdRow ? r.revenueEstimate : null, usdRow ? r.revenueActual : null, timing, source, conflict, epsActual, epsSource, epsConflict, now, existing.id);
+  confirmPrelim(db, existing.id);
   if (timing !== existing.timing) dropExpectedMove(db, existing.id);
   return true;
 }
@@ -332,6 +344,7 @@ export function mergeInvestingRow(db: Db, r: InvestingRow, now: string): boolean
   db.prepare(`UPDATE reports SET eps_actual = ?, eps_actual_source = ?, eps_conflict = ?, revenue_actual = ?,
       revenue_fetched_at = ? WHERE id = ?`)
     .run(epsActual, epsSource, epsConflict, revenueActual, now, existing.id);
+  confirmPrelim(db, existing.id);
   return true;
 }
 
@@ -599,6 +612,7 @@ export function mergeYahooFill(
     WHERE id = ?`)
     .run(takeEps ? 1 : 0, f.epsActual, takeEps ? 1 : 0, takeEst ? 1 : 0, f.revenueEstimate, takeAct ? 1 : 0, f.revenueActual,
       takeEst ? 1 : 0, takeAct ? 1 : 0, f.revenueCurrency, now, id);
+  confirmPrelim(db, id);
 }
 
 /** Symbols to stream live prices for: reporters dated in [from, to], nearest date then largest first. */
