@@ -299,12 +299,14 @@ export class InPrices {
     const plan = this.optionsByReport.get(reportId);
     const spot = plan ? this.spotOf(plan.symbol) : undefined;
     if (!plan || !spot) return;
+    if (!inSession(new Date(this.deps.now()).toISOString())) return; // no live move outside the session
     const tops: OptionTop[] = [];
     let latest = 0;
     for (const token of plan.tokens) {
       const t = this.ticks.get(token);
       const o = this.options.get(token);
       if (!t || !o || t.bid == null || t.ask == null) continue;
+      if (new Date(t.at + IST_OFFSET_MS).toISOString().slice(0, 10) !== this.today()) continue; // an earlier day's quote
       tops.push({ strike: o.strike, type: o.type, bid: t.bid, ask: t.ask });
       latest = Math.max(latest, t.at);
     }

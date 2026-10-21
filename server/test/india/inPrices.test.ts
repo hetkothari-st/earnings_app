@@ -112,6 +112,34 @@ describe('option ticks drive the live move', () => {
   });
 });
 
+describe("live moves only in session, from today's ticks", () => {
+  it('option ticks outside the session save no live move', async () => {
+    const { p, stream, db, reportId } = setup();
+    await p.refresh();
+    stream.emit('tick', tick(10, 1000));
+    await vi.advanceTimersByTimeAsync(0);
+    vi.setSystemTime(new Date('2026-10-21T11:30:00.000Z')); // 17:00 IST, after the close
+    stream.emit('tick', tick(2000 + 1000, 28, { bid: 28, ask: 29 }));
+    stream.emit('tick', tick(1000 + 1000, 29.5, { bid: 29.5, ask: 31 }));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(liveMove(db, reportId)).toBeUndefined();
+  });
+
+  it("an option quote from an earlier IST day is not used", async () => {
+    const { p, stream, db, reportId } = setup();
+    await p.refresh();
+    stream.emit('tick', tick(10, 1000));
+    await vi.advanceTimersByTimeAsync(0);
+    vi.setSystemTime(new Date('2026-10-20T05:00:00.000Z'));
+    stream.emit('tick', tick(2000 + 1000, 28, { bid: 28, ask: 29 })); // yesterday's put quote
+    vi.setSystemTime(new Date(NOW));
+    stream.emit('tick', tick(10, 1000));
+    stream.emit('tick', tick(1000 + 1000, 29.5, { bid: 29.5, ask: 31 }));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(liveMove(db, reportId)).toBeUndefined();
+  });
+});
+
 describe('Yahoo backup for silent equities', () => {
   it('no ticks for 2 min in session: Yahoo price, source backup', async () => {
     const yahoo = vi.fn(async (s: string) => (s === 'GAIL' ? { price: 200, prevClose: 190 } : null));
