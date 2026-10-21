@@ -305,6 +305,7 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 .stock-head .dot { margin-right: 0; }
 .stock-head .name { max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stock-when { color: var(--muted); font-size: 12px; }
+.results-out { color: var(--muted); }
 .chevron { color: var(--muted); text-align: center; font-size: 16px; }
 .stock.open .stock-head { background: var(--raised); }
 .stock-body { padding: 6px 14px 16px 38px; background: var(--raised); display: grid; gap: 14px; }

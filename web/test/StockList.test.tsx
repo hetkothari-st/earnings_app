@@ -146,4 +146,32 @@ describe('StockList', () => {
     expect(screen.getByText('GAAP').className).toContain('tag');
     expect(screen.getAllByText('corrected').length).toBe(1);
   });
+
+  test('a GAAP-only EPS shows the GAAP tag and no beat/miss colour', () => {
+    renderList({
+      expanded: new Set(['TSM']),
+      rows: [dto({ id: 1, symbol: 'TSM', eps: { estimate: 1.66, actual: 1.9, surprisePct: null, result: null, preliminary: true, corrected: false, basis: 'gaap', noOfEsts: 6, lastYear: null, lastYearReportDate: null } })],
+    });
+    expect(screen.getByText('GAAP')).toBeTruthy();
+    const act = document.querySelector('.act')!;
+    expect(act.textContent).toContain('1.9');
+    expect(act.className).toContain('act');
+    expect(act.className).not.toMatch(/(beat|miss)/);
+  });
+
+  test('a share-class ticker (BRK/B) finds its live price under the normalized key', () => {
+    renderList({ rows: [dto({ id: 50, symbol: 'BRK/B' })], prices: { 'BRK-B': { price: 480.5, prevClose: null, changePct: null, time: 0 } } });
+    expect(screen.getByText('$480.50')).toBeTruthy();
+  });
+
+  test('a released US row says Results out in the head and gives the ET and local time in Details', () => {
+    const out = dto({ id: 40, symbol: 'OUT', releasedAt: '2026-10-15T20:30:00Z', timing: 'AMC' });
+    const notOut = dto({ id: 41, symbol: 'NOT', timing: 'AMC' });
+    renderList({ rows: [out, notOut], expanded: new Set(['OUT', 'NOT']) });
+    const li = (s: string) => screen.getByRole('button', { name: new RegExp(s) }).closest('li')!;
+    expect(within(li('OUT')).getAllByText(/Results out/).length).toBeGreaterThan(0);
+    expect(within(li('OUT')).getByText('Release').nextElementSibling!.textContent).toBe('Results out · 16:30 ET (02:00 your time)');
+    expect(within(li('NOT')).queryByText(/Results out/)).toBeNull();
+    expect(within(li('NOT')).getByText('Release').nextElementSibling!.textContent).not.toMatch(/Results out/);
+  });
 });

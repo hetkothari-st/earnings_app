@@ -1,9 +1,11 @@
+import { DateTime } from 'luxon';
 import type { Flag, ReportDto, ResultPart } from '../../../server/src/api/types';
 import type { LivePrice, Note } from '../api';
 import { changeClass, formatChange, formatDateHeading, formatEps, formatMoney, formatPct, formatUsd } from '../lib/format';
 import { liveCap, todayEt } from '../lib/liveCap';
 import { type SortKey, sortRows } from '../lib/sort';
-import { describeTiming, zoneLabel } from '../lib/time';
+import { ET, describeTiming, zoneLabel } from '../lib/time';
+import { priceKey } from '../lib/ticker';
 import { NoteEditor } from './NoteEditor';
 import { Star } from './Star';
 import { Tags } from './Tags';
@@ -46,6 +48,9 @@ export function Warn({ flags }: { flags: Flag[] }) {
   return <span className="warn" title={text} aria-label={text} role="img">⚠</span>;
 }
 
+/** 24-hour clock time of an instant in a zone. */
+const hhmm = (iso: string, zone: string) => DateTime.fromISO(iso).setZone(zone).toFormat('HH:mm');
+
 const pct1 = (n: number) => (Math.round(n * 10 + 1e-9) / 10).toFixed(1);
 
 type Part = ResultPart & { preliminary: boolean; corrected: boolean; basis?: 'adjusted' | 'gaap' | null };
@@ -82,7 +87,7 @@ export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveN
             <ul className="stocks">
               {list.map((r) => (
                 <Stock key={r.id} r={r} zone={zone} open={expanded.has(r.symbol)} isNew={highlight?.has(r.id) ?? false}
-                  onToggle={onToggle} note={notes.get(r.id)} onSaveNote={onSaveNote} price={prices[r.symbol]}
+                  onToggle={onToggle} note={notes.get(r.id)} onSaveNote={onSaveNote} price={prices[priceKey(r.symbol)]}
                   watched={watched?.has(r.symbol) ?? false} onWatch={onWatch} />
               ))}
             </ul>
@@ -113,7 +118,7 @@ function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote, price, watche
             </>
           ) : null}
         </span>
-        <span className="stock-when">{TIMING_SHORT[r.timing]}</span>
+        <span className="stock-when">{r.releasedAt ? <span className="results-out">Results out</span> : TIMING_SHORT[r.timing]}</span>
         <span className="chevron" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
       {onWatch && <Star symbol={r.symbol} on={watched} onToggle={onWatch} />}
@@ -149,7 +154,15 @@ function Details({ r, zone, note, onSaveNote, price }: {
         <dt>Sector</dt>
         <dd>{r.sector ? `${r.sector}${r.industry ? ` (${r.industry})` : ''}` : '—'}</dd>
         <dt>Release</dt>
-        <dd>{t.et}{r.timing !== 'UNKNOWN' ? ' ET' : ''}<Warn flags={flags('timing')} /></dd>
+        <dd>
+          {r.releasedAt ? (
+            <>
+              <span className="results-out">Results out</span> · {hhmm(r.releasedAt, ET)} ET
+              {zone !== ET && <span className="muted"> ({hhmm(r.releasedAt, zone)} your time)</span>}
+            </>
+          ) : <>{t.et}{r.timing !== 'UNKNOWN' ? ' ET' : ''}</>}
+          <Warn flags={flags('timing')} />
+        </dd>
         <dt>Your time</dt>
         <dd>{t.local}{t.nextDay ? ' (next day)' : ''}{r.timing !== 'UNKNOWN' ? ` ${zoneLabel(zone, r.reportDate)}` : ''}</dd>
         <dt>Result date</dt>
