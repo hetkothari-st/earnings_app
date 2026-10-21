@@ -211,7 +211,11 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
     // Nasdaq sometimes omits the fiscal quarter ("date:" key). Same symbol on the same date is the same report.
     ?? db.prepare(`SELECT * FROM reports WHERE symbol_key = ? AND report_date = ?
         AND (fiscal_quarter LIKE 'date:%' OR ? LIKE 'date:%') ORDER BY fiscal_quarter LIKE 'date:%' LIMIT 1`)
-      .get(key, row.reportDate, row.fiscalQuarter)) as unknown as ReportRow | undefined;
+      .get(key, row.reportDate, row.fiscalQuarter)
+    // A Yahoo-estimated row (watched stock) stands in until Nasdaq lists the report, under whatever quarter label it uses.
+    ?? db.prepare(`SELECT * FROM reports WHERE symbol_key = ? AND date_status = 'estimated' AND released_at IS NULL
+        AND ABS(julianday(report_date) - julianday(?)) <= 14 ORDER BY ABS(julianday(report_date) - julianday(?)) LIMIT 1`)
+      .get(key, row.reportDate, row.reportDate)) as unknown as ReportRow | undefined;
 
   if (!existing) {
     db.prepare(`INSERT INTO reports (symbol, symbol_key, name, fiscal_quarter, report_date, timing, timing_source,
@@ -242,7 +246,7 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
     timingSource = null;
   }
   const capLive = reportDate >= today && row.marketCap != null;
-  const fiscalQuarter = existing.fiscal_quarter.startsWith('date:') ? row.fiscalQuarter : existing.fiscal_quarter;
+  const fiscalQuarter = existing.fiscal_quarter.startsWith('date:') || existing.date_status === 'estimated' ? row.fiscalQuarter : existing.fiscal_quarter;
   // A confirmed Nasdaq actual wins: it is on the same basis as Nasdaq's consensus estimate.
   // (The parser already drops Nasdaq's placeholder EPS shown before results are recorded.)
   let epsActual = existing.eps_actual;
@@ -674,4 +678,18 @@ export function setEstimatedDate(db: Db, id: number, date: string): void {
 export function confirmDate(db: Db, symbol: string, reportDate: string): void {
   db.prepare("UPDATE reports SET date_status = NULL WHERE symbol_key = ? AND report_date = ? AND date_status IS NOT NULL")
     .run(normalizeTicker(symbol), reportDate);
+}
+
+/** Which of these symbols have no report dated today or later (any status). */
+export function symbolsWithoutUpcoming(db: Db, symbols: string[], today: string): string[] {
+  const has = db.prepare('SELECT 1 FROM reports WHERE symbol_key = ? AND report_date >= ? LIMIT 1');
+  return symbols.filter((s) => has.get(normalizeTicker(s), today) === undefined);
+}
+
+/** An upcoming report known only from Yahoo's date: no timing, no numbers, date_status 'estimated' until Nasdaq lists it. */
+export function insertEstimatedReport(db: Db, r: { symbol: string; fiscalQuarter: string; reportDate: string }, now: string): void {
+  const key = normalizeTicker(r.symbol);
+  const known = db.prepare('SELECT name FROM reports WHERE symbol_key = ? ORDER BY report_date DESC LIMIT 1').get(key) as unknown as { name: string } | undefined;
+  db.prepare(`INSERT OR IGNORE INTO reports (symbol, symbol_key, name, fiscal_quarter, report_date, timing, date_status, calendar_fetched_at)
+      VALUES (?, ?, ?, ?, ?, 'UNKNOWN', 'estimated', ?)`).run(r.symbol, key, known?.name ?? r.symbol, r.fiscalQuarter, r.reportDate, now);
 }

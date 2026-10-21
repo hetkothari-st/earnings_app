@@ -2,7 +2,7 @@ import { schedule } from 'node-cron';
 import { recordSourceError } from '../db/repo.js';
 import { CalendarCoverageError, ET } from '../domain/marketCalendar.js';
 import type { JobContext } from './context.js';
-import { refreshCalendar } from './refreshCalendar.js';
+import { refreshCalendar, refreshWatchedEstimates } from './refreshCalendar.js';
 import { refreshLiveMoves } from './liveMoves.js';
 import { refreshResults } from './refreshResults.js';
 import { computePrevMoves } from './prevMoves.js';
@@ -76,7 +76,7 @@ export function startScheduler(
   schedule(US_CRONS.calendarNear, job('calendar-near', () => refreshCalendar(ctx, 14)), opts);
   schedule(US_CRONS.calendarFull, job('calendar', () => refreshCalendar(ctx).then(() => snapshotMoves(ctx))), opts);
   schedule(US_CRONS.yahooNear, job('yahoo-near', () => refreshYahoo(ctx, ctx.today(), addDays(ctx.today(), 7))), opts);
-  schedule(US_CRONS.yahooFar, job('yahoo-far', () => refreshYahoo(ctx, addDays(ctx.today(), 8), addDays(ctx.today(), 90))), opts);
+  schedule(US_CRONS.yahooFar, job('yahoo-far', () => refreshYahoo(ctx, addDays(ctx.today(), 8), addDays(ctx.today(), 90)).then(() => refreshWatchedEstimates(ctx))), opts);
   // Every minute through the whole release window, no midday gap.
   schedule(US_CRONS.results, results, opts);
   schedule('20 16 * * 1-5', job('moves', () => snapshotMoves(ctx)), opts);

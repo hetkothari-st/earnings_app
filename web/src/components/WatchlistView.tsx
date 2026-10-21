@@ -110,6 +110,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
                   <span data-testid="next-date">
                     {!next ? '—' : next.reportDate < t ? 'Results pending' : formatDateHeading(next.reportDate)}
                   </span>
+                  {next?.dateStatus === 'estimated' && <span className="muted" data-testid="next-estimated"> estimated</span>}
                   {em && <span className={('provisional' in em && em.provisional) || ('final' in em && !em.final) ? 'provisional' : undefined}>{`±${pct1(em.movePct)}%`}</span>}
                 </span>
                 <span className="wl-latest">

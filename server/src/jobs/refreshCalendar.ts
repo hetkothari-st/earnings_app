@@ -1,7 +1,8 @@
-import { confirmDate, inTransaction, mergeFinnhubRow, reportsAwaitingDate, setEstimatedDate, upsertCalendarRow } from '../db/repo.js';
+import { confirmDate, inTransaction, insertEstimatedReport, mergeFinnhubRow, reportsAwaitingDate, setEstimatedDate, symbolsWithoutUpcoming, upsertCalendarRow } from '../db/repo.js';
 import { addDays, isWeekend } from '../domain/marketCalendar.js';
 import { BlockedError, blockAware } from '../sources/failover.js';
 import type { CalendarRow } from '../types.js';
+import { allWatched } from '../watchlist/store.js';
 import { type JobContext, guarded, track } from './context.js';
 
 export function storeCalendarRows(ctx: JobContext, rows: CalendarRow[]): void {
@@ -43,6 +44,39 @@ export async function refreshYahooDates(ctx: JobContext, from: string, to: strin
     }
   }
   if (tried > 0 && failed === tried) throw lastError; // nothing worked: Yahoo itself is down
+  await refreshWatchedEstimates(ctx);
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** 'Sep/2026' for a date in Oct 2026: the latest calendar quarter end before the date. */
+function quarterLabelBefore(date: string): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const endMonth = Math.floor((month - 1) / 3) * 3; // 0 = December of last year
+  return endMonth === 0 ? `Dec/${year - 1}` : `${MONTHS[endMonth - 1]}/${year}`;
+}
+
+/**
+ * Yahoo's next date for every watched US stock that has no upcoming report: an 'estimated' row, until Nasdaq
+ * lists it. A stock with a Nasdaq-confirmed upcoming row is never touched.
+ */
+export async function refreshWatchedEstimates(ctx: JobContext): Promise<void> {
+  const today = ctx.today();
+  let tried = 0;
+  let failed = 0;
+  let lastError: unknown;
+  for (const symbol of symbolsWithoutUpcoming(ctx.db, allWatched(ctx.db, 'US'), today).slice(0, YAHOO_DATE_CHECKS)) {
+    tried++;
+    try {
+      const date = (await ctx.sources.yahooSummary(symbol))?.nextEarningsDate;
+      if (date && date >= today) insertEstimatedReport(ctx.db, { symbol, fiscalQuarter: quarterLabelBefore(date), reportDate: date }, ctx.now());
+    } catch (err) {
+      failed++;
+      lastError = err;
+    }
+  }
+  if (tried > 0 && failed === tried) throw lastError;
 }
 
 /**

@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import { listSourceStatus, openDb, setEstimatedDate, upsertCalendarRow } from '../../src/db/repo.js';
+import { addWatch } from '../../src/watchlist/store.js';
 import type { JobContext, Sources } from '../../src/jobs/context.js';
-import { refreshCalendar, storeCalendarRows } from '../../src/jobs/refreshCalendar.js';
+import { refreshCalendar, refreshWatchedEstimates, storeCalendarRows } from '../../src/jobs/refreshCalendar.js';
 import { refreshSectors } from '../../src/jobs/sectors.js';
 import { snapshotMoves } from '../../src/jobs/snapshotMoves.js';
 import { HttpError } from '../../src/sources/http.js';
@@ -129,6 +130,43 @@ describe('Nasdaq calendar with a Yahoo backup', () => {
     estimate(ctx);
     await refreshCalendar(ctx, 14);
     expect(dates(ctx).map((r) => (r as { d: string }).d)).toEqual(['2026-10-20', '2026-10-22']);
+  });
+});
+
+describe('estimated rows for watched US stocks', () => {
+  const watch = (ctx: JobContext, ...symbols: string[]) => { for (const s of symbols) addWatch(ctx.db, 'u1', 'US', s, Date.parse(NOW)); };
+  const all = (ctx: JobContext) => ctx.db.prepare('SELECT symbol, fiscal_quarter AS q, report_date AS d, date_status AS s, timing, rescheduled_from AS rf FROM reports ORDER BY symbol, id').all();
+
+  test('a watched stock with no upcoming report gets an estimated row from Yahoo', async () => {
+    const ctx = makeCtx({ yahooSummary: async () => summary('2026-11-05') });
+    watch(ctx, 'NEWCO');
+    await refreshWatchedEstimates(ctx);
+    expect(all(ctx)).toEqual([{ symbol: 'NEWCO', q: 'Sep/2026', d: '2026-11-05', s: 'estimated', timing: 'UNKNOWN', rf: null }]);
+    await refreshWatchedEstimates(ctx); // idempotent: it now has an upcoming row
+    expect(all(ctx)).toHaveLength(1);
+  });
+
+  test('Nasdaq listing it later (different fiscal quarter string) updates the row in place: confirmed, no reschedule', async () => {
+    const ctx = makeCtx({ yahooSummary: async () => summary('2026-11-05') });
+    watch(ctx, 'NEWCO');
+    await refreshWatchedEstimates(ctx);
+    storeCalendarRows(ctx, [cal({ symbol: 'NEWCO', reportDate: '2026-11-10', fiscalQuarter: 'Dec/2026', timing: 'AMC' })]);
+    expect(all(ctx)).toEqual([{ symbol: 'NEWCO', q: 'Dec/2026', d: '2026-11-10', s: null, timing: 'AMC', rf: null }]);
+  });
+
+  test('a watched stock that already has an upcoming Nasdaq row gets nothing from Yahoo; so does a Yahoo date in the past', async () => {
+    const ctx = makeCtx({ yahooSummary: async (s) => summary(s === 'OLDCO' ? '2026-10-01' : '2026-11-05') });
+    upsertCalendarRow(ctx.db, cal({ symbol: 'HAVE', reportDate: '2026-10-20' }), NOW, TODAY);
+    watch(ctx, 'HAVE', 'OLDCO');
+    await refreshWatchedEstimates(ctx);
+    expect(all(ctx)).toEqual([{ symbol: 'HAVE', q: 'Sep/2026', d: '2026-10-20', s: null, timing: 'BMO', rf: null }]);
+  });
+
+  test('runs as part of the Nasdaq backup too', async () => {
+    const ctx = makeCtx({ calendar: async () => { throw new HttpError(429, 'u'); }, yahooSummary: async () => summary('2026-10-28') });
+    watch(ctx, 'NEWCO');
+    await refreshCalendar(ctx, 14);
+    expect(all(ctx)).toMatchObject([{ symbol: 'NEWCO', d: '2026-10-28', s: 'estimated' }]);
   });
 });
 

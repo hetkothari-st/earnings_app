@@ -108,6 +108,20 @@ test('watchlist view shows next date and live price; missing next date shows —
   expect(within(aapl).getByTestId('latest-date').textContent).toBe('—');
 });
 
+test('an estimated next date (Yahoo backup) shows a muted marker; a confirmed one does not', async () => {
+  lists.US = ['EST', 'CNF'];
+  rowsBody.US = [
+    { symbol: 'EST', name: 'Estimated Co', next: usReport({ dateStatus: 'estimated' }), latest: null },
+    { symbol: 'CNF', name: 'Confirmed Co', next: usReport({ dateStatus: 'confirmed' }), latest: null },
+  ];
+  render(<Calendar />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Watchlist' }));
+  const est = (await screen.findByText('Estimated Co', { selector: '.wl-name' })).closest('li')!;
+  const cnf = screen.getByText('Confirmed Co', { selector: '.wl-name' }).closest('li')!;
+  expect(within(est).getByTestId('next-estimated').textContent).toContain('estimated');
+  expect(within(cnf).queryByTestId('next-estimated')).toBeNull();
+});
+
 test('a next date before today reads as results pending', async () => {
   lists.US = ['TSM'];
   rowsBody.US = [{ symbol: 'TSM', name: 'Taiwan Semiconductor', next: usReport({ reportDate: '2020-01-02' }), latest: null }];
