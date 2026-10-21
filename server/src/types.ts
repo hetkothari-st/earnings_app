@@ -101,6 +101,7 @@ export interface ReportRecord {
   timingConflict: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
+  sharesOutstanding: number | null;
   epsEstimate: number | null;
   epsActual: number | null;
   epsSurprisePct: number | null;

@@ -57,6 +57,7 @@ export function toDto(r: ReportRecord): ReportDto {
     industry: r.industry,
     marketCap: r.marketCap,
     marketCapAsOf: r.marketCapAsOf,
+    sharesOutstanding: r.sharesOutstanding,
     eps: {
       estimate: r.epsEstimate,
       actual: epsActual,

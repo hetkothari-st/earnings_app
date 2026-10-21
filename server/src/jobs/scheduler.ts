@@ -12,6 +12,9 @@ import { addDays, prevTradingDay } from '../domain/marketCalendar.js';
 import { secSync } from './secSync.js';
 import { snapshotMoves } from './snapshotMoves.js';
 import { purgeExpiredNotes } from '../notes/store.js';
+import { config } from '../config.js';
+import { makeHttp } from '../sources/http.js';
+import { refreshUsShares } from './shares.js';
 
 export type JobRunner = (name: string, fn: () => Promise<void>) => () => Promise<void>;
 
@@ -33,6 +36,16 @@ export function createJobRunner(ctx: JobContext): JobRunner {
       running.delete(name);
     }
   };
+}
+
+let secSharesHttp: ReturnType<typeof makeHttp> | null = null;
+
+/** Daily share-count refresh (SEC). Null without SEC_USER_AGENT: the job is skipped. */
+export function usSharesJob(ctx: JobContext): (() => Promise<void>) | null {
+  if (!config.secUserAgent) return null;
+  secSharesHttp ??= makeHttp({ minIntervalMs: 150, headers: { 'User-Agent': config.secUserAgent } });
+  const http = secSharesHttp;
+  return () => refreshUsShares(ctx, http);
 }
 
 /** Spec section 7. All cron expressions are evaluated in America/New_York. */
@@ -65,6 +78,8 @@ export function startScheduler(
   const live = job('live', () => refreshLiveMoves(ctx).then((ids) => { if (ids.length) onMoves(ids); }));
   schedule('*/3 9-15 * * 1-5', live, opts);
   schedule('0-15/3 16 * * 1-5', live, opts);
+  const shares = usSharesJob(ctx);
+  if (shares) schedule('0 6 * * *', job('shares', shares), opts);
   schedule('0 23 * * *', job('sec', () => secSync(ctx).then(() => refreshSectors(ctx)).then(() => computePrevMoves(ctx, { from: addDays(ctx.today(), -730) }))), opts);
   return job;
 }
@@ -79,4 +94,6 @@ export async function warmUp(ctx: JobContext, job: JobRunner): Promise<void> {
   await job('sectors', () => refreshSectors(ctx))();
   await job('moves', () => snapshotMoves(ctx))();
   await job('prevMoves', () => computePrevMoves(ctx))();
+  const shares = usSharesJob(ctx);
+  if (shares) await job('shares', shares)();
 }

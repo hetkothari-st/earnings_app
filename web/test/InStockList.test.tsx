@@ -8,7 +8,7 @@ const dto = (over: Partial<InReportDto>): InReportDto => ({
   id: 1_000_000_001, market: 'IN', symbol: 'TATACOMM', name: 'Tata Communications Limited', reportDate: '2026-10-15',
   dateStatus: 'confirmed', fiscalQuarter: 'Sep/2026', quarterEnd: '2026-09-30', timing: 'AMC', timingSource: 'nse-filing',
   releasedAt: '2026-10-15T12:03:55.000Z', rescheduledFrom: null, sector: 'Communication Services', industry: 'Telecom Services',
-  marketCap: 5.4e11, marketCapAsOf: '2026-10-15', basis: 'consolidated',
+  marketCap: 5.4e11, marketCapAsOf: '2026-10-15', sharesOutstanding: null, basis: 'consolidated',
   eps: { estimate: 11, analysts: 5, actual: 11.96, surprisePct: 8.7, result: 'beat', preliminary: false, corrected: false },
   revenue: { estimate: 6e10, analysts: 4, actual: 66_878_900_000, kind: 'revenue-from-ops', surprisePct: 11.5, result: 'beat', preliminary: false, corrected: false },
   profit: { actual: 3_356_100_000, preliminary: false, corrected: false }, expectedMove: null, liveMove: null, previousMove: null, ...over,
@@ -27,6 +27,19 @@ describe('InStockList', () => {
     expect(screen.getByText('₹6,687.89 Cr ▲')).toBeTruthy();
     expect(screen.getByText(/After close, 5:33 pm IST/i)).toBeTruthy();
     expect(screen.getByText(/confirmed by NSE filing/)).toBeTruthy();
+  });
+
+  test('upcoming row shows live cap = price × shares; past row shows stored cap', () => {
+    const price = { price: 100, prevClose: null, changePct: null, at: 'x', source: 'stream' as const };
+    const cap = (r: InReportDto) => {
+      const { unmount } = render(<InStockList rows={[r]} zone="Asia/Kolkata" expanded={new Set(['IN:' + r.symbol])} sort="date"
+        onToggle={vi.fn()} notes={new Map()} onSaveNote={vi.fn()} prices={{ [r.symbol]: price }} />);
+      const text = screen.getByText('Market cap').nextElementSibling!.textContent;
+      unmount();
+      return text;
+    };
+    expect(cap(dto({ symbol: 'UPC', reportDate: '2099-01-04', sharesOutstanding: 1e9 }))).toBe('₹10,000 Cr live');
+    expect(cap(dto({ symbol: 'OLD', reportDate: '2020-01-02', sharesOutstanding: 1e9 }))).toContain('₹54,000 Cr');
   });
 
   test('a bank shows total income without colour', () => {

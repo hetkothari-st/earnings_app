@@ -23,6 +23,8 @@ export interface InReportDto {
   industry: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
+  /** Latest share count (Yahoo); live market cap = live price x this. */
+  sharesOutstanding: number | null;
   /** Basis of the figures shown (of the preliminary ones while any are shown). Beat/miss only for consolidated figures. */
   basis: 'consolidated' | 'standalone' | null;
   /**

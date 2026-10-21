@@ -6,7 +6,7 @@ import { StockList } from '../src/components/StockList';
 const dto = (over: Partial<ReportDto>): ReportDto => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
   releasedAt: null, timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
-  sector: 'Technology', industry: 'Semiconductors', marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
+  sector: 'Technology', industry: 'Semiconductors', marketCap: 2.31e12, marketCapAsOf: '2026-10-15', sharesOutstanding: null,
   eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, preliminary: false, corrected: false, basis: null, noOfEsts: 6, lastYear: 2.92, lastYearReportDate: '2025-10-16' },
   revenue: { estimate: 3.3e10, actual: null, surprisePct: null, result: null, preliminary: false, corrected: false, currency: 'USD' },
   expectedMove: null, liveMove: null, previousMove: null, sec: { check: null, acceptedAt: null, docUrl: null, indexUrl: null },
@@ -33,6 +33,17 @@ function renderList(over: Partial<Parameters<typeof StockList>[0]> = {}) {
 }
 
 describe('StockList', () => {
+  test('upcoming row shows live cap = price × shares; past row shows stored cap', () => {
+    const upcoming = dto({ id: 10, symbol: 'UPC', reportDate: '2099-01-04', marketCap: 1e9, sharesOutstanding: 2e9 });
+    const past = dto({ id: 11, symbol: 'OLD', reportDate: '2020-01-02', marketCap: 1e9, sharesOutstanding: 2e9 });
+    const noShares = dto({ id: 12, symbol: 'NOS', reportDate: '2099-01-04', marketCap: 1e9, sharesOutstanding: null });
+    const price = { price: 5, prevClose: null, changePct: null, time: 0 };
+    renderList({ rows: [upcoming, past, noShares], expanded: new Set(['UPC', 'OLD', 'NOS']), prices: { UPC: price, OLD: price, NOS: price } });
+    const cap = (sym: string) => within(screen.getByRole('button', { name: new RegExp(sym) }).closest('li')!).getByText('Market cap').nextElementSibling!.textContent;
+    expect(cap('UPC')).toBe('$10.0B live');
+    expect(cap('OLD')).toBe('$1.0B');
+    expect(cap('NOS')).toBe('$1.0B');
+  });
   test('stocks are listed under their date, names only while collapsed', () => {
     renderList();
     const days = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);

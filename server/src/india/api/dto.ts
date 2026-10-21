@@ -36,6 +36,7 @@ export function toInDto(r: InReport): InReportDto {
     industry: r.industry,
     marketCap: r.marketCap,
     marketCapAsOf: r.marketCapAsOf,
+    sharesOutstanding: r.sharesOutstanding,
     basis,
     eps: {
       estimate: r.epsEstimate,

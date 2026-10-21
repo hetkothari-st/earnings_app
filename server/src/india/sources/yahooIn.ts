@@ -10,6 +10,8 @@ export interface YahooInSummary {
   industry: string | null;
   marketCap: number | null;   // rupees
   marketCapAsOf: string | null; // YYYY-MM-DD IST
+  /** defaultKeyStatistics.sharesOutstanding; null when Yahoo has no such module. */
+  sharesOutstanding: number | null;
   /** Next result date per Yahoo (estimated). */
   nextDate: string | null;
   /** Quarterly consensus only (periods "0q", "+1q"): annual figures never match a quarter. */
@@ -21,6 +23,7 @@ const Schema = z.object({
   quoteSummary: z.object({
     result: z.array(z.object({
       price: z.object({ currency: z.string().nullish(), marketCap: Raw, regularMarketTime: z.number().nullish() }).nullish(),
+      defaultKeyStatistics: z.object({ sharesOutstanding: Raw }).nullish(),
       assetProfile: z.object({ sector: z.string().nullish(), industry: z.string().nullish() }).nullish(),
       calendarEvents: z.object({
         earnings: z.object({ earningsDate: z.array(z.object({ raw: z.number() })).nullish() }).nullish(),
@@ -49,6 +52,7 @@ export function parseYahooInSummary(json: unknown): YahooInSummary {
     industry: r.assetProfile?.industry || null,
     marketCap: inr ? r.price?.marketCap?.raw ?? null : null,
     marketCapAsOf: inr && r.price?.marketCap?.raw != null && time ? DateTime.fromSeconds(time, { zone: IST }).toISODate() : null,
+    sharesOutstanding: r.defaultKeyStatistics?.sharesOutstanding?.raw ?? null,
     // Yahoo gives a range when unsure; only a single date is usable.
     nextDate: dates.length === 1 ? DateTime.fromSeconds(dates[0]!.raw, { zone: IST }).toISODate() : null,
     quarters: (r.earningsTrend?.trend ?? [])
@@ -68,7 +72,7 @@ export function parseYahooInSummary(json: unknown): YahooInSummary {
 }
 
 export function createYahooInFetcher(): (nseSymbol: string) => Promise<YahooInSummary | null> {
-  const get = createQuoteSummaryFetcher('price,assetProfile,earningsTrend,calendarEvents', parseYahooInSummary);
+  const get = createQuoteSummaryFetcher('price,assetProfile,earningsTrend,calendarEvents,defaultKeyStatistics', parseYahooInSummary);
   return (nseSymbol) => get(`${nseSymbol}.NS`);
 }
 

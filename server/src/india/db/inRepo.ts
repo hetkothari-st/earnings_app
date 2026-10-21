@@ -47,6 +47,7 @@ export interface InStock {
   industry: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
+  sharesOutstanding: number | null;
 }
 
 /** Replaces the active F&O list. Stocks that left the list keep their history but are hidden. */
@@ -81,13 +82,19 @@ export function setStockProfile(
     .run(p.sector, p.industry, p.marketCap, p.marketCap, p.asOf, now, symbol);
 }
 
+/** Share count from Yahoo; a missing count never blanks a stored one. */
+export function setInShares(db: DatabaseSync, symbol: string, shares: number, asOf: string): void {
+  db.prepare('UPDATE in_stocks SET shares_outstanding = COALESCE(?, shares_outstanding), shares_as_of = CASE WHEN ? IS NULL THEN shares_as_of ELSE ? END WHERE symbol = ?')
+    .run(shares, shares, asOf, symbol);
+}
+
 interface StockRow {
   symbol: string; name: string; lot_size: number | null; eq_token: number | null; sector: string | null;
-  industry: string | null; market_cap: number | null; market_cap_as_of: string | null;
+  industry: string | null; market_cap: number | null; market_cap_as_of: string | null; shares_outstanding: number | null;
 }
 const toStock = (r: StockRow): InStock => ({
   symbol: r.symbol, name: r.name, lotSize: r.lot_size, eqToken: r.eq_token, sector: r.sector,
-  industry: r.industry, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of,
+  industry: r.industry, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of, sharesOutstanding: r.shares_outstanding,
 });
 
 export function activeStocks(db: DatabaseSync): InStock[] {
@@ -160,6 +167,7 @@ export interface InReport {
   industry: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
+  sharesOutstanding: number | null;
   expectedMove: (InExpectedMove & { final: boolean; snapshotAt: string }) | null;
   liveMovePct: number | null;
   liveMoveIlliquid: boolean | null;
@@ -175,7 +183,7 @@ interface InReportRow {
   eps_corrected: number | null; revenue_corrected: number | null; pnl_corrected: number | null;
   eps_estimate: number | null; eps_analysts: number | null; revenue_estimate: number | null; revenue_analysts: number | null;
   prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: string | null;
-  s_sector: string | null; s_industry: string | null; s_market_cap: number | null; s_market_cap_as_of: string | null;
+  s_sector: string | null; s_industry: string | null; s_market_cap: number | null; s_market_cap_as_of: string | null; s_shares: number | null;
   em_expiry: string | null; em_strike: number | null; em_call_mid: number | null;
   em_put_mid: number | null; em_underlying: number | null; em_move_pct: number | null;
   em_illiquid: number | null; em_final: number | null; em_snapshot_at: string | null;
@@ -184,7 +192,7 @@ interface InReportRow {
 
 const SELECT_IN_COLUMNS = `
 SELECT r.*,
-  s.sector AS s_sector, s.industry AS s_industry, s.market_cap AS s_market_cap, s.market_cap_as_of AS s_market_cap_as_of,
+  s.sector AS s_sector, s.industry AS s_industry, s.market_cap AS s_market_cap, s.market_cap_as_of AS s_market_cap_as_of, s.shares_outstanding AS s_shares,
   m.expiry AS em_expiry, m.strike AS em_strike, m.call_mid AS em_call_mid, m.put_mid AS em_put_mid,
   m.underlying AS em_underlying, m.move_pct AS em_move_pct, m.illiquid AS em_illiquid, m.final AS em_final,
   m.snapshot_at AS em_snapshot_at,
@@ -235,6 +243,7 @@ function toInReport(r: InReportRow): InReport {
     industry: r.s_industry,
     marketCap: r.s_market_cap,
     marketCapAsOf: r.s_market_cap_as_of,
+    sharesOutstanding: r.s_shares,
     expectedMove: r.em_snapshot_at
       ? {
           symbol: r.symbol,

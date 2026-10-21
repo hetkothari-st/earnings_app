@@ -1,6 +1,7 @@
 import type { Flag, ReportDto, ResultPart } from '../../../server/src/api/types';
 import type { LivePrice, Note } from '../api';
 import { changeClass, formatChange, formatDateHeading, formatEps, formatMoney, formatPct, formatUsd } from '../lib/format';
+import { liveCap, todayEt } from '../lib/liveCap';
 import { type SortKey, sortRows } from '../lib/sort';
 import { describeTiming, zoneLabel } from '../lib/time';
 import { NoteEditor } from './NoteEditor';
@@ -129,6 +130,7 @@ function Details({ r, zone, note, onSaveNote, price }: {
   const flags = (field: Flag['field']) => r.flags.filter((f) => f.field === field);
   const em = r.expectedMove;
   const live = r.liveMove;
+  const cap = liveCap(r.reportDate, todayEt(), price?.price, r.sharesOutstanding);
   return (
     <div className="stock-body">
       <dl className="lines">
@@ -186,7 +188,10 @@ function Details({ r, zone, note, onSaveNote, price }: {
           ) : '—'}
         </dd>
         <dt>Market cap</dt>
-        <dd>{formatUsd(r.marketCap)}<Warn flags={flags('marketCap')} /></dd>
+        <dd>
+          {cap != null ? <>{formatUsd(cap)} <span className="muted">live</span></> : formatUsd(r.marketCap)}
+          <Warn flags={flags('marketCap')} />
+        </dd>
         <dt>EPS estimate / actual</dt>
         <dd><Result part={r.eps} format={formatEps} /><Warn flags={flags('eps')} /></dd>
         <dt>Revenue estimate / actual</dt>

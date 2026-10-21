@@ -8,6 +8,7 @@ import { refreshInEstimates } from './estimates.js';
 import { refreshInLiveMoves, snapshotInMoves } from './moves.js';
 import { computeInPrevMoves } from './prevMoves.js';
 import { refreshInResults } from './results.js';
+import { refreshInShares } from '../../jobs/shares.js';
 import { loadFoCache, refreshInStocks } from './stocks.js';
 
 const IST = 'Asia/Kolkata';
@@ -48,6 +49,7 @@ export function startInScheduler(ctx: InJobContext, job: JobRunner, hooks: InSch
   schedule('25 15 * * 1-5', job('india-moves', () => snapshotInMoves(ctx)), opts);
   schedule('* 9-15 * * 1-5', live, opts);
   schedule('0 6,13,19 * * *', job('india-estimates', () => refreshInEstimates(ctx)), opts);
+  schedule('0 7 * * *', job('india-shares', () => refreshInShares(ctx)), opts);
   schedule('30 0,8 * * *', job('india-prev-moves', () => computeInPrevMoves(ctx)), opts);
 }
 
@@ -60,4 +62,5 @@ export async function warmUpIndia(ctx: InJobContext, job: JobRunner): Promise<vo
   await job('india-results', async () => { await refreshInResults(ctx); })();
   await job('india-prev-moves', () => computeInPrevMoves(ctx))();
   await job('india-estimates', () => refreshInEstimates(ctx))();
+  await job('india-shares', () => refreshInShares(ctx))();
 }

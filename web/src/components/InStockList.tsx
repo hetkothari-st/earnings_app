@@ -2,6 +2,7 @@ import type { BeatMiss } from '../../../server/src/api/types';
 import type { InReportDto } from '../../../server/src/india/api/types';
 import type { InLivePriceDto, Note } from '../api';
 import { changeClass, formatChange, formatDateHeading, formatEpsInr, formatInrCr, formatPct } from '../lib/format';
+import { liveCap, todayIst } from '../lib/liveCap';
 import { type SortKey, sortRows } from '../lib/sort';
 import { NoteEditor } from './NoteEditor';
 import { Star } from './Star';
@@ -116,6 +117,7 @@ function InDetails({ r, zone, note, onSaveNote, price }: {
 }) {
   const em = r.expectedMove;
   const live = r.liveMove;
+  const cap = liveCap(r.reportDate, todayIst(), price?.price, r.sharesOutstanding);
   const basis = r.basis === 'consolidated' ? 'Cons.' : r.basis === 'standalone' ? 'Stand.' : null;
   const revenueLabel = r.revenue.kind === 'total-income' ? 'Total income estimate / actual' : 'Revenue estimate / actual';
   return (
@@ -146,7 +148,11 @@ function InDetails({ r, zone, note, onSaveNote, price }: {
         <dd>{r.sector ? `${r.sector}${r.industry ? ` (${r.industry})` : ''}` : '—'}</dd>
 
         <dt>Market cap</dt>
-        <dd>{formatInrCr(r.marketCap)}{r.marketCapAsOf && <span className="muted"> as of {formatDateHeading(r.marketCapAsOf)}</span>}</dd>
+        <dd>
+          {cap != null
+            ? <>{formatInrCr(cap)} <span className="muted">live</span></>
+            : <>{formatInrCr(r.marketCap)}{r.marketCapAsOf && <span className="muted"> as of {formatDateHeading(r.marketCapAsOf)}</span>}</>}
+        </dd>
 
         <dt>EPS estimate / actual</dt>
         <dd>

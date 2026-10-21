@@ -33,6 +33,8 @@ export interface ReportDto {
   industry: string | null;
   marketCap: number | null;
   marketCapAsOf: string | null;
+  /** Latest share count (SEC cover page); live market cap = live price x this. */
+  sharesOutstanding: number | null;
   eps: ResultPart & { preliminary: boolean; corrected: boolean; basis: 'adjusted' | 'gaap' | null; noOfEsts: number | null; lastYear: number | null; lastYearReportDate: string | null };
   revenue: ResultPart & { preliminary: boolean; corrected: boolean; currency: string };
   expectedMove: {

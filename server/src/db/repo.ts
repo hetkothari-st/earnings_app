@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS reports (
   prelim_at TEXT,
   eps_corrected INTEGER,
   revenue_corrected INTEGER,
+  shares_outstanding REAL,
+  shares_as_of TEXT,
   UNIQUE (symbol_key, fiscal_quarter)
 );
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports (report_date);
@@ -155,6 +157,7 @@ interface ReportRow {
   sec_index_url: string | null; released_at: string | null; release_source: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
   prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: PrevMoveBasis | null; sector: string | null; industry: string | null;
   eps_prelim: number | null; eps_prelim_basis: 'adjusted' | 'gaap' | null; revenue_prelim: number | null; eps_corrected: number | null; revenue_corrected: number | null;
+  shares_outstanding: number | null;
 }
 
 interface JoinedRow extends ReportRow {
@@ -173,7 +176,7 @@ function toRecord(r: JoinedRow): ReportRecord {
   return {
     id: r.id, symbol: r.symbol, symbolKey: r.symbol_key, name: r.name, fiscalQuarter: r.fiscal_quarter,
     reportDate: r.report_date, rescheduledFrom: r.rescheduled_from, timing: r.timing, timingSource: r.timing_source,
-    timingConflict: r.timing_conflict, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of,
+    timingConflict: r.timing_conflict, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of, sharesOutstanding: r.shares_outstanding,
     epsEstimate: r.eps_estimate, epsActual: r.eps_actual, epsSurprisePct: r.eps_surprise_pct, epsConflict: r.eps_conflict, noOfEsts: r.no_of_ests,
     lastYearEps: r.last_year_eps, lastYearReportDate: r.last_year_rpt_dt,
     revenueEstimate: r.revenue_estimate, revenueActual: r.revenue_actual, revenueCurrency: r.revenue_currency, exchange: r.exchange,
@@ -192,6 +195,12 @@ function toRecord(r: JoinedRow): ReportRecord {
       movePct: r.lm_move_pct!, illiquid: r.lm_illiquid === 1, quoteTime: r.lm_quote_time, fetchedAt: r.lm_fetched_at,
     },
   };
+}
+
+/** Share count is a per-company fact: stored on every report row of the symbol. A missing count never blanks a stored one. */
+export function setUsShares(db: Db, symbolKey: string, shares: number, asOf: string): void {
+  db.prepare('UPDATE reports SET shares_outstanding = COALESCE(?, shares_outstanding), shares_as_of = CASE WHEN ? IS NULL THEN shares_as_of ELSE ? END WHERE symbol_key = ?')
+    .run(shares, shares, asOf, symbolKey);
 }
 
 export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: string): void {
