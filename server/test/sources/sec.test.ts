@@ -35,9 +35,9 @@ const header = `<SEC-HEADER>0001628280-26-065582.hdr.sgml : 20261013
 describe('sec', () => {
   test('tickers keyed by normalized ticker', () => {
     const m = parseSecTickers(tickers);
-    expect(m.get('JPM')).toEqual({ cik: 19617, exchange: 'NYSE' });
-    expect(m.get('BRK-B')).toEqual({ cik: 1067983, exchange: 'NYSE' });
-    expect(m.get('NOEX')).toEqual({ cik: 999, exchange: null });
+    expect(m.get('JPM')).toEqual({ cik: 19617, exchange: 'NYSE', name: 'JPMORGAN CHASE & CO' });
+    expect(m.get('BRK-B')).toEqual({ cik: 1067983, exchange: 'NYSE', name: 'BERKSHIRE HATHAWAY INC' });
+    expect(m.get('NOEX')).toEqual({ cik: 999, exchange: null, name: 'NO EXCHANGE CO' });
   });
   test('tickers bad shape throws', () => {
     expect(() => parseSecTickers({ fields: ['x'], data: [] })).toThrow(SourceFormatError);

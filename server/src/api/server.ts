@@ -4,6 +4,7 @@ import { counts, type Db, getReport, listRange, listSourceStatus } from '../db/r
 import { registerAdmin } from '../auth/adminRoutes.js';
 import { registerAuth } from '../auth/routes.js';
 import { registerNotes } from '../notes/routes.js';
+import { registerWatchlist, type WatchlistOptions } from '../watchlist/routes.js';
 import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
 import { toDto } from './dto.js';
 import { registerWebApp } from './static.js';
@@ -37,6 +38,8 @@ export interface ServerOptions {
   prices?: () => Record<string, unknown>;
   /** India live data and Zerodha controls. */
   india?: InServerOptions;
+  /** Symbol index for the watchlist (search and validation). */
+  watchlist?: WatchlistOptions;
 }
 
 const MAX_RANGE_DAYS = 400;
@@ -51,6 +54,7 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   if (opts.webRoot) registerWebApp(app, opts.webRoot);
   const currentUser = registerAuth(app, db, { requireAuth: opts.requireAuth ?? false, now: opts.now });
   registerNotes(app, db, currentUser, opts.now ?? Date.now);
+  registerWatchlist(app, db, currentUser, opts.now ?? Date.now, opts.watchlist);
   registerAdmin(app, db, currentUser, opts.now ?? Date.now);
   registerInRoutes(app, db, currentUser, opts.now ?? Date.now, opts.india);
   let marketsCache: { at: number; body: MarketsResponse } | null = null;

@@ -6,6 +6,8 @@ import { type Http, SourceFormatError } from './http.js';
 export interface SecTicker {
   cik: number;
   exchange: string | null;
+  /** Company name as SEC lists it (empty when missing). */
+  name?: string;
 }
 
 const TickersSchema = z.object({
@@ -20,6 +22,7 @@ export function parseSecTickers(json: unknown): Map<string, SecTicker> {
   const iCik = fields.indexOf('cik');
   const iTicker = fields.indexOf('ticker');
   const iExchange = fields.indexOf('exchange');
+  const iName = fields.indexOf('name');
   if (iCik < 0 || iTicker < 0 || iExchange < 0) throw new SourceFormatError(`SEC tickers: unexpected fields ${fields.join(',')}`);
   const map = new Map<string, SecTicker>();
   for (const row of data) {
@@ -28,7 +31,7 @@ export function parseSecTickers(json: unknown): Map<string, SecTicker> {
     const exchange = row[iExchange];
     if (typeof ticker !== 'string' || !Number.isFinite(cik)) continue;
     const key = normalizeTicker(ticker);
-    if (!map.has(key)) map.set(key, { cik, exchange: typeof exchange === 'string' ? exchange : null });
+    if (!map.has(key)) map.set(key, { cik, exchange: typeof exchange === 'string' ? exchange : null, name: typeof row[iName] === 'string' ? (row[iName] as string) : '' });
   }
   return map;
 }

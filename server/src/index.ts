@@ -20,6 +20,7 @@ import { startInScheduler, warmUpIndia } from './india/jobs/scheduler.js';
 import { getInReport, saveInPrelim } from './india/db/inRepo.js';
 import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js';
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
+import { SymbolIndex, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
 import { createKiteApi } from './india/sources/kiteApi.js';
 import { ensureSession, getKiteCredentials, getSession, kiteStatus } from './india/sources/kiteLogin.js';
 import { createYahooInFetcher, fetchYahooIndex } from './india/sources/yahooIn.js';
@@ -51,7 +52,10 @@ const kiteLogin = async () => {
   inPrices.refresh();
 };
 
+// Search and validation lists for watchlists: built in memory, refreshed daily (started below).
+const symbolIndex = new SymbolIndex();
 const app = buildServer(db, {
+  watchlist: { index: symbolIndex },
   indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true, webRoot: config.webRoot, trustProxy: config.trustProxy,
   prices: () => prices.snapshot(),
   india: {
@@ -64,6 +68,10 @@ const app = buildServer(db, {
   },
 });
 registerStream(app, live);
+startSymbolRefresh(symbolIndex, {
+  ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers()) } : {}),
+  IN: () => loadInEntries(inCtx.http),
+});
 await app.listen({ port: config.port, host: config.host });
 console.log(`API listening on http://${config.host}:${config.port}`);
 

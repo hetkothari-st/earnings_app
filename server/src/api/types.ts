@@ -87,3 +87,11 @@ export interface MarketIndexDto {
 export interface MarketsResponse {
   indices: MarketIndexDto[];
 }
+
+export interface SymbolEntry {
+  symbol: string;
+  name: string;
+  exchange: string;
+}
+export interface SymbolsResponse { results: SymbolEntry[] }
+export interface WatchlistResponse { symbols: string[] }
