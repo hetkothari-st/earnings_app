@@ -11,6 +11,7 @@ let lists: Record<'US' | 'IN', string[]>;
 let rowsBody: Record<'US' | 'IN', unknown[]>;
 let putStatus: number;
 let putGate: Promise<void> | null;
+let priceSource: string;
 
 const usReport = (over: Record<string, unknown> = {}) => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2999-10-15', fiscalQuarter: 'Sep/2999', timing: 'BMO',
@@ -22,6 +23,7 @@ const usReport = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   localStorage.clear();
+  priceSource = 'stream';
   calls = [];
   lists = { US: [], IN: ['RELIANCE'] };
   rowsBody = { US: [], IN: [] };
@@ -53,7 +55,7 @@ beforeEach(() => {
     if (path === '/api/in/earnings') return json(200, { rows: [] });
     if (path === '/api/notes') return json(200, { notes: [] });
     if (path === '/api/expanded') return json(200, { symbols: [] });
-    if (path === '/api/prices') return json(200, { prices: { TSM: { price: 123.45, prevClose: 120, changePct: 2.8, time: 0 } } });
+    if (path === '/api/prices') return json(200, { prices: { TSM: { price: 123.45, prevClose: 120, changePct: 2.8, time: 0, source: priceSource } } });
     if (path === '/api/in/prices') return json(200, { prices: {} });
     return json(404, {});
   }));
@@ -106,6 +108,16 @@ test('watchlist view shows next date and live price; missing next date shows —
   expect(within(aapl).getByTestId('next-date').textContent).toBe('—');
   expect(within(aapl).getByText(/from Yahoo/)).toBeTruthy();
   expect(within(aapl).getByTestId('latest-date').textContent).toBe('—');
+});
+
+test('a backup price shows a small backup marker; a stream price does not', async () => {
+  lists.US = ['TSM'];
+  rowsBody.US = [{ symbol: 'TSM', name: 'Taiwan Semiconductor', next: usReport(), latest: null }];
+  priceSource = 'backup';
+  render(<Calendar />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Watchlist' }));
+  const tsm = (await screen.findByText('Taiwan Semiconductor', { selector: '.wl-name' })).closest('li')!;
+  expect(await within(tsm).findByText('backup')).toBeTruthy();
 });
 
 test('an estimated next date (Yahoo backup) shows a muted marker; a confirmed one does not', async () => {

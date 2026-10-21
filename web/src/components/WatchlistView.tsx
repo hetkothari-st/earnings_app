@@ -11,7 +11,7 @@ import { SymbolSearch } from './SymbolSearch';
 import { Star } from './Star';
 import { Tags } from './Tags';
 
-type Price = { price: number; changePct: number | null };
+type Price = { price: number; changePct: number | null; source?: string };
 type Report = ReportDto | InReportDto;
 
 interface Props {
@@ -101,7 +101,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
                   {price && (
                     <>
                       <span>{money(price.price)}</span>
-                      {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}
+                      {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}{price.source === 'backup' && <span className="muted backup-mark">backup</span>}
                     </>
                   )}
                 </span>

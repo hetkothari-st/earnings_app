@@ -42,6 +42,11 @@ describe('InStockList', () => {
     expect(cap(dto({ symbol: 'OLD', reportDate: '2020-01-02', sharesOutstanding: 1e9 }))).toContain('₹54,000 Cr');
   });
 
+  test('a price from the backup source carries a small backup marker', () => {
+    const price = { price: 100, prevClose: null, changePct: null, at: 'x', source: 'backup' as const };
+    render(<InStockList rows={[dto({ symbol: 'BAK' })]} zone="Asia/Kolkata" expanded={new Set()} sort="date" onToggle={vi.fn()} notes={new Map()} onSaveNote={vi.fn()} prices={{ BAK: price }} />);
+    expect(screen.getByText('backup')).toBeTruthy();
+  });
   test('live cap falls back to the stored cap when price × shares is more than 3× off either way', () => {
     const price = { price: 100, prevClose: null, changePct: null, at: 'x', source: 'stream' as const };
     const cap = (r: InReportDto) => {

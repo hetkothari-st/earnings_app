@@ -98,7 +98,7 @@ function InStock({ r, zone, open, isNew, onToggle, note, onSaveNote, price, watc
           {price ? (
             <>
               <span>{rupees(price.price)}</span>
-              {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}
+              {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}{price.source === 'backup' && <span className="muted backup-mark">backup</span>}
             </>
           ) : null}
         </span>

@@ -73,9 +73,12 @@ export interface EarningsResponse {
   sources: SourceStatusDto[];
 }
 
+export interface CoverageRow { field: string; filled: number; total: number; pct: number; min: number; ok: boolean }
+
 export interface StatusResponse {
   sources: SourceStatusDto[];
   counts: { reports: number; withExpectedMove: number; secVerified: number };
+  coverage: { US: CoverageRow[]; IN: CoverageRow[] };
 }
 
 export interface MarketIndexDto {

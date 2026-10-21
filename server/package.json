@@ -7,6 +7,7 @@
     "start": "tsx src/index.ts",
     "backfill": "tsx src/cli/backfill.ts",
     "users": "tsx src/cli/users.ts",
+    "coverage-check": "tsx src/cli/coverageCheck.ts",
     "reader-corpus": "tsx src/cli/readerCorpus.ts",
     "collect-in-corpus": "tsx src/cli/collectInCorpus.ts",
     "test": "vitest run",

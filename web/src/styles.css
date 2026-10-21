@@ -353,3 +353,7 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 .wl-next, .wl-latest { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .wl-fig { white-space: nowrap; }
 @media (max-width: 780px) { .wl-row { grid-template-columns: minmax(60px, max-content) 1fr; } .wl-row .stock-price { grid-column: 1 / -1; justify-content: flex-start; } }
+.backup-mark { font-size: 11px; margin-left: 4px; }
+.status caption { text-align: left; color: var(--muted); padding: 16px 0 6px; }
+.status.coverage tr.below td { color: var(--miss, #e5534b); }
+.status .state-blocked, .status .state-failing { color: var(--miss, #e5534b); }

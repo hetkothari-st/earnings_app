@@ -118,6 +118,11 @@ describe('StockList', () => {
     const item = head.closest('li')!;
     expect(within(item).getByText('Price').nextElementSibling!.textContent).toContain('$422.55');
   });
+  test('a price from the backup source carries a small backup marker; a live one does not', () => {
+    renderList({ prices: { TSM: { price: 422.55, prevClose: 430, changePct: -1.73, time: 1792070000000, source: 'backup' }, SCHW: { price: 80, prevClose: 79, changePct: 1.2, time: 1792070000000, source: 'stream' } } });
+    expect(within(screen.getByRole('button', { name: /TSM/ })).getByText('backup')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /SCHW/ })).queryByText('backup')).toBeNull();
+  });
   test('stocks whose results just arrived are highlighted', () => {
     renderList({ highlight: new Set([2]) });
     expect(screen.getByRole('button', { name: /SCHW/ }).closest('li')!.className).toContain('just-updated');

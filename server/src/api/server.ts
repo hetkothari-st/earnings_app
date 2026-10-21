@@ -6,6 +6,9 @@ import { registerAuth } from '../auth/routes.js';
 import { registerNotes } from '../notes/routes.js';
 import { registerWatchlist, type WatchlistOptions } from '../watchlist/routes.js';
 import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
+import { todayET } from '../domain/marketCalendar.js';
+import { todayIST } from '../india/domain/nseCalendar.js';
+import { computeCoverage } from '../jobs/coverage.js';
 import { normalizeTicker } from '../domain/ticker.js';
 import { toDto } from './dto.js';
 import { registerWebApp } from './static.js';
@@ -117,7 +120,10 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   });
 
   app.get('/api/status', async () => {
-    const body: StatusResponse = { sources: listSourceStatus(db), counts: counts(db) };
+    const body: StatusResponse = {
+      sources: listSourceStatus(db), counts: counts(db),
+      coverage: { US: computeCoverage(db, 'US', todayET()), IN: computeCoverage(db, 'IN', todayIST()) },
+    };
     return body;
   });
 

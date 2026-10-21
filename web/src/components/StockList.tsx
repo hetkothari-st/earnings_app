@@ -109,7 +109,7 @@ function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote, price, watche
           {price ? (
             <>
               <span>${price.price.toFixed(2)}</span>
-              {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}
+              {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}{price.source === 'backup' && <span className="muted backup-mark">backup</span>}
             </>
           ) : null}
         </span>
