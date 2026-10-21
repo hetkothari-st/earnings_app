@@ -217,7 +217,7 @@ describe('sec, snapshot, status, backfill helpers', () => {
     recordSourceSuccess(db, 'nasdaq', NOW);
     recordSourceError(db, 'nasdaq', 'HTTP 403', '2026-10-15T21:00:00.000Z');
     expect(listSourceStatus(db)).toEqual([
-      { source: 'nasdaq', lastSuccessAt: NOW, lastError: 'HTTP 403', lastErrorAt: '2026-10-15T21:00:00.000Z' },
+      { source: 'nasdaq', lastSuccessAt: NOW, lastError: 'HTTP 403', lastErrorAt: '2026-10-15T21:00:00.000Z', state: null, blockedUntil: null },
     ]);
   });
   test('backfill progress', () => {

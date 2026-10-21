@@ -78,7 +78,9 @@ CREATE TABLE IF NOT EXISTS source_status (
   source TEXT PRIMARY KEY,
   last_success_at TEXT,
   last_error TEXT,
-  last_error_at TEXT
+  last_error_at TEXT,
+  state TEXT,
+  blocked_until TEXT
 );
 CREATE TABLE IF NOT EXISTS backfill_progress (
   key TEXT PRIMARY KEY,
@@ -425,7 +427,8 @@ export function recordSourceError(db: Db, source: string, message: string, now: 
 }
 
 export function listSourceStatus(db: Db): SourceStatusDto[] {
-  return db.prepare(`SELECT source, last_success_at AS lastSuccessAt, last_error AS lastError, last_error_at AS lastErrorAt
+  return db.prepare(`SELECT source, last_success_at AS lastSuccessAt, last_error AS lastError, last_error_at AS lastErrorAt,
+      state, blocked_until AS blockedUntil
       FROM source_status ORDER BY source`).all() as unknown as SourceStatusDto[];
 }
 
