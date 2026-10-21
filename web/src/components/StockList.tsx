@@ -130,7 +130,7 @@ function Details({ r, zone, note, onSaveNote, price }: {
   const flags = (field: Flag['field']) => r.flags.filter((f) => f.field === field);
   const em = r.expectedMove;
   const live = r.liveMove;
-  const cap = liveCap(r.reportDate, todayEt(), price?.price, r.sharesOutstanding);
+  const cap = liveCap(r.reportDate, todayEt(), price?.price, r.sharesOutstanding, r.marketCap);
   return (
     <div className="stock-body">
       <dl className="lines">

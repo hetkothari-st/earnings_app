@@ -117,7 +117,7 @@ function InDetails({ r, zone, note, onSaveNote, price }: {
 }) {
   const em = r.expectedMove;
   const live = r.liveMove;
-  const cap = liveCap(r.reportDate, todayIst(), price?.price, r.sharesOutstanding);
+  const cap = liveCap(r.reportDate, todayIst(), price?.price, r.sharesOutstanding, r.marketCap);
   const basis = r.basis === 'consolidated' ? 'Cons.' : r.basis === 'standalone' ? 'Stand.' : null;
   const revenueLabel = r.revenue.kind === 'total-income' ? 'Total income estimate / actual' : 'Revenue estimate / actual';
   return (

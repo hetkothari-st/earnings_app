@@ -38,8 +38,23 @@ describe('InStockList', () => {
       unmount();
       return text;
     };
-    expect(cap(dto({ symbol: 'UPC', reportDate: '2099-01-04', sharesOutstanding: 1e9 }))).toBe('₹10,000 Cr live');
+    expect(cap(dto({ symbol: 'UPC', reportDate: '2099-01-04', sharesOutstanding: 5e9 }))).toBe('₹50,000 Cr live');
     expect(cap(dto({ symbol: 'OLD', reportDate: '2020-01-02', sharesOutstanding: 1e9 }))).toContain('₹54,000 Cr');
+  });
+
+  test('live cap falls back to the stored cap when price × shares is more than 3× off either way', () => {
+    const price = { price: 100, prevClose: null, changePct: null, at: 'x', source: 'stream' as const };
+    const cap = (r: InReportDto) => {
+      const { unmount } = render(<InStockList rows={[r]} zone="Asia/Kolkata" expanded={new Set(['IN:' + r.symbol])} sort="date"
+        onToggle={vi.fn()} notes={new Map()} onSaveNote={vi.fn()} prices={{ [r.symbol]: price }} />);
+      const text = screen.getByText('Market cap').nextElementSibling!.textContent;
+      unmount();
+      return text;
+    };
+    // Stored 5.4e11 (Rs 54,000 Cr). Live 2e11 is 2.7x below: still live. 1e11 is 5.4x below: stored. 2e12 is 3.7x above: stored.
+    expect(cap(dto({ symbol: 'UPC', reportDate: '2099-01-04', sharesOutstanding: 2e9 }))).toBe('₹20,000 Cr live');
+    expect(cap(dto({ symbol: 'LOW', reportDate: '2099-01-04', sharesOutstanding: 1e9 }))).toBe('₹54,000 Cr as of Thu, Oct 15, 2026');
+    expect(cap(dto({ symbol: 'HIG', reportDate: '2099-01-04', sharesOutstanding: 2e10 }))).toBe('₹54,000 Cr as of Thu, Oct 15, 2026');
   });
 
   test('a bank shows total income without colour', () => {

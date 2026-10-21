@@ -34,7 +34,7 @@ function renderList(over: Partial<Parameters<typeof StockList>[0]> = {}) {
 
 describe('StockList', () => {
   test('upcoming row shows live cap = price × shares; past row shows stored cap', () => {
-    const upcoming = dto({ id: 10, symbol: 'UPC', reportDate: '2099-01-04', marketCap: 1e9, sharesOutstanding: 2e9 });
+    const upcoming = dto({ id: 10, symbol: 'UPC', reportDate: '2099-01-04', marketCap: 9e9, sharesOutstanding: 2e9 });
     const past = dto({ id: 11, symbol: 'OLD', reportDate: '2020-01-02', marketCap: 1e9, sharesOutstanding: 2e9 });
     const noShares = dto({ id: 12, symbol: 'NOS', reportDate: '2099-01-04', marketCap: 1e9, sharesOutstanding: null });
     const price = { price: 5, prevClose: null, changePct: null, time: 0 };
@@ -43,6 +43,18 @@ describe('StockList', () => {
     expect(cap('UPC')).toBe('$10.0B live');
     expect(cap('OLD')).toBe('$1.0B');
     expect(cap('NOS')).toBe('$1.0B');
+  });
+  test('live cap falls back to the stored cap when price × shares is more than 3× off either way (multi-class issuers)', () => {
+    // Price 5: shares 2e9 -> 10e9 live. Stored caps: 4e9 (2.5× off: live), 2e9 (5× off: stored), 5e10 (5× the other way: stored).
+    const near = dto({ id: 20, symbol: 'NEA', reportDate: '2099-01-04', marketCap: 4e9, sharesOutstanding: 2e9 });
+    const high = dto({ id: 21, symbol: 'HIG', reportDate: '2099-01-04', marketCap: 2e9, sharesOutstanding: 2e9 });
+    const low = dto({ id: 22, symbol: 'LOW', reportDate: '2099-01-04', marketCap: 5e10, sharesOutstanding: 2e9 });
+    const price = { price: 5, prevClose: null, changePct: null, time: 0 };
+    renderList({ rows: [near, high, low], expanded: new Set(['NEA', 'HIG', 'LOW']), prices: { NEA: price, HIG: price, LOW: price } });
+    const cap = (sym: string) => within(screen.getByRole('button', { name: new RegExp(sym) }).closest('li')!).getByText('Market cap').nextElementSibling!.textContent;
+    expect(cap('NEA')).toBe('$10.0B live');
+    expect(cap('HIG')).toBe('$2.0B');
+    expect(cap('LOW')).toBe('$50.0B');
   });
   test('stocks are listed under their date, names only while collapsed', () => {
     renderList();
