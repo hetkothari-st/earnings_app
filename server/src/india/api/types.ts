@@ -52,7 +52,8 @@ export interface InEarningsResponse {
   rows: InReportDto[];
 }
 
-export interface InLivePriceDto { price: number; prevClose: number | null; changePct: number | null; at: string }
+/** `source`: 'stream' = Kite ticker, 'backup' = Yahoo while the ticker is silent for that stock. */
+export interface InLivePriceDto { price: number; prevClose: number | null; changePct: number | null; at: string; source: 'stream' | 'backup' }
 
 export interface InMarketDto { index: string; price: number | null; changePct: number | null; asOf: string | null; source: 'kite' | 'yahoo' | null }
 

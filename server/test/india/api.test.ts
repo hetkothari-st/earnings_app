@@ -46,7 +46,7 @@ describe('GET /api/in/markets', () => {
     const app = buildServer(setup().db, {
       india: {
         indexNames: ['NIFTY 50', 'SENSEX', 'NIFTY BANK'],
-        indices: () => new Map([['NIFTY 50', { price: 25000, prevClose: 24800, changePct: 0.81, at: NOW }]]),
+        indices: () => new Map([['NIFTY 50', { price: 25000, prevClose: 24800, changePct: 0.81, at: NOW, source: 'stream' as const }]]),
         yahooIndex: async (n) => (n === 'SENSEX' ? { price: 81000, prevClose: 80000 } : null),
       },
     });

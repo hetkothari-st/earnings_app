@@ -47,7 +47,7 @@ const inCtx: InJobContext = {
   now: () => new Date().toISOString(),
   todayIST,
 };
-const inPrices = new InPrices(db, getSession, todayIST, (p) => live.publish('in-prices', { prices: p }));
+const inPrices = InPrices.forContext(inCtx, (p) => live.publish('in-prices', { prices: p }), (ids) => live.publish('in-moves', { ids }));
 const kiteCreds = getKiteCredentials();
 /** Daily (and admin-triggered) Zerodha login: 3 tries 5 minutes apart. */
 const kiteLogin = async () => {

@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../../src/db/repo.js';
-import { listInRange, saveFoList } from '../../src/india/db/inRepo.js';
+import { listInRange, saveFoList, saveInLiveMove, upsertInCalendarRow } from '../../src/india/db/inRepo.js';
 import { refreshInCalendar } from '../../src/india/jobs/calendar.js';
 import type { InJobContext } from '../../src/india/jobs/context.js';
+import { refreshInLiveMoves, resetNfoCache } from '../../src/india/jobs/moves.js';
 import { refreshInResults, resetInResultsState } from '../../src/india/jobs/results.js';
 import { loadFoCache } from '../../src/india/jobs/stocks.js';
 import { HttpError, type Http } from '../../src/sources/http.js';
@@ -94,5 +95,25 @@ describe('refreshInResults', () => {
     });
     await refreshInResults(ctx);
     expect(listInRange(db, { from: '2026-10-15', to: '2026-10-15', q: null })[0]).toMatchObject({ timing: 'DMH', timingSource: 'nse-announcement' });
+  });
+});
+
+describe('refreshInLiveMoves backs up the ticker', () => {
+  const NOW = '2026-10-15T05:00:00.000Z'; // 10:30 IST, in session
+  const run = async (savedAt: string) => {
+    const { ctx, db, fetched } = makeCtx({}, NOW);
+    const id = upsertInCalendarRow(db, { symbol: 'GAIL', name: 'GAIL', quarterEnd: '2026-09-30', quarterLabel: 'Sep/2026', reportDate: '2026-10-16' }, NOW);
+    saveInLiveMove(db, id, { movePct: 4, illiquid: false, quoteTime: null }, savedAt);
+    resetNfoCache();
+    await refreshInLiveMoves({ ...ctx, kiteSession: () => ({ apiKey: 'k', accessToken: 't', expiresAt: Date.now() + 1e6 }) });
+    return fetched.some((u) => u.includes('instruments'));
+  };
+
+  it('skips a report whose live move was saved in the last 60 s', async () => {
+    expect(await run('2026-10-15T04:59:30.000Z')).toBe(false);
+  });
+
+  it('polls a report whose live move is older', async () => {
+    expect(await run('2026-10-15T04:58:00.000Z')).toBe(true);
   });
 });

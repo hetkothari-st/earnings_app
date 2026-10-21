@@ -7,11 +7,13 @@ import { type InJobContext, trackIn } from './context.js';
 
 /** Strikes either side of the price that are quoted; the straddle uses the nearest two-sided one. */
 const STRIKES_EACH_SIDE = 3;
+/** A live move saved this recently (by the ticker) is not fetched again. */
+const LIVE_FRESH_MS = 60_000;
 
 let nfo: { day: string; list: KiteInstrument[] } | null = null;
 
 /** NFO instruments, fetched once per IST day. */
-async function nfoInstruments(ctx: InJobContext): Promise<KiteInstrument[] | null> {
+export async function nfoInstruments(ctx: InJobContext): Promise<KiteInstrument[] | null> {
   const day = ctx.todayIST();
   if (nfo?.day === day) return nfo.list;
   const list = await trackIn(ctx, 'kite-instruments', () => fetchKiteInstruments(ctx.http, 'NFO'));
@@ -95,7 +97,11 @@ export function inSession(nowIso: string): boolean {
 export async function refreshInLiveMoves(ctx: InJobContext): Promise<number[]> {
   if (!ctx.kiteSession() || !inSession(ctx.now())) return [];
   const today = ctx.todayIST();
-  const reports = inReportsForSnapshot(ctx.db, today, nextNseTradingDay(addDaysIST(today, 1)), true);
+  const nowMs = Date.parse(ctx.now());
+  // The ticker (InPrices) saves live moves within seconds; this poll only fills in what it did not.
+  const fresh = new Set((ctx.db.prepare('SELECT report_id AS id, fetched_at AS at FROM in_live_moves').all() as { id: number; at: string }[])
+    .filter((m) => nowMs - Date.parse(m.at) < LIVE_FRESH_MS).map((m) => m.id));
+  const reports = inReportsForSnapshot(ctx.db, today, nextNseTradingDay(addDaysIST(today, 1)), true).filter((r) => !fresh.has(r.id));
   const ems = await straddles(ctx, reports);
   const now = ctx.now();
   const changed: number[] = [];

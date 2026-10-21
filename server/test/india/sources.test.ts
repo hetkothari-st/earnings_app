@@ -71,9 +71,20 @@ describe('Kite ticker frames', () => {
       packet(28, [[0, 256265], [4, 2500000], [20, 2480000]]),
     ]));
     expect(ticks).toEqual([
-      { token: 738561, ltp: 1215.5, close: 1174.6, isIndex: false },
-      { token: 256265, ltp: 25000, close: 24800, isIndex: true },
+      { token: 738561, ltp: 1215.5, close: 1174.6, isIndex: false, bid: null, ask: null },
+      { token: 256265, ltp: 25000, close: 24800, isIndex: true, bid: null, ask: null },
     ]);
+  });
+
+  it('full packet: bid 29.50 ask 31.00 parsed from depth', () => {
+    // 184 bytes; depth from byte 64: five 12-byte bids (quantity, price, orders, pad), then five offers.
+    const [t] = parseKiteFrame(frame([packet(184, [[0, 11111], [4, 3000], [40, 2900], [64, 75], [68, 2950], [124, 50], [128, 3100]])]));
+    expect(t).toEqual({ token: 11111, ltp: 30, close: 29, isIndex: false, bid: 29.5, ask: 31 });
+  });
+
+  it('full packet with an empty side: 0 means no order', () => {
+    const [t] = parseKiteFrame(frame([packet(184, [[0, 11111], [4, 3000], [40, 2900], [128, 3100]])]));
+    expect(t).toMatchObject({ bid: 0, ask: 31 });
   });
 
   it('heartbeats and LTP-only packets give nothing', () => {
