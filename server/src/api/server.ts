@@ -6,6 +6,7 @@ import { registerAuth } from '../auth/routes.js';
 import { registerNotes } from '../notes/routes.js';
 import { registerWatchlist, type WatchlistOptions } from '../watchlist/routes.js';
 import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
+import { normalizeTicker } from '../domain/ticker.js';
 import { toDto } from './dto.js';
 import { registerWebApp } from './static.js';
 import type { IndexQuote } from '../sources/yahoo.js';
@@ -36,6 +37,8 @@ export interface ServerOptions {
   trustProxy?: boolean;
   /** Live price snapshot (real-time stream). */
   prices?: () => Record<string, unknown>;
+  /** Records the US symbols a signed-in user currently sees (their price slots). */
+  setVisible?: (userId: string, symbols: string[]) => void;
   /** India live data and Zerodha controls. */
   india?: InServerOptions;
   /** Symbol index for the watchlist (search and validation). */
@@ -76,6 +79,20 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   });
 
   app.get('/api/prices', async () => ({ prices: opts.prices?.() ?? {} }));
+
+  app.put('/api/live/visible', async (req, reply) => {
+    const user = currentUser(req);
+    if (!user) return reply.code(401).send({ error: 'Not signed in' });
+    const body = (req.body ?? {}) as { market?: unknown; symbols?: unknown };
+    if (body.market !== 'US') return reply.code(400).send({ error: 'market must be US' });
+    if (!Array.isArray(body.symbols) || body.symbols.length > 100 || !body.symbols.every((s) => typeof s === 'string')) {
+      return reply.code(400).send({ error: 'symbols must be an array of at most 100 strings' });
+    }
+    const symbols = (body.symbols as string[]).map(normalizeTicker);
+    if (!symbols.every((s) => /^[A-Z0-9.\-/]{1,12}$/.test(s))) return reply.code(400).send({ error: 'invalid symbol' });
+    opts.setVisible?.(user, [...new Set(symbols)]);
+    return reply.code(204).send();
+  });
 
   app.get('/api/earnings', async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;

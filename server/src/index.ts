@@ -13,7 +13,7 @@ import type { JobContext } from './jobs/context.js';
 import { startScheduler, warmUp } from './jobs/scheduler.js';
 import { BROWSER_UA, makeHttp } from './sources/http.js';
 import { createSources } from './sources/index.js';
-import { fetchIndexQuote } from './sources/yahoo.js';
+import { fetchIndexQuote, fetchStockQuote } from './sources/yahoo.js';
 import { todayIST } from './india/domain/nseCalendar.js';
 import type { InJobContext } from './india/jobs/context.js';
 import { startInScheduler, warmUpIndia } from './india/jobs/scheduler.js';
@@ -34,7 +34,8 @@ const ctx: JobContext = { db, sources: createSources(config), now: () => new Dat
 const yahoo = makeHttp({ minIntervalMs: 300, headers: { 'User-Agent': BROWSER_UA } });
 const live = new Broadcaster();
 const finnhubQuotes = makeHttp({ minIntervalMs: 1100, headers: { 'X-Finnhub-Token': config.finnhubToken } });
-const prices = new LivePrices(db, config.finnhubToken, finnhubQuotes, () => todayET(), (p) => live.publish('prices', { prices: p }));
+const prices = new LivePrices(db, config.finnhubToken, finnhubQuotes, () => todayET(), (p) => live.publish('prices', { prices: p }),
+  { yahooQuote: (s) => fetchStockQuote(yahoo, s) });
 
 // India: NSE archives and Kite instrument dumps are public; Kite REST/ticker need the daily session.
 const inCtx: InJobContext = {
@@ -76,6 +77,7 @@ const app = buildServer(db, {
   },
   indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true, webRoot: config.webRoot, trustProxy: config.trustProxy,
   prices: () => prices.snapshot(),
+  setVisible: (user, symbols) => prices.setVisible(user, symbols),
   india: {
     prices: () => inPrices.snapshot(),
     indices: () => inPrices.indices(),

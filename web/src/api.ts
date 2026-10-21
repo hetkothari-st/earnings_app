@@ -101,6 +101,7 @@ export interface LivePrice {
   prevClose: number | null;
   changePct: number | null;
   time: number;
+  source?: 'stream' | 'poll' | 'backup';
 }
 
 export async function fetchPrices(): Promise<Record<string, LivePrice>> {

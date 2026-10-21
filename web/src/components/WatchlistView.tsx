@@ -94,7 +94,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
             const em = next?.expectedMove;
             const latestDate = r.latest && r.latest.reportDate ? formatDateHeading(r.latest.reportDate) : '—';
             return (
-              <li key={r.symbol} className="stock wl-row">
+              <li key={r.symbol} className="stock wl-row" data-symbol={market === 'US' ? r.symbol : undefined}>
                 <span className="ticker">{r.symbol}</span>
                 <span className="name wl-name">{r.name}</span>
                 <span className="stock-price">

@@ -99,7 +99,7 @@ function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote, price, watche
 }) {
   return (
     <li className={`stock s-${r.timing.toLowerCase()}${onWatch ? ' has-star' : ''}${open ? ' open' : ''}${isNew ? ' just-updated' : ''}`}
-      data-date={r.reportDate} data-timing={r.timing}>
+      data-date={r.reportDate} data-timing={r.timing} data-symbol={r.symbol}>
       <button className="stock-head" aria-expanded={open} onClick={() => onToggle(r.symbol)}>
         <span className="dot" aria-hidden="true" />
         <span className="ticker">{r.symbol}</span>

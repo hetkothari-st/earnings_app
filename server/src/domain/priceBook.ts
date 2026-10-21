@@ -3,7 +3,10 @@ export interface LivePrice {
   prevClose: number | null;
   changePct: number | null; // vs previous close, 2 decimals
   time: number;             // ms epoch of the trade or quote
+  source: PriceSource;      // stream trade, Finnhub quote poll, or Yahoo backup quote
 }
+
+export type PriceSource = 'stream' | 'poll' | 'backup';
 
 export interface Trade { s: string; p: number; t: number }
 
@@ -21,12 +24,13 @@ export class PriceBook {
     if (p) this.prices.set(symbol, { ...p, prevClose, changePct: change(p.price, prevClose) });
   }
 
-  /** Seeds from a quote snapshot (e.g. before the first trade, or outside market hours). */
-  setQuote(symbol: string, q: { price: number; prevClose: number; time: number }): void {
+  /** Seeds from a quote snapshot (e.g. before the first trade, or outside market hours). Returns true if the shown price changed. */
+  setQuote(symbol: string, q: { price: number; prevClose: number; time: number }, source: PriceSource = 'poll'): boolean {
     this.closes.set(symbol, q.prevClose);
     const p = this.prices.get(symbol);
-    if (p && p.time >= q.time) return;
-    this.prices.set(symbol, { price: q.price, prevClose: q.prevClose, changePct: change(q.price, q.prevClose), time: q.time });
+    if (p && p.time >= q.time) return false;
+    this.prices.set(symbol, { price: q.price, prevClose: q.prevClose, changePct: change(q.price, q.prevClose), time: q.time, source });
+    return !p || p.price !== q.price || p.prevClose !== q.prevClose;
   }
 
   /** Applies trades; returns the symbols whose price changed. Older trades never overwrite newer ones. */
@@ -35,9 +39,9 @@ export class PriceBook {
     for (const tr of trades) {
       const cur = this.prices.get(tr.s);
       if (cur && cur.time > tr.t) continue;
-      if (cur && cur.price === tr.p) { cur.time = tr.t; continue; }
+      if (cur && cur.price === tr.p) { cur.time = tr.t; cur.source = 'stream'; continue; }
       const prev = this.closes.get(tr.s) ?? null;
-      this.prices.set(tr.s, { price: tr.p, prevClose: prev, changePct: change(tr.p, prev), time: tr.t });
+      this.prices.set(tr.s, { price: tr.p, prevClose: prev, changePct: change(tr.p, prev), time: tr.t, source: 'stream' });
       changed.add(tr.s);
     }
     return [...changed];

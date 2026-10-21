@@ -4,6 +4,7 @@ import type { InReportDto } from '../../../server/src/india/api/types';
 import { fetchEarnings, fetchInEarnings, fetchInPrices, fetchNotes, fetchPrices, type InEarningsResponse, type InLivePriceDto, type LivePrice, type Note, saveNote } from '../api';
 import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
+import { useVisibleSymbols } from '../hooks/useVisibleSymbols';
 import { useZone } from '../hooks/useZone';
 import { useMarket } from '../hooks/useMarket';
 import { useWatchlist } from '../hooks/useWatchlist';
@@ -46,6 +47,7 @@ export function Calendar() {
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
   const [showWatch, setShowWatch] = useState(false);
   const watch = useWatchlist(market);
+  useVisibleSymbols(market === 'US');
   const onWatch = useCallback((symbol: string, on: boolean) => { (on ? watch.add(symbol) : watch.remove(symbol)).catch(() => {}); }, [watch.add, watch.remove]);
 
   // Reset anchor and switch to week view when market changes

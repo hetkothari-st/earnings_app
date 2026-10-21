@@ -36,3 +36,9 @@ export function parseIndexQuote(json: unknown): IndexQuote {
 export async function fetchIndexQuote(http: Http, symbol: string): Promise<IndexQuote> {
   return parseIndexQuote(await http.json(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`));
 }
+
+/** Yahoo chart quote for a stock, shaped like a Finnhub quote (backup when Finnhub fails or blocks). */
+export async function fetchStockQuote(http: Http, symbol: string): Promise<{ price: number; prevClose: number; time: number }> {
+  const q = parseIndexQuote(await http.json(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`));
+  return { price: q.price, prevClose: q.previousClose, time: Date.parse(q.asOf) };
+}

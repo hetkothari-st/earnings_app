@@ -10,7 +10,7 @@ describe('PriceBook', () => {
       { s: 'TSM', p: 422.55, t: 1792070001000 },
     ]);
     expect(changed).toEqual(['TSM']);
-    expect(book.get('TSM')).toEqual({ price: 422.55, prevClose: 430, changePct: -1.73, time: 1792070001000 });
+    expect(book.get('TSM')).toEqual({ price: 422.55, prevClose: 430, changePct: -1.73, time: 1792070001000, source: 'stream' });
   });
   test('out-of-order older trades never overwrite a newer one', () => {
     const book = new PriceBook();
@@ -26,7 +26,7 @@ describe('PriceBook', () => {
   test('a quote snapshot seeds price and close; trades then take over', () => {
     const book = new PriceBook();
     book.setQuote('PLD', { price: 130.46, prevClose: 128.0, time: 500 });
-    expect(book.get('PLD')).toEqual({ price: 130.46, prevClose: 128, changePct: 1.92, time: 500 });
+    expect(book.get('PLD')).toEqual({ source: 'poll', price: 130.46, prevClose: 128, changePct: 1.92, time: 500 });
     book.applyTrades([{ s: 'PLD', p: 131, t: 600 }]);
     expect(book.get('PLD')!.price).toBe(131);
   });
