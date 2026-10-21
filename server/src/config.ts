@@ -27,11 +27,12 @@ export const config = {
   /**
    * Fast-reader gate: a field read from the press release goes live only if its
    * corpus match rate is >= 95% (npm run reader-corpus -w server).
-   * US corpus (48 releases): adjusted EPS 8/11 = 72.7% (company non-GAAP often differs
-   * from Nasdaq's), revenue 24/24 = 100%. India reader not built yet.
+   * US corpus (48 releases): adjusted EPS 8/11 = 72.7% vs Nasdaq (company non-GAAP often
+   * differs from Nasdaq's), GAAP EPS 31/31 = 100%, revenue 24/24 = 100%.
+   * Quick US EPS is shown GAAP-labelled, without colour. India reader not built yet.
    */
-  fastFields: { usEps: false, usRevenue: true, inEps: false, inRevenue: false, inProfit: false } as {
-    usEps: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean;
+  fastFields: { usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false } as {
+    usEpsAdjusted: boolean; usEpsGaap: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean;
   },
 };
 

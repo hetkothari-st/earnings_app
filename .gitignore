@@ -14,3 +14,4 @@ server/debug_*.mjs
 .jetro/
 .claude/
 .superpowers/
+server/test/fixtures/us/releases/report.json

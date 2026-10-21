@@ -162,6 +162,8 @@ const EXCLUDE = /weighted|shares outstanding|dividend|book value|growth|change|c
 const ADJ_LABEL = /(adjusted|non-gaap|core)\b.*\b(diluted )?(eps|earnings per (diluted |common )?share)|(adjusted|non-gaap|core)\b.*\b(earnings|net income) per diluted (common )?share/i;
 const ADJ_WORDS = /\b(adjusted|non[\s-]?gaap|core|normalized|comparable|operating|pro forma|excluding)\b/i;
 const GAAP_LABEL = /diluted (net )?(income|earnings) per (common )?share|diluted eps|(net )?(income|earnings) per (common )?share[\s,:\-–—]*(diluted|assuming dilution)|(net )?(income|earnings) per diluted (common )?share|\beps[\s(\-–—]*diluted/i;
+const ADJ_CONTEXT = /non[\s-]?gaap|\badjusted\b|reconcil/i;
+const EXPLICIT_GAAP = /(?<!non[\s-]?)\bgaap\b|\breported\b/i;
 const REVENUE_LABELS = new Set([
   'total revenues', 'total revenue', 'revenues', 'revenue', 'net revenues', 'net revenue',
   'total net revenue', 'total net revenues', 'net sales', 'total net sales',
@@ -179,13 +181,20 @@ function epsField(label: string): Field | null {
 
 // ---------------------------------------------------------------- units
 
-const UNIT_RE = /\b(?:in|of)\s+(thousands|millions|billions)\b|\(\s*(?:\$|us\$|usd|u\.s\. dollars|dollars)?\s*(?:in\s+)?(thousands|millions|billions)\b|\$\s*(?:in\s+)?(thousands|millions|billions)\b|(thousands|millions|billions) of (?:u\.s\. )?dollars|\$\s?(000)'?s\b/gi;
+/** Units stated inside a table (its header / title rows). */
+const UNIT_RE = /\bin\s+(thousands|millions|billions)\b|\(\s*(?:\$|us\$|usd|u\.s\. dollars|dollars)?\s*(?:in\s+)?(thousands|millions|billions)\b|\$\s*(?:in\s+)?(thousands|millions|billions)\b|(thousands|millions|billions) of (?:u\.s\. )?dollars|\$\s?(000)'?s\b/gi;
+/**
+ * Units stated just above a table: caption forms only — "(in millions…)", "(Dollars in thousands…)",
+ * "(unaudited, in millions…)",
+ * "$ in millions", "$000s", "(000s)". Prose such as "tens of millions of customers" does not count.
+ */
+const CAPTION_RE = /\(\s*(?:\$|us\$|usd|u\.s\. dollars|dollars|amounts)?\s*(?:in\s+)?(thousands|millions|billions)\b|\([^()]{0,60}?\bin\s+(thousands|millions|billions)\b|\$\s*(?:in\s+)?(thousands|millions|billions)\b|\$\s?(000)'?s\b|\(\s*(000)'?s\s*\)/gi;
 const MULT: Record<string, number> = { thousands: 1e3, '000': 1e3, millions: 1e6, billions: 1e9 };
 
-function units(text: string): Set<number> {
+function units(text: string, re: RegExp = UNIT_RE): Set<number> {
   const out = new Set<number>();
-  for (const m of text.matchAll(UNIT_RE)) {
-    const w = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5])!.toLowerCase();
+  for (const m of text.matchAll(re)) {
+    const w = m.slice(1).find((g) => g !== undefined)!.toLowerCase();
     out.add(MULT[w]!);
   }
   return out;
@@ -204,12 +213,12 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
   for (const table of parseTables(html)) {
     // Table unit: stated in its non-data rows, else just above the table.
     const nonData: string[] = [];
-    const hasEpsRow = table.rows.some((r) => /per (diluted |common |basic )?share|\beps\b|earnings per/i.test(r[0]?.text ?? ''));
+    const hasEpsRow = table.rows.some((r) => /per (diluted |common |basic )?share|\beps\b|earnings per/i.test(r.find((c) => c.text)?.text ?? ''));
     let headers: Cell[][] = [];
     let lastWasData = false;
     let section = '';
     let titles: Cell[][] = []; // label-only rows since the last data row
-    const rowsOut: Array<{ field: Field; nums: Num[]; headers: Cell[][] }> = [];
+    const rowsOut: Array<{ field: Field; nums: Num[]; headers: Cell[][]; label: string; section: string }> = [];
 
     for (const cells of table.rows) {
       const li = cells.findIndex((c) => c.text);
@@ -226,7 +235,9 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
         if (/^(diluted|basic|assuming dilution)$/.test(label) && section) label = `${section} ${label}`;
         const field = REVENUE_LABELS.has(label) ? 'revenue' : epsField(label);
         const vals = nums.filter((n) => !n.pct);
-        if (field && vals.length) rowsOut.push({ field, nums: vals, headers });
+        if (field && vals.length) rowsOut.push({ field, nums: vals, headers, label, section });
+        // "As Adjusted(2): | Institutional: | $ 17" — a heading that shares its row with a side panel.
+        if (/:\s*$/.test(first.text)) section = normLabel(first.text);
         continue;
       }
       nonData.push(cells.map((c) => c.text).join(' '));
@@ -246,14 +257,20 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
     if (!rowsOut.length) continue;
 
     const inTable = units(nonData.join(' '));
-    const near = units(table.before);
+    // Caption: the last sentence above the table ("… Reconciliation of Non-GAAP Measures (in millions)").
+    const caption = table.before.split(/[.!?;]\s+(?=[A-Z0-9(])/).pop() ?? '';
+    const near = units(table.before, CAPTION_RE);
     let unit: number | null = null;
     if (inTable.size === 1) unit = [...inTable][0]!;
     else if (inTable.size === 0 && near.size === 1) unit = [...near][0]!;
 
-    for (const { field, nums, headers: hs } of rowsOut) {
+    for (const { field, nums, headers: hs, label, section: sec } of rowsOut) {
       const picked: Num[] = [];
-      const scope = blockScope(hs.flat().map((c) => c.text).join(' '));
+      const blockText = hs.flat().map((c) => c.text).join(' ');
+      const scope = blockScope(blockText);
+      // Under a caption, header block or section that says non-GAAP / adjusted / reconciliation, a plain
+      // "Diluted EPS" row may be the adjusted figure: GAAP only from rows or columns that say GAAP / reported.
+      const adjContext = ADJ_CONTEXT.test(`${caption} ${blockText} ${sec}`);
       if (scope === 'ytd') continue;
       const labelCol = hs.map((row) => row.filter((c) => c.text && c.start === 0 && c.span === 1).map((c) => c.text).join(' ')).join(' ');
       for (const n of nums) {
@@ -268,6 +285,7 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
         if (!adjCol && f === 'epsAdjusted' && /\bgaap\b|as reported/i.test(head)) continue;
         if (f !== 'revenue' && (n.decimals < 2 || n.decimals > 3 || Math.abs(n.value) >= 1000)) continue;
         if (f === 'revenue' && (n.value <= 0 || n.decimals > 2)) continue;
+        if (f === 'epsGaap' && adjContext && !EXPLICIT_GAAP.test(`${label} ${head}`)) continue;
         if (f !== field) { found[f].push({ value: n.value, unit: null }); continue; }
         picked.push(n);
       }
