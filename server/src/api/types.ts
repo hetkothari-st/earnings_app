@@ -1,4 +1,5 @@
 // Type-only module shared with the web app. No runtime code here.
+import type { InReportDto } from '../india/api/types.js';
 export type Timing = 'BMO' | 'AMC' | 'DMH' | 'UNKNOWN';
 export type TimingSource = 'nasdaq' | 'finnhub' | 'sec' | 'investing' | null;
 export type SecCheck = 'verified' | 'consistent' | 'derived' | 'contradicted' | 'unverifiable';
@@ -95,3 +96,11 @@ export interface SymbolEntry {
 }
 export interface SymbolsResponse { results: SymbolEntry[] }
 export interface WatchlistResponse { symbols: string[] }
+/** One watched symbol: its next upcoming report and its most recent past one (either may be missing). */
+export interface WatchRow {
+  symbol: string;
+  name: string;
+  next: ReportDto | InReportDto | null;
+  latest: ReportDto | InReportDto | null;
+}
+export interface WatchRowsResponse { rows: WatchRow[] }

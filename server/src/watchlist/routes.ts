@@ -1,13 +1,22 @@
+import { DateTime } from 'luxon';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { Db } from '../db/repo.js';
+import { toDto } from '../api/dto.js';
+import { type Db, listForSymbols } from '../db/repo.js';
+import { ET } from '../domain/marketCalendar.js';
 import { normalizeTicker } from '../domain/ticker.js';
-import type { SymbolsResponse, WatchlistResponse } from '../api/types.js';
+import type { ReportDto, SymbolsResponse, WatchlistResponse, WatchRow, WatchRowsResponse } from '../api/types.js';
+import { toInDto } from '../india/api/dto.js';
+import { listInForSymbols } from '../india/db/inRepo.js';
+import { IST } from '../india/domain/nseCalendar.js';
+import type { InReportDto } from '../india/api/types.js';
 import { SymbolIndex } from './search.js';
 import { addWatch, listWatch, MAX_WATCH, removeWatch, type WatchMarket } from './store.js';
 
 export interface WatchlistOptions {
   /** Symbol lists to search and validate against; tests pass fixed ones. */
   index?: SymbolIndex;
+  /** Called after a symbol is newly added to someone's list (not for re-adds). Errors are caught and logged. */
+  onWatchAdded?: (market: WatchMarket, symbol: string) => void;
 }
 
 // Used only while a market's index has not loaded yet, so adding a symbol right after a restart still works.
@@ -42,6 +51,35 @@ export function registerWatchlist(
     return body;
   });
 
+  // Per watched symbol: the next upcoming report and the latest past one, for the watchlist view.
+  app.get('/api/watchlist/rows', async (req, reply) => {
+    const user = currentUser(req);
+    if (!user) return reply.code(401).send(NOT_SIGNED_IN);
+    const m = asMarket((req.query as { market?: string }).market);
+    if (!m) return reply.code(400).send(BAD_MARKET);
+    const symbols = listWatch(db, user, m);
+    const today = DateTime.fromMillis(now(), { zone: m === 'US' ? ET : IST });
+    const from = today.minus({ days: 400 }).toISODate()!;
+    const to = today.plus({ days: 400 }).toISODate()!;
+    const todayIso = today.toISODate()!;
+    const bySymbol = new Map<string, (ReportDto | InReportDto)[]>();
+    const add = (k: string, d: ReportDto | InReportDto) => bySymbol.set(k, [...(bySymbol.get(k) ?? []), d]);
+    if (m === 'US') for (const r of listForSymbols(db, symbols, from, to)) add(r.symbolKey, toDto(r));
+    else for (const r of listInForSymbols(db, symbols, from, to)) add(r.symbol, toInDto(r));
+    const body: WatchRowsResponse = { rows: symbols.map((symbol): WatchRow => {
+      const all = bySymbol.get(symbol) ?? []; // oldest first
+      // Out (released, or dated before today) is past; the rest is upcoming.
+      const isPast = (d: ReportDto | InReportDto) => d.releasedAt != null || d.reportDate < todayIso;
+      return {
+        symbol,
+        name: all[all.length - 1]?.name ?? index.nameOf(m, symbol) ?? symbol,
+        next: all.find((d) => !isPast(d)) ?? null,
+        latest: [...all].reverse().find(isPast) ?? null,
+      };
+    }) };
+    return body;
+  });
+
   app.put('/api/watchlist/:market/:symbol', async (req, reply) => {
     const user = currentUser(req);
     if (!user) return reply.code(401).send(NOT_SIGNED_IN);
@@ -55,6 +93,7 @@ export function registerWatchlist(
     if (!current.includes(symbol)) {
       if (current.length >= MAX_WATCH) return reply.code(409).send({ error: `Watchlists are limited to ${MAX_WATCH} symbols` });
       addWatch(db, user, m, symbol, now());
+      try { opts.onWatchAdded?.(m, symbol); } catch (e) { console.warn('onWatchAdded:', e instanceof Error ? e.message : e); }
     }
     return reply.code(204).send();
   });

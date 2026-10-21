@@ -376,6 +376,14 @@ export function listRange(
   return rows.map(toRecord);
 }
 
+/** Reports of the given symbol keys dated in [from, to], oldest first. */
+export function listForSymbols(db: Db, symbolKeys: string[], from: string, to: string): ReportRecord[] {
+  if (symbolKeys.length === 0) return [];
+  const rows = db.prepare(`${SELECT_REPORT} WHERE r.symbol_key IN (${symbolKeys.map(() => '?').join(',')})
+      AND r.report_date BETWEEN ? AND ? ORDER BY r.report_date, r.symbol`).all(...symbolKeys, from, to) as unknown as JoinedRow[];
+  return rows.map(toRecord);
+}
+
 export function getReport(db: Db, id: number): ReportRecord | undefined {
   const r = db.prepare(`${SELECT_REPORT} WHERE r.id = ?`).get(id) as unknown as JoinedRow | undefined;
   return r && toRecord(r);

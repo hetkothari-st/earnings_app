@@ -70,6 +70,53 @@ export function parseNasdaqCalendar(json: unknown, date: string): CalendarRow[] 
     });
 }
 
+/** A past quarter's reported EPS, as backfilled for a watched stock. */
+export interface PastEps {
+  fiscalQuarter: string;        // 'Jun/2026', as the calendar spells it
+  reportDate: string;           // YYYY-MM-DD, or the quarter end when the source gives no report date
+  epsActual: number;
+  epsEstimate: number | null;
+  epsSurprisePct: number | null;
+}
+
+const SurpriseSchema = z.object({
+  data: z.object({
+    earningsSurpriseTable: z.object({
+      rows: z.array(z.object({
+        fiscalQtrEnd: z.string(), dateReported: z.string(), eps: Str, consensusForecast: Str, percentageSurprise: Str,
+      })).nullish(),
+    }).nullish(),
+  }).nullable(),
+  status: z.object({ rCode: z.number().nullish() }).nullish(),
+});
+
+/** Nasdaq's company earnings-surprise table: past quarters only (fiscal quarter end, date reported, EPS, consensus). */
+export function parseNasdaqEarningsSurprise(json: unknown): PastEps[] {
+  const parsed = SurpriseSchema.safeParse(json);
+  if (!parsed.success) throw new SourceFormatError(`Nasdaq earnings surprise: ${parsed.error.message}`);
+  const rCode = parsed.data.status?.rCode;
+  if (rCode != null && rCode !== 200) throw new SourceFormatError(`Nasdaq earnings surprise: status rCode ${rCode}`);
+  const rows = parsed.data.data?.earningsSurpriseTable?.rows;
+  if (!rows?.length) throw new SourceFormatError('Nasdaq earnings surprise: no quarters');
+  const out: PastEps[] = [];
+  for (const r of rows) {
+    const q = /^([A-Z][a-z]{2})\s+(\d{4})$/.exec(r.fiscalQtrEnd.trim());
+    const reportDate = usDate(r.dateReported);
+    const epsActual = parseNumber(r.eps);
+    if (!q || !reportDate || epsActual == null) continue;
+    out.push({
+      fiscalQuarter: `${q[1]}/${q[2]}`, reportDate, epsActual,
+      epsEstimate: parseNumber(r.consensusForecast), epsSurprisePct: parseNumber(r.percentageSurprise),
+    });
+  }
+  return out;
+}
+
+export async function fetchNasdaqEarningsSurprise(http: Http, symbol: string): Promise<PastEps[]> {
+  const s = encodeURIComponent(symbol.trim().toUpperCase().replace('-', '.'));
+  return parseNasdaqEarningsSurprise(await http.json(`https://api.nasdaq.com/api/company/${s}/earnings-surprise`));
+}
+
 export async function fetchNasdaqCalendar(http: Http, date: string): Promise<CalendarRow[]> {
   return parseNasdaqCalendar(await http.json(`https://api.nasdaq.com/api/calendar/earnings?date=${date}`), date);
 }

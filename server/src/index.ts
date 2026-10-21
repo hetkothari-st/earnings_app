@@ -17,7 +17,10 @@ import { fetchIndexQuote } from './sources/yahoo.js';
 import { todayIST } from './india/domain/nseCalendar.js';
 import type { InJobContext } from './india/jobs/context.js';
 import { startInScheduler, warmUpIndia } from './india/jobs/scheduler.js';
-import { getInReport, saveInPrelim } from './india/db/inRepo.js';
+import { getInReport, saveInPrelim, syncWatched } from './india/db/inRepo.js';
+import { loadFoCache } from './india/jobs/stocks.js';
+import { createWatchBackfill } from './jobs/watchBackfill.js';
+import { allWatched } from './watchlist/store.js';
 import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js';
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
 import { SymbolIndex, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
@@ -54,8 +57,23 @@ const kiteLogin = async () => {
 
 // Search and validation lists for watchlists: built in memory, refreshed daily (started below).
 const symbolIndex = new SymbolIndex();
+// Watched stocks flow through the data jobs: US gets its past results once; India stocks join the matching cache.
+const backfillWatched = createWatchBackfill(ctx, (s) => symbolIndex.nameOf('US', s));
+const syncInWatched = (): void => {
+  const symbols = allWatched(db, 'IN');
+  const names = new Map<string, string>();
+  for (const s of symbols) { const n = symbolIndex.nameOf('IN', s); if (n) names.set(s, n); }
+  syncWatched(db, symbols, names);
+  loadFoCache(db);
+};
 const app = buildServer(db, {
-  watchlist: { index: symbolIndex },
+  watchlist: {
+    index: symbolIndex,
+    onWatchAdded: (market, symbol) => {
+      if (market === 'US') void backfillWatched(symbol).catch((e) => console.warn(`watch backfill ${symbol}:`, e instanceof Error ? e.message : e));
+      else syncInWatched();
+    },
+  },
   indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true, webRoot: config.webRoot, trustProxy: config.trustProxy,
   prices: () => prices.snapshot(),
   india: {
@@ -70,7 +88,12 @@ const app = buildServer(db, {
 registerStream(app, live);
 startSymbolRefresh(symbolIndex, {
   ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers(), db) } : {}),
-  IN: () => loadInEntries(inCtx.http, db),
+  IN: async () => {
+    const list = await loadInEntries(inCtx.http, db);
+    // Names for watched stocks outside F&O come from this list.
+    setTimeout(() => { try { syncInWatched(); } catch (e) { console.warn('india watched sync:', e); } }, 0); // after the list is set
+    return list;
+  },
 });
 await app.listen({ port: config.port, host: config.host });
 console.log(`API listening on http://${config.host}:${config.port}`);
@@ -105,6 +128,7 @@ startInScheduler(inCtx, job, {
 void (async () => {
   if (kiteCreds) await ensureSession(kiteCreds, { attempts: 1 });
   inPrices.start();
+  syncInWatched();
   await warmUpIndia(inCtx, job);
   // Flips India reports within seconds; ticks no-op until the F&O list is loaded. Own client: 1 request/s to nsearchives.
   const nseHttp = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA } });

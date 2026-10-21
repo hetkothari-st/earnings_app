@@ -94,6 +94,34 @@ export function activeStocks(db: DatabaseSync): InStock[] {
   return (db.prepare('SELECT * FROM in_stocks WHERE active = 1 ORDER BY symbol').all() as unknown as StockRow[]).map(toStock);
 }
 
+/** F&O stocks plus watched ones: what feed items may be matched to. The calendar still lists F&O only. */
+export function matchableStocks(db: DatabaseSync): InStock[] {
+  return (db.prepare('SELECT * FROM in_stocks WHERE active = 1 OR watched = 1 ORDER BY symbol').all() as unknown as StockRow[]).map(toStock);
+}
+
+/**
+ * Marks exactly `symbols` as watched. A watched stock outside the F&O list gets an in_stocks row
+ * (active = 0) so feed items can be matched to it; its name comes from `names` (Kite NSE list), else the symbol.
+ */
+export function syncWatched(db: DatabaseSync, symbols: string[], names: Map<string, string> = new Map(), now: string = new Date().toISOString()): void {
+  db.exec('BEGIN');
+  try {
+    db.prepare('UPDATE in_stocks SET watched = 0 WHERE watched = 1').run();
+    const ins = db.prepare('INSERT INTO in_stocks (symbol, name, active, watched, updated_at) VALUES (?, ?, 0, 1, ?) ON CONFLICT (symbol) DO UPDATE SET watched = 1');
+    // A row first made without a name keeps getting a better one once the index knows it.
+    const rename = db.prepare('UPDATE in_stocks SET name = ? WHERE symbol = ? AND active = 0 AND name = symbol');
+    for (const s of symbols) {
+      const name = names.get(s)?.trim();
+      ins.run(s, name || s, now);
+      if (name && name !== s) rename.run(name, s);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 // ---------- Reports ----------
 
 export interface InReport {
@@ -154,8 +182,7 @@ interface InReportRow {
   lm_move_pct: number | null; lm_illiquid: number | null; lm_quote_time: string | null;
 }
 
-/** Only stocks in the current F&O list are shown. */
-const SELECT_IN = `
+const SELECT_IN_COLUMNS = `
 SELECT r.*,
   s.sector AS s_sector, s.industry AS s_industry, s.market_cap AS s_market_cap, s.market_cap_as_of AS s_market_cap_as_of,
   m.expiry AS em_expiry, m.strike AS em_strike, m.call_mid AS em_call_mid, m.put_mid AS em_put_mid,
@@ -163,9 +190,14 @@ SELECT r.*,
   m.snapshot_at AS em_snapshot_at,
   l.move_pct AS lm_move_pct, l.illiquid AS lm_illiquid, l.quote_time AS lm_quote_time
 FROM in_reports r
-JOIN in_stocks s ON s.symbol = r.symbol AND s.active = 1
+JOIN in_stocks s ON s.symbol = r.symbol`;
+const SELECT_IN_JOINS = `
 LEFT JOIN in_expected_moves m ON m.report_id = r.id
 LEFT JOIN in_live_moves l ON l.report_id = r.id`;
+/** The calendar shows only stocks in the current F&O list. */
+const SELECT_IN = `${SELECT_IN_COLUMNS} AND s.active = 1${SELECT_IN_JOINS}`;
+/** Any stock with reports, F&O or not (watchlists). */
+const SELECT_IN_ANY = `${SELECT_IN_COLUMNS}${SELECT_IN_JOINS}`;
 
 function toInReport(r: InReportRow): InReport {
   return {
@@ -443,8 +475,16 @@ export function listInRange(db: DatabaseSync, f: { from: string; to: string; q: 
   return rows.map(toInReport);
 }
 
+/** Reports of the given symbols dated in [from, to], F&O or not. */
+export function listInForSymbols(db: DatabaseSync, symbols: string[], from: string, to: string): InReport[] {
+  if (symbols.length === 0) return [];
+  const rows = db.prepare(`${SELECT_IN_ANY} WHERE r.symbol IN (${symbols.map(() => '?').join(',')}) AND r.report_date BETWEEN ? AND ?
+      ORDER BY r.report_date, r.symbol`).all(...symbols, from, to) as unknown as InReportRow[];
+  return rows.map(toInReport);
+}
+
 export function getInReport(db: DatabaseSync, id: number): InReport | undefined {
-  const r = db.prepare(`${SELECT_IN} WHERE r.id = ?`).get(id) as unknown as InReportRow | undefined;
+  const r = db.prepare(`${SELECT_IN_ANY} WHERE r.id = ?`).get(id) as unknown as InReportRow | undefined;
   return r && toInReport(r);
 }
 

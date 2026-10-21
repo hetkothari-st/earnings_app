@@ -98,5 +98,6 @@ export const IN_ADDED_COLUMNS: Record<string, [string, string][]> = {
     ['pnl_corrected', 'INTEGER'],
     ['revenue_prelim_kind', 'TEXT'], // 'revenue-from-ops' | 'total-income' of revenue_prelim
   ],
+  in_stocks: [['watched', 'INTEGER NOT NULL DEFAULT 0']], // watched by some user (not necessarily in F&O)
   in_expected_moves: [['final', 'INTEGER NOT NULL DEFAULT 0']],
 };

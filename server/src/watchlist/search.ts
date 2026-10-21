@@ -34,12 +34,15 @@ export function rankSymbols(entries: IndexEntry[], q: string, limit = 20): Symbo
 export class SymbolIndex {
   private lists: Record<WatchMarket, IndexEntry[]> = { US: [], IN: [] };
   private sets: Record<WatchMarket, Set<string>> = { US: new Set(), IN: new Set() };
+  private names: Record<WatchMarket, Map<string, string>> = { US: new Map(), IN: new Map() };
   set(market: WatchMarket, entries: IndexEntry[]): void {
     this.lists[market] = entries.map((e) => ({ ...e, words: words(e.name) }));
     this.sets[market] = new Set(entries.map((e) => e.symbol));
+    this.names[market] = new Map(entries.filter((e) => e.name).map((e) => [e.symbol, e.name]));
   }
   size(market: WatchMarket): number { return this.lists[market].length; }
   has(market: WatchMarket, symbol: string): boolean { return this.sets[market].has(symbol); }
+  nameOf(market: WatchMarket, symbol: string): string | undefined { return this.names[market].get(symbol); }
   search(market: WatchMarket, q: string, limit = 20): SymbolEntry[] { return rankSymbols(this.lists[market], q, limit); }
 }
 

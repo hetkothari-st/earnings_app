@@ -1,5 +1,6 @@
 import type { Db } from '../db/repo.js';
 import { recordSourceError, recordSourceSuccess } from '../db/repo.js';
+import type { PastEps } from '../sources/nasdaq.js';
 import type { SecTicker } from '../sources/sec.js';
 import type { YahooSummary } from '../sources/yahooEarnings.js';
 import type { CalendarRow, Filing, InvestingRow, OptionChain, RevenueRow } from '../types.js';
@@ -15,6 +16,8 @@ export interface Sources {
   dailyCloses(symbol: string, from: string, to: string): Promise<Map<string, number>>;
   sectors(): Promise<Map<string, { sector: string | null; industry: string | null }>>;
   yahooSummary(symbol: string): Promise<YahooSummary | null>;
+  /** Past quarters' reported EPS (watched-stock backfill). */
+  earningsSurprise?(symbol: string): Promise<PastEps[]>;
   investing?(tab: 'today' | 'yesterday', date: string): Promise<InvestingRow[]>;
 }
 

@@ -1,10 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { activeStocks, saveFoList, setEqTokens } from '../db/inRepo.js';
+import { matchableStocks, saveFoList, setEqTokens } from '../db/inRepo.js';
 import { equityTokens, fetchFoList, fetchKiteInstruments } from '../sources/foList.js';
 import { buildSymbolIndex } from '../sources/symbolMatch.js';
 import { type InJobContext, trackIn } from './context.js';
 
-/** The current F&O list in memory, for matching feed items to symbols. */
+/** The current F&O list plus watched stocks, in memory, for matching feed items to symbols. */
 export interface FoCache {
   symbols: Set<string>;
   nameIndex: Map<string, string>;
@@ -14,7 +14,7 @@ export interface FoCache {
 let _cache: FoCache | null = null;
 
 export function loadFoCache(db: DatabaseSync): FoCache | null {
-  const stocks = activeStocks(db);
+  const stocks = matchableStocks(db); // F&O plus watched; names of watched stocks come from the Kite list
   _cache = stocks.length
     ? {
         symbols: new Set(stocks.map((s) => s.symbol)),
