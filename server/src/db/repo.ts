@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS reports (
   fiscal_quarter TEXT NOT NULL,
   report_date TEXT NOT NULL,
   rescheduled_from TEXT,
+  date_status TEXT,
   timing TEXT NOT NULL DEFAULT 'UNKNOWN',
   timing_source TEXT,
   timing_conflict TEXT,
@@ -648,4 +649,29 @@ export function liveSymbols(db: Db, from: string, to: string, limit: number): st
   return (db.prepare(`SELECT symbol FROM reports WHERE report_date BETWEEN ? AND ?
       GROUP BY symbol_key ORDER BY MIN(report_date), MAX(market_cap) DESC LIMIT ?`)
     .all(from, to, limit) as unknown as { symbol: string }[]).map((r) => r.symbol);
+}
+
+/** Unreleased reports dated in [from, to]: the ones a backup date source may correct. */
+export function reportsAwaitingDate(db: Db, from: string, to: string): { id: number; symbol: string; reportDate: string }[] {
+  return db.prepare(`SELECT id, symbol, report_date AS reportDate FROM reports
+      WHERE report_date BETWEEN ? AND ? AND released_at IS NULL AND eps_actual IS NULL
+      ORDER BY report_date, market_cap DESC`).all(from, to) as unknown as { id: number; symbol: string; reportDate: string }[];
+}
+
+/** A backup source's date (Yahoo): stored, and marked 'estimated' until the Nasdaq calendar confirms a date. */
+export function setEstimatedDate(db: Db, id: number, date: string): void {
+  const r = db.prepare('SELECT report_date, rescheduled_from FROM reports WHERE id = ? AND released_at IS NULL').get(id) as unknown as
+    { report_date: string; rescheduled_from: string | null } | undefined;
+  if (!r) return;
+  const moved = r.report_date !== date;
+  db.prepare(`UPDATE reports SET report_date = ?, date_status = 'estimated', rescheduled_from = ?,
+      timing = CASE WHEN ? THEN 'UNKNOWN' ELSE timing END, timing_source = CASE WHEN ? THEN NULL ELSE timing_source END
+    WHERE id = ?`).run(date, moved ? r.report_date : r.rescheduled_from, moved ? 1 : 0, moved ? 1 : 0, id);
+  if (moved) dropExpectedMove(db, id);
+}
+
+/** Nasdaq listed this symbol on this date: the date is confirmed, not an estimate. */
+export function confirmDate(db: Db, symbol: string, reportDate: string): void {
+  db.prepare("UPDATE reports SET date_status = NULL WHERE symbol_key = ? AND report_date = ? AND date_status IS NOT NULL")
+    .run(normalizeTicker(symbol), reportDate);
 }

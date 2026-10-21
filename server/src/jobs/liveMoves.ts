@@ -2,7 +2,7 @@ import { reportsInRange, saveLiveMove } from '../db/repo.js';
 import { computeExpectedMove } from '../domain/expectedMove.js';
 import { addDays, prevTradingDay } from '../domain/marketCalendar.js';
 import type { Timing } from '../types.js';
-import { type JobContext, track } from './context.js';
+import { type JobContext, guarded } from './context.js';
 
 /** Last regular close before the release: AMC -> report day, otherwise the previous session. */
 const lastCloseBefore = (reportDate: string, timing: Timing) => (timing === 'AMC' ? reportDate : prevTradingDay(reportDate));
@@ -17,7 +17,8 @@ export async function refreshLiveMoves(ctx: JobContext): Promise<number[]> {
   const changed: number[] = [];
   for (const r of reportsInRange(ctx.db, today, addDays(today, 4))) {
     if (lastCloseBefore(r.reportDate, r.timing) !== today) continue;
-    const chain = await track(ctx, 'cboe', () => ctx.sources.optionChain(r.symbol));
+    // Backup when Cboe is blocked: the last stored value (nothing is written).
+    const chain = (await guarded(ctx, { name: 'cboe', run: () => ctx.sources.optionChain(r.symbol) }))?.value;
     if (!chain) continue;
     const em = computeExpectedMove(chain, r.reportDate, r.timing);
     if (!em) continue;

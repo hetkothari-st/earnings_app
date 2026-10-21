@@ -1,6 +1,6 @@
 import { inTransaction, mergeYahooFill, reportsMissingValues } from '../db/repo.js';
 import { yahooFill } from '../sources/yahooEarnings.js';
-import { type JobContext, track } from './context.js';
+import { type JobContext, guarded } from './context.js';
 
 /**
  * Fills EPS actuals and revenue that Nasdaq/Finnhub left empty (notably US-listed foreign companies),
@@ -9,7 +9,7 @@ import { type JobContext, track } from './context.js';
 export async function refreshYahoo(ctx: JobContext, from: string, to: string): Promise<void> {
   const today = ctx.today();
   for (const r of reportsMissingValues(ctx.db, from, to, today)) {
-    const summary = await track(ctx, 'yahoo', () => ctx.sources.yahooSummary(r.symbol));
+    const summary = (await guarded(ctx, { name: 'yahoo', run: () => ctx.sources.yahooSummary(r.symbol) }))?.value;
     if (!summary) continue;
     const fill = yahooFill(summary, r);
     if (fill.epsActual == null && fill.revenueEstimate == null && fill.revenueActual == null) continue;

@@ -1,6 +1,6 @@
 import { actualsByReport, inTransaction, mergeFinnhubRow, mergeInvestingRow } from '../db/repo.js';
 import { prevTradingDay } from '../domain/marketCalendar.js';
-import { type JobContext, track } from './context.js';
+import { type JobContext, guarded, track } from './context.js';
 import { storeCalendarRows } from './refreshCalendar.js';
 
 /**
@@ -12,7 +12,8 @@ export async function refreshResults(ctx: JobContext): Promise<number[]> {
   const from = prevTradingDay(today);
   const before = actualsByReport(ctx.db, from, today);
   for (const date of [from, today]) {
-    const rows = await track(ctx, 'nasdaq', () => ctx.sources.calendar(date));
+    // Fast source; the backup (Yahoo values, below) is the stored data itself.
+    const rows = (await guarded(ctx, { name: 'nasdaq', run: () => ctx.sources.calendar(date) }))?.value;
     if (rows) storeCalendarRows(ctx, rows);
   }
   const details = await track(ctx, 'finnhub', () => ctx.sources.earningsDetails(from, today));

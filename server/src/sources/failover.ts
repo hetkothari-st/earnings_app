@@ -1,4 +1,5 @@
 import { type Db, recordSourceError, recordSourceSuccess } from '../db/repo.js';
+import { HttpError, SourceFormatError } from './http.js';
 
 /** The source refused us (rate limit, challenge page). Back off instead of retrying hard. */
 export class BlockedError extends Error {
@@ -17,11 +18,35 @@ export function looksBlocked(status: number, body: string, expectHtml = false): 
   return expectHtml && /<html/i.test(body);
 }
 
+/**
+ * Runs a source call and turns "the source refused us" into a BlockedError: HTTP 403/429, a 200 whose
+ * body is not JSON (a block page), or a feed answered with an HTML page. Other errors pass through.
+ */
+export async function blockAware<T>(source: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof HttpError && looksBlocked(err.status, '')) throw new BlockedError(source, `HTTP ${err.status}`);
+    if (err instanceof SyntaxError) throw new BlockedError(source, 'answer is not JSON (block page?)');
+    if (err instanceof SourceFormatError && /not RSS|HTML/i.test(err.message)) throw new BlockedError(source, err.message);
+    throw err;
+  }
+}
+
 const BACKOFF_MINUTES = [1, 2, 5, 15, 30];
 const FAILURES_BEFORE_BACKOFF = 3;
 
 type Step<T> = { name: string; run: () => Promise<T> };
 type State = 'ok' | 'failing' | 'blocked' | 'backup';
+
+const perOwner = new WeakMap<object, ReturnType<typeof createFailover>>();
+
+/** One failover (failure counts, backoff steps) per owner, normally the job context. */
+export function failoverFor(owner: object, db: Db, now: () => number): ReturnType<typeof createFailover> {
+  let f = perOwner.get(owner);
+  if (!f) { f = createFailover(db, now); perOwner.set(owner, f); }
+  return f;
+}
 
 export function createFailover(db: Db, now: () => number) {
   const failures = new Map<string, number>();

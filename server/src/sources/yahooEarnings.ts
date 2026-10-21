@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { BROWSER_UA, type Http, HttpError, makeHttp, SourceFormatError } from './http.js';
 
@@ -9,6 +10,8 @@ export interface YahooSummary {
   revenueQuarters: { label: string; revenue: number }[]; // label like '3Q2026' (calendar quarter)
   /** Consensus revenue per fiscal quarter, keyed by quarter-end date. */
   revenueEstimates: { periodEnd: string; estimate: number; currency: string | null }[];
+  /** Yahoo's next earnings date (ET calendar day), only when it names a single day, not a range. */
+  nextEarningsDate?: string;
 }
 
 export interface YahooFill {
@@ -20,6 +23,9 @@ export interface YahooFill {
 
 const Raw = z.object({ raw: z.number().nullish() }).nullish();
 const ResultSchema = z.object({
+  calendarEvents: z.object({
+    earnings: z.object({ earningsDate: z.array(z.object({ raw: z.number() })).nullish() }).nullish(),
+  }).nullish(),
   price: z.object({ currency: z.string().nullish() }).nullish(),
   earnings: z.object({
     financialCurrency: z.string().nullish(),
@@ -39,10 +45,16 @@ const ResultSchema = z.object({
 });
 const ResponseSchema = z.object({ quoteSummary: z.object({ result: z.array(ResultSchema).min(1) }) });
 
+/** One date only: Yahoo gives a range when it is unsure, and a range is no date. */
+function nextDate(dates: { raw: number }[] | null | undefined): string | null {
+  return dates?.length === 1 ? DateTime.fromSeconds(dates[0]!.raw, { zone: 'America/New_York' }).toISODate() : null;
+}
+
 export function parseQuoteSummary(json: unknown): YahooSummary {
   const parsed = ResponseSchema.safeParse(json);
   if (!parsed.success) throw new SourceFormatError(`Yahoo quoteSummary: ${parsed.error.message}`);
   const r = parsed.data.quoteSummary.result[0]!;
+  const next = nextDate(r.calendarEvents?.earnings?.earningsDate);
   return {
     priceCurrency: r.price?.currency ?? null,
     financialCurrency: r.earnings?.financialCurrency ?? null,
@@ -55,6 +67,7 @@ export function parseQuoteSummary(json: unknown): YahooSummary {
     revenueEstimates: (r.earningsTrend?.trend ?? [])
       .filter((t) => t.endDate && t.revenueEstimate?.avg?.raw != null)
       .map((t) => ({ periodEnd: t.endDate!, estimate: t.revenueEstimate!.avg!.raw!, currency: t.revenueEstimate!.revenueCurrency ?? null })),
+    ...(next ? { nextEarningsDate: next } : {}),
   };
 }
 
@@ -97,14 +110,14 @@ export function yahooFill(s: YahooSummary, report: { reportDate: string; fiscalQ
  * Yahoo's quoteSummary needs a session cookie and a "crumb". One session is reused and renewed
  * when Yahoo rejects it. Unknown symbols return null.
  */
-/** A Yahoo session: cookie-carrying Http plus the crumb its API calls need. */
-export async function openYahooSession(): Promise<{ http: Http; crumb: string }> {
+/** A Yahoo session: cookie-carrying Http plus the crumb its API calls need (and the raw headers, for POSTs). */
+export async function openYahooSession(): Promise<{ http: Http; crumb: string; headers: Record<string, string> }> {
   const res = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': BROWSER_UA }, redirect: 'manual' });
   const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
   const headers = { 'User-Agent': BROWSER_UA, Cookie: cookie };
   const crumb = await (await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', { headers })).text();
   if (!crumb || crumb.includes('<')) throw new SourceFormatError('Yahoo: could not obtain a session crumb');
-  return { http: makeHttp({ minIntervalMs: 1000, headers }), crumb };
+  return { http: makeHttp({ minIntervalMs: 1000, headers }), crumb, headers };
 }
 
 /**
@@ -131,6 +144,6 @@ export function createQuoteSummaryFetcher<T>(modules: string, parse: (json: unkn
 }
 
 export function createYahooSummaryFetcher(): (symbol: string) => Promise<YahooSummary | null> {
-  const get = createQuoteSummaryFetcher('price,earnings,earningsHistory,earningsTrend', parseQuoteSummary);
+  const get = createQuoteSummaryFetcher('price,earnings,earningsHistory,earningsTrend,calendarEvents', parseQuoteSummary);
   return (symbol) => get(symbol.trim().toUpperCase().replace('/', '-'));
 }

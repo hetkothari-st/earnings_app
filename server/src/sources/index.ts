@@ -11,7 +11,8 @@ export function createSources(cfg: Config): Sources {
   const nasdaq = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' } });
   const cboe = makeHttp({ minIntervalMs: 2500, backoffMs: 15_000, headers: { 'User-Agent': BROWSER_UA, Accept: 'application/json' } });
   const finnhub = makeHttp({ minIntervalMs: 1100, headers: { 'X-Finnhub-Token': cfg.finnhubToken } });
-  const sec = makeHttp({ minIntervalMs: 150, headers: { 'User-Agent': cfg.secUserAgent } });
+  // The ONE SEC client: <= 10 requests/s for the whole app (8-K watcher, filings, tickers, shares job).
+  const sec = makeHttp({ minIntervalMs: 120, headers: { 'User-Agent': cfg.secUserAgent } });
 
   const requireSecUa = () => {
     if (!cfg.secUserAgent) throw new Error('SEC_USER_AGENT is not set (see .env.example)');
@@ -31,6 +32,7 @@ export function createSources(cfg: Config): Sources {
     sectors: () => fetchSectors(nasdaq),
     earningsSurprise: (symbol) => fetchNasdaqEarningsSurprise(nasdaq, symbol),
     yahooSummary: createYahooSummaryFetcher(),
+    ...(cfg.secUserAgent ? { secHttp: sec } : {}),
     // Opt-in only: Investing.com's terms forbid automated access, and it needs a local Chrome.
     ...(cfg.investingScraper ? {
       investing: async (tab: 'today' | 'yesterday', date: string) =>

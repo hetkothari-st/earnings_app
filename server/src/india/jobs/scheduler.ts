@@ -13,6 +13,15 @@ import { loadFoCache, refreshInStocks } from './stocks.js';
 
 const IST = 'Asia/Kolkata';
 
+/** Spec section 7 (India), cron expressions in Asia/Kolkata. */
+export const IN_CRONS = {
+  /** NSE Board_Meetings every minute. */
+  calendar: '* * * * *',
+  /** Yahoo estimates for reports in the next 7 days, then for the rest. */
+  estimatesNear: '0 * * * *',
+  estimatesFar: '5 */6 * * *',
+} as const;
+
 export interface InSchedulerHooks {
   onResults?: (ids: number[]) => void;
   onMoves?: (ids: number[]) => void;
@@ -43,12 +52,13 @@ export function startInScheduler(ctx: InJobContext, job: JobRunner, hooks: InSch
 
   if (hooks.login) schedule('45 7 * * *', job('india-kite-login', hooks.login), opts);
   schedule('30 7 * * *', job('india-stocks', async () => { await refreshInStocks(ctx); checkHolidayCoverage(ctx); }), opts);
-  schedule('*/30 * * * *', job('india-calendar', () => refreshInCalendar(ctx)), opts);
+  schedule(IN_CRONS.calendar, job('india-calendar', () => refreshInCalendar(ctx)), opts);
   // Results come out at any hour, weekends included; the feeds are read every minute 08:00–23:59.
   schedule('* 8-23 * * *', results, opts);
   schedule('25 15 * * 1-5', job('india-moves', () => snapshotInMoves(ctx)), opts);
   schedule('* 9-15 * * 1-5', live, opts);
-  schedule('0 6,13,19 * * *', job('india-estimates', () => refreshInEstimates(ctx)), opts);
+  schedule(IN_CRONS.estimatesNear, job('india-estimates-near', () => refreshInEstimates(ctx, 'near')), opts);
+  schedule(IN_CRONS.estimatesFar, job('india-estimates-far', () => refreshInEstimates(ctx, 'far')), opts);
   schedule('0 7 * * *', job('india-shares', () => refreshInShares(ctx)), opts);
   schedule('30 0,8 * * *', job('india-prev-moves', () => computeInPrevMoves(ctx)), opts);
 }

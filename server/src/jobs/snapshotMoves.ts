@@ -2,7 +2,7 @@ import { reportsForSnapshot, saveExpectedMove } from '../db/repo.js';
 import { computeExpectedMove } from '../domain/expectedMove.js';
 import { addDays, prevTradingDay } from '../domain/marketCalendar.js';
 import type { Timing } from '../types.js';
-import { type JobContext, track } from './context.js';
+import { type JobContext, guarded } from './context.js';
 
 /** The last regular close before the release: BMO/DMH/unknown -> previous session, AMC -> report day. */
 function lastCloseBefore(reportDate: string, timing: Timing): string {
@@ -17,7 +17,7 @@ function lastCloseBefore(reportDate: string, timing: Timing): string {
 export async function snapshotMoves(ctx: JobContext, days = 7): Promise<void> {
   const today = ctx.today();
   for (const t of reportsForSnapshot(ctx.db, today, addDays(today, days))) {
-    const chain = await track(ctx, 'cboe', () => ctx.sources.optionChain(t.symbol));
+    const chain = (await guarded(ctx, { name: 'cboe', run: () => ctx.sources.optionChain(t.symbol) }))?.value;
     if (!chain?.asOfDate) continue;
     const target = lastCloseBefore(t.reportDate, t.timing);
     if (chain.asOfDate > target) continue;                       // release already priced in

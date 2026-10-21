@@ -27,9 +27,11 @@ import { SymbolIndex, loadInEntries, startSymbolRefresh, usEntries } from './wat
 import { createKiteApi } from './india/sources/kiteApi.js';
 import { ensureSession, getKiteCredentials, getSession, kiteStatus } from './india/sources/kiteLogin.js';
 import { createYahooInFetcher, fetchYahooIndex } from './india/sources/yahooIn.js';
+import { fetchYahooPastDates } from './india/sources/yahooPastDates.js';
 
 const db = openDb(config.dbPath);
-const ctx: JobContext = { db, sources: createSources(config), now: () => new Date().toISOString(), today: () => todayET() };
+const sources = createSources(config);
+const ctx: JobContext = { db, sources, now: () => new Date().toISOString(), today: () => todayET() };
 
 const yahoo = makeHttp({ minIntervalMs: 300, headers: { 'User-Agent': BROWSER_UA } });
 const live = new Broadcaster();
@@ -44,6 +46,7 @@ const inCtx: InJobContext = {
   kite: createKiteApi(getSession),
   kiteSession: getSession,
   yahoo: createYahooInFetcher(),
+  yahooPastDates: fetchYahooPastDates,
   now: () => new Date().toISOString(),
   todayIST,
 };
@@ -106,8 +109,8 @@ const job = startScheduler(ctx, (ids) => live.publish('results', { ids }), (ids)
 void warmUp(ctx, job);
 if (config.finnhubToken) prices.start();
 // One shared SEC client (<= 10 req/s overall). The 8-K watcher flips US reports to released within seconds.
-if (config.secUserAgent) {
-  const secHttp = makeHttp({ minIntervalMs: 120, headers: { 'User-Agent': config.secUserAgent } });
+const secHttp = sources.secHttp;
+if (secHttp) {
   // Quick read of the press release: preliminary values until an official source confirms them.
   const reader = async (exhibitUrl: string, reportId: number): Promise<void> => {
     const rep = getReport(db, reportId);

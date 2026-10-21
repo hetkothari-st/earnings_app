@@ -3,7 +3,7 @@ import { latestQuarterEndBefore, quarterLabel } from '../domain/quarter.js';
 import { fetchNseRss, isXbrlLink, parseBoardMeetingDescription, type RssItem, symbolFromPdfLink } from '../sources/nseRss.js';
 import { resolveSymbol } from '../sources/symbolMatch.js';
 import { parsePriorIntimation } from '../sources/xbrl.js';
-import { type InJobContext, trackIn } from './context.js';
+import { type InJobContext, guardedIn } from './context.js';
 import { type FoCache, getFoCache } from './stocks.js';
 
 /** Notices already handled this process (the feed is a rolling window, re-read every run). */
@@ -41,7 +41,8 @@ export function parseMeetingDate(raw: string): string | null {
 export async function refreshInCalendar(ctx: InJobContext): Promise<void> {
   const fo = getFoCache();
   if (!fo) return; // F&O list not loaded yet
-  const items = await trackIn(ctx, 'nse-board-meetings', () => fetchNseRss(ctx.http, 'Board_Meetings'));
+  // Backup for result dates is Yahoo's estimated date (the estimates job); here a block keeps the stored dates.
+  const items = (await guardedIn(ctx, { name: 'nse-board-meetings', run: () => fetchNseRss(ctx.http, 'Board_Meetings') }))?.value;
   if (!items) return;
   const now = ctx.now();
   // Oldest first, so a later notice (a reschedule) is applied last.

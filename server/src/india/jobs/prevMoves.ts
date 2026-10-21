@@ -15,7 +15,14 @@ export async function computeInPrevMoves(ctx: InJobContext): Promise<void> {
   const tokens = new Map(activeStocks(ctx.db).filter((s) => s.eqToken != null).map((s) => [s.symbol, s.eqToken!]));
   const now = ctx.now();
   for (const r of inReportsNeedingPrevMove(ctx.db, addDaysIST(today, -7), addDaysIST(today, 60), recheckBefore)) {
-    const prior = priorReleasedReport(ctx.db, r.symbol, r.reportDate);
+    let prior = priorReleasedReport(ctx.db, r.symbol, r.reportDate);
+    if (!prior && ctx.yahooPastDates) {
+      // Nothing captured by this app: the latest past date Yahoo lists (with its time, when it has one).
+      const dates = await trackIn(ctx, 'yahoo-past-dates', () => ctx.yahooPastDates!(r.symbol));
+      if (dates === undefined) continue; // fetch failed: retry next run
+      const y = dates.filter((d) => d.date < r.reportDate).sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (y) prior = { reportDate: y.date, timing: y.timing ?? 'UNKNOWN', known: y.timing != null };
+    }
     const current = (ctx.db.prepare('SELECT timing FROM in_reports WHERE id = ?').get(r.id) as { timing: InTiming }).timing;
     const timing = prior?.known ? prior.timing : current;
     const token = tokens.get(r.symbol);
