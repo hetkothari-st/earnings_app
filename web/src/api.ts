@@ -127,3 +127,35 @@ export async function fetchInPrices(): Promise<Record<string, InLivePriceDto>> {
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return ((await res.json()) as { prices: Record<string, InLivePriceDto> }).prices;
 }
+
+export type { SymbolsResponse, WatchHistoryDto, WatchRow, WatchRowsResponse } from '../../server/src/api/types';
+
+export async function fetchWatchlist(market: 'US' | 'IN'): Promise<string[]> {
+  const res = await apiFetch(`/api/watchlist?market=${market}`);
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { symbols: string[] }).symbols;
+}
+
+const watchUrl = (market: 'US' | 'IN', symbol: string) => `/api/watchlist/${market}/${encodeURIComponent(symbol)}`;
+
+export async function putWatch(market: 'US' | 'IN', symbol: string): Promise<void> {
+  const res = await apiFetch(watchUrl(market, symbol), { method: 'PUT' });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+}
+
+export async function deleteWatch(market: 'US' | 'IN', symbol: string): Promise<void> {
+  const res = await apiFetch(watchUrl(market, symbol), { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+}
+
+export async function searchSymbols(market: 'US' | 'IN', q: string, signal?: AbortSignal): Promise<{ symbol: string; name: string; exchange: string }[]> {
+  const res = await apiFetch(`/api/symbols?market=${market}&q=${encodeURIComponent(q)}`, { signal });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { results: { symbol: string; name: string; exchange: string }[] }).results;
+}
+
+export async function fetchWatchRows(market: 'US' | 'IN', signal?: AbortSignal): Promise<import('../../server/src/api/types').WatchRowsResponse> {
+  const res = await apiFetch(`/api/watchlist/rows?market=${market}`, { signal });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return res.json() as Promise<import('../../server/src/api/types').WatchRowsResponse>;
+}

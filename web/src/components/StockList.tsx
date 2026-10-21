@@ -4,6 +4,7 @@ import { changeClass, formatChange, formatDateHeading, formatEps, formatMoney, f
 import { type SortKey, sortRows } from '../lib/sort';
 import { describeTiming, zoneLabel } from '../lib/time';
 import { NoteEditor } from './NoteEditor';
+import { Star } from './Star';
 import { Tags } from './Tags';
 
 interface Props {
@@ -19,6 +20,9 @@ interface Props {
   highlight?: Set<number>;
   /** Real-time prices by symbol. */
   prices?: Record<string, LivePrice>;
+  /** Watched symbols and the star handler; no stars are shown without the handler. */
+  watched?: Set<string>;
+  onWatch?: (symbol: string, on: boolean) => void;
 }
 
 const TIMING_SHORT = { BMO: 'Before open', AMC: 'After close', DMH: 'During market', UNKNOWN: 'Time not announced' } as const;
@@ -62,7 +66,7 @@ function byDate(rows: ReportDto[], sort: SortKey): [string, ReportDto[]][] {
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([d, list]) => [d, sortRows(list, sort)]);
 }
 
-export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveNote, highlight, prices = {} }: Props) {
+export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveNote, highlight, prices = {}, watched, onWatch }: Props) {
   if (rows.length === 0) return <p className="empty">No earnings reports match this range and filter.</p>;
   return (
     <div className="stock-days">
@@ -77,7 +81,8 @@ export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveN
             <ul className="stocks">
               {list.map((r) => (
                 <Stock key={r.id} r={r} zone={zone} open={expanded.has(r.symbol)} isNew={highlight?.has(r.id) ?? false}
-                  onToggle={onToggle} note={notes.get(r.id)} onSaveNote={onSaveNote} price={prices[r.symbol]} />
+                  onToggle={onToggle} note={notes.get(r.id)} onSaveNote={onSaveNote} price={prices[r.symbol]}
+                  watched={watched?.has(r.symbol) ?? false} onWatch={onWatch} />
               ))}
             </ul>
           </section>
@@ -87,12 +92,13 @@ export function StockList({ rows, zone, expanded, sort, onToggle, notes, onSaveN
   );
 }
 
-function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote, price }: {
+function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote, price, watched, onWatch }: {
   r: ReportDto; zone: string; open: boolean; isNew: boolean; onToggle: (s: string) => void;
   note: Note | undefined; onSaveNote: (reportId: number, text: string) => Promise<void>; price: LivePrice | undefined;
+  watched: boolean; onWatch: ((symbol: string, on: boolean) => void) | undefined;
 }) {
   return (
-    <li className={`stock s-${r.timing.toLowerCase()}${open ? ' open' : ''}${isNew ? ' just-updated' : ''}`}
+    <li className={`stock s-${r.timing.toLowerCase()}${onWatch ? ' has-star' : ''}${open ? ' open' : ''}${isNew ? ' just-updated' : ''}`}
       data-date={r.reportDate} data-timing={r.timing}>
       <button className="stock-head" aria-expanded={open} onClick={() => onToggle(r.symbol)}>
         <span className="dot" aria-hidden="true" />
@@ -109,6 +115,7 @@ function Stock({ r, zone, open, isNew, onToggle, note, onSaveNote, price }: {
         <span className="stock-when">{TIMING_SHORT[r.timing]}</span>
         <span className="chevron" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
+      {onWatch && <Star symbol={r.symbol} on={watched} onToggle={onWatch} />}
       {open && <Details r={r} zone={zone} note={note} onSaveNote={onSaveNote} price={price} />}
     </li>
   );

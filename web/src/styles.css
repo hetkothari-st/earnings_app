@@ -332,3 +332,24 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
   .stock-head { grid-template-columns: auto 60px 1fr auto 20px; }
   .stock-price { min-width: 0; }
 }
+
+.watch-toggle { align-self: center; }
+.watch-toggle.on { background: var(--dawn); color: #04101f; border-color: var(--dawn); font-weight: 600; }
+.stock { position: relative; }
+.has-star .stock-head { padding-right: 44px; }
+.star { background: transparent; border: 0; color: var(--muted); font-size: 16px; line-height: 1; padding: 4px 6px; cursor: pointer; }
+.star:hover, .star.on { color: var(--amber); }
+.has-star > .star { position: absolute; right: 6px; top: 8px; }
+.watchlist { display: grid; gap: 14px; }
+.symbol-search { position: relative; max-width: 420px; }
+.symbol-search input { width: 100%; }
+.symbol-hits { list-style: none; margin: 4px 0 0; padding: 4px; position: absolute; left: 0; right: 0; z-index: 5; max-height: 280px; overflow-y: auto;
+  background: var(--raised); border: 1px solid var(--line); border-radius: 8px; }
+.symbol-hits[hidden] { display: none; }
+.symbol-hits li { display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.symbol-hits li.on, .symbol-hits li:hover { background: var(--surface); }
+.wl-row { display: grid; grid-template-columns: minmax(72px, max-content) minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 11px 44px 11px 14px; }
+.wl-row .star { position: absolute; right: 6px; top: 8px; }
+.wl-next, .wl-latest { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.wl-fig { white-space: nowrap; }
+@media (max-width: 780px) { .wl-row { grid-template-columns: minmax(60px, max-content) 1fr; } .wl-row .stock-price { grid-column: 1 / -1; justify-content: flex-start; } }

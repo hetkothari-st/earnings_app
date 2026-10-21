@@ -27,6 +27,7 @@ interface Props {
   sort: SortKey; onSort: (s: SortKey) => void;
   zone: string; zoneText: string; isOverride: boolean; onZone: (z: string | null) => void;
   market: Market; onMarket: (m: Market) => void;
+  watchlist?: boolean; onWatchlist?: (on: boolean) => void;
 }
 
 const ZONES: string[] = (() => {
@@ -109,6 +110,11 @@ export function Header(p: Props) {
             </button>
           ))}
         </div>
+        {p.onWatchlist && (
+          <button className={`watch-toggle${p.watchlist ? ' on' : ''}`} aria-pressed={!!p.watchlist} onClick={() => p.onWatchlist!(!p.watchlist)}>
+            Watchlist
+          </button>
+        )}
         <div className="filters">
           {p.market === 'US' && (
             <select value={p.minCap ?? ''} onChange={(e) => p.onMinCap(e.target.value === '' ? null : Number(e.target.value))} aria-label="Market cap">

@@ -6,6 +6,7 @@ import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
 import { useZone } from '../hooks/useZone';
 import { useMarket } from '../hooks/useMarket';
+import { useWatchlist } from '../hooks/useWatchlist';
 import { rangeFor, shiftAnchor, type View } from '../lib/ranges';
 import { daySummary } from '../lib/session';
 import type { SortKey } from '../lib/sort';
@@ -17,6 +18,7 @@ import { SessionBand } from './SessionBand';
 import { StaleBanner } from './StaleBanner';
 import { StockList } from './StockList';
 import { InStockList } from './InStockList';
+import { WatchlistView } from './WatchlistView';
 
 type Load<T> = { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: string };
 
@@ -42,6 +44,9 @@ export function Calendar() {
   const [inLoad, setInLoad] = useState<Load<InEarningsResponse>>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
+  const [showWatch, setShowWatch] = useState(false);
+  const watch = useWatchlist(market);
+  const onWatch = useCallback((symbol: string, on: boolean) => { (on ? watch.add(symbol) : watch.remove(symbol)).catch(() => {}); }, [watch.add, watch.remove]);
 
   // Reset anchor and switch to week view when market changes
   useEffect(() => {
@@ -130,36 +135,41 @@ export function Calendar() {
         minCap={minCap} onMinCap={setMinCap} query={query} onQuery={setQuery}
         sort={sort} onSort={setSort}
         zone={zone} zoneText={zoneText} isOverride={isOverride} onZone={setZone}
-        market={market} onMarket={setMarket}
+        market={market} onMarket={setMarket} watchlist={showWatch} onWatchlist={setShowWatch}
       />
 
       {market === 'US' && load.status === 'ok' && <StaleBanner sources={load.data.sources} />}
 
       <main className="content">
+        {showWatch && (
+          <WatchlistView market={market} zone={zone} prices={market === 'IN' ? inPrices : prices} watch={watch} reloadKey={reloadKey} />
+        )}
         {/* US day view: session band */}
-        {market === 'US' && load.status === 'ok' && view === 'day' && usRows.length > 0 && (
+        {!showWatch && market === 'US' && load.status === 'ok' && view === 'day' && usRows.length > 0 && (
           <SessionBand date={range.from} sessionClose={usRows[0]!.sessionClose} zone={zone} zoneText={zoneText}
             counts={days[0] ?? { bmo: 0, amc: 0, other: 0 }} onJump={jump} />
         )}
         {/* Multi-day strip (US only; India day-strip is same component) */}
-        {market === 'US' && load.status === 'ok' && view !== 'day' && <DayStrip days={days} onPick={openDay} />}
+        {!showWatch && market === 'US' && load.status === 'ok' && view !== 'day' && <DayStrip days={days} onPick={openDay} />}
 
-        {customInvalid && <p className="warn-text">Pick a valid From and To date.</p>}
+        {!showWatch && customInvalid && <p className="warn-text">Pick a valid From and To date.</p>}
 
         {/* US loading/error */}
-        {market === 'US' && !customInvalid && load.status === 'loading' && <p className="muted">Loading…</p>}
-        {market === 'US' && load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
-        {market === 'US' && load.status === 'ok' && (
+        {!showWatch && market === 'US' && !customInvalid && load.status === 'loading' && <p className="muted">Loading…</p>}
+        {!showWatch && market === 'US' && load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
+        {!showWatch && market === 'US' && load.status === 'ok' && (
           <StockList rows={usRows} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
-            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={prices} />
+            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={prices}
+            watched={watch.symbols} onWatch={onWatch} />
         )}
 
         {/* India loading/error */}
-        {market === 'IN' && !customInvalid && inLoad.status === 'loading' && <p className="muted">Loading India earnings…</p>}
-        {market === 'IN' && inLoad.status === 'error' && <p className="warn-text">Could not load data: {inLoad.error}</p>}
-        {market === 'IN' && inLoad.status === 'ok' && (
+        {!showWatch && market === 'IN' && !customInvalid && inLoad.status === 'loading' && <p className="muted">Loading India earnings…</p>}
+        {!showWatch && market === 'IN' && inLoad.status === 'error' && <p className="warn-text">Could not load data: {inLoad.error}</p>}
+        {!showWatch && market === 'IN' && inLoad.status === 'ok' && (
           <InStockList rows={inRows} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
-            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={inPrices} />
+            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={inPrices}
+            watched={watch.symbols} onWatch={onWatch} />
         )}
       </main>
 
