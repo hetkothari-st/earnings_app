@@ -46,11 +46,10 @@ export class SecWatch {
     const res = await this.failover({ name: 'sec-feed', run: () => fetchSecFeed(this.http) }, null);
     if (!res) return [];
     const fresh = res.value.filter((i) => !this.seen.has(i.accession));
-    for (const i of fresh) this.seen.add(i.accession);
-    this.trimSeen();
-
     const targets = fresh.filter((i) => i.items.includes('2.02'));
-    if (targets.length === 0) return [];
+    // Only mark accessions seen once handled, so a transient failure below retries them next tick.
+    const markSeen = () => { for (const i of fresh) this.seen.add(i.accession); this.trimSeen(); };
+    if (targets.length === 0) { markSeen(); return []; }
     const byCik = await this.cikMap();
 
     const changed: number[] = [];
@@ -71,6 +70,7 @@ export class SecWatch {
         }
       }
     }
+    markSeen();
     if (changed.length > 0) this.onReleased(changed);
     if (this.reader) for (const r of reads) void this.read(r.indexUrl, r.id);
     return changed;

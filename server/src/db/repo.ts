@@ -196,17 +196,22 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
     return;
   }
 
-  const rescheduled = existing.report_date !== row.reportDate;
+  // Once the SEC filing has flipped the report, the actual release date/timing beat the calendar's.
+  const released = existing.released_at != null;
+  const reportDate = released ? existing.report_date : row.reportDate;
+  const rescheduled = existing.report_date !== reportDate;
   let timing: Timing = existing.timing;
   let timingSource: TimingSource = existing.timing_source;
-  if (row.timing !== 'UNKNOWN') {
+  if (released) {
+    // keep the released timing
+  } else if (row.timing !== 'UNKNOWN') {
     timing = row.timing;
     timingSource = 'nasdaq';
   } else if (rescheduled) {
     timing = 'UNKNOWN';         // old timing belonged to the old date
     timingSource = null;
   }
-  const capLive = row.reportDate >= today && row.marketCap != null;
+  const capLive = reportDate >= today && row.marketCap != null;
   const fiscalQuarter = existing.fiscal_quarter.startsWith('date:') ? row.fiscalQuarter : existing.fiscal_quarter;
   // A confirmed Nasdaq actual wins: it is on the same basis as Nasdaq's consensus estimate.
   // (The parser already drops Nasdaq's placeholder EPS shown before results are recorded.)
@@ -235,7 +240,7 @@ export function upsertCalendarRow(db: Db, row: CalendarRow, now: string, today: 
       sec_checked_at = CASE WHEN ? THEN NULL ELSE sec_checked_at END,
       calendar_fetched_at = ?
     WHERE id = ?`).run(
-    row.name, fiscalQuarter, row.reportDate, rescheduled ? existing.report_date : existing.rescheduled_from, timing, timingSource,
+    row.name, fiscalQuarter, reportDate, rescheduled ? existing.report_date : existing.rescheduled_from, timing, timingSource,
     // The conflict text names the old timing; the next Finnhub merge recomputes it.
     rescheduled || timing !== existing.timing ? 1 : 0,
     capLive ? row.marketCap : existing.market_cap, capLive ? today : existing.market_cap_as_of,
@@ -265,7 +270,7 @@ export function mergeFinnhubRow(db: Db, r: RevenueRow, now: string): boolean {
   let timing = existing.timing;
   let source = existing.timing_source;
   let conflict = existing.timing_conflict;
-  if (r.timing !== 'UNKNOWN') {
+  if (r.timing !== 'UNKNOWN' && existing.released_at == null) {
     if (source === 'nasdaq' || source === 'sec') {
       const label = source === 'nasdaq' ? 'Nasdaq' : 'SEC filing';
       conflict = r.timing === timing ? null : `${label} says ${timing}, Finnhub says ${r.timing}`;

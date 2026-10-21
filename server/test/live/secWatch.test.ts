@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test, vi } from 'vitest';
-import { listRange, listSourceStatus, openDb, upsertCalendarRow } from '../../src/db/repo.js';
+import { listRange, listSourceStatus, mergeFinnhubRow, openDb, upsertCalendarRow } from '../../src/db/repo.js';
 import type { JobContext } from '../../src/jobs/context.js';
 import { SecWatch } from '../../src/live/secWatch.js';
 import { HttpError } from '../../src/sources/http.js';
@@ -84,5 +84,25 @@ describe('SecWatch', () => {
     const t = setup({ reader });
     const ids = await t.watch.tick();
     expect(reader).toHaveBeenCalledWith(expect.stringContaining('udr-ex99d1.htm'), ids[0]);
+  });
+
+  test('a transient secTickers failure does not lose the batch: it flips on the next tick', async () => {
+    const t = setup();
+    const real = t.ctx.sources.secTickers;
+    let calls = 0;
+    t.ctx.sources.secTickers = async () => { if (calls++ === 0) throw new Error('boom'); return real(); };
+    await expect(t.watch.tick()).rejects.toThrow('boom');
+    expect(t.row().releasedAt).toBeNull();
+    expect(await t.watch.tick()).toEqual([t.row().id]);
+    expect(t.row().releasedAt).toBe('2026-10-21T12:05:10.000Z');
+  });
+
+  test('a later calendar refresh does not undo the flip', async () => {
+    const t = setup({ row: { reportDate: '2026-10-20' } });
+    await t.watch.tick();
+    upsertCalendarRow(t.db, udr({ reportDate: '2026-10-20', timing: 'AMC' }), NOW, '2026-10-21');
+    expect(t.row()).toMatchObject({ reportDate: '2026-10-21', rescheduledFrom: '2026-10-20', timing: 'BMO', timingSource: 'sec' });
+    mergeFinnhubRow(t.db, { symbol: 'UDR', reportDate: '2026-10-21', timing: 'AMC', revenueEstimate: 1, revenueActual: null, epsActual: null }, NOW);
+    expect(t.row()).toMatchObject({ reportDate: '2026-10-21', timing: 'BMO', timingSource: 'sec' });
   });
 });
