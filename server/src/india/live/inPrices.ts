@@ -2,7 +2,7 @@ import type { EventEmitter } from 'node:events';
 import type { DatabaseSync } from 'node:sqlite';
 import { createFailover } from '../../sources/failover.js';
 import type { Http } from '../../sources/http.js';
-import { inReportsForSnapshot, matchableStocks, type PendingReport, saveInLiveMove } from '../db/inRepo.js';
+import { inReportsForSnapshot, listInRange, matchableStocks, type PendingReport, saveInLiveMove } from '../db/inRepo.js';
 import { chooseInExpiry, computeInExpectedMove, type OptionTop } from '../domain/inMoves.js';
 import { addDaysIST, nextNseTradingDay } from '../domain/nseCalendar.js';
 import type { InJobContext } from '../jobs/context.js';
@@ -34,6 +34,13 @@ const MOVE_EVERY_MS = 5_000;
 const STALE_MS = 2 * 60_000;
 const BACKUP_CHECK_EVERY_MS = 30_000;
 const BACKUP_PER_CHECK = 25;
+/** Strikes are re-picked for a symbol at most this often when its price leaves them. */
+const RESYNC_EVERY_MS = 30_000;
+/** After the instrument list failed to load, wait this long before trying again. */
+const INSTRUMENTS_RETRY_MS = 10_000;
+/** A live move needs a quoted strike within this many strike gaps of the price. */
+const MAX_STRIKE_GAPS = 1.5;
+const IST_OFFSET_MS = 5.5 * 3_600_000;
 
 const changePct = (price: number, prev: number | null) => (prev && prev > 0 ? Math.round(((price - prev) / prev) * 10000) / 100 : null);
 
@@ -86,7 +93,11 @@ export function createYahooPriceBackup(db: DatabaseSync, http: Http, now: () => 
   return async (symbol) => (await failover({ name: 'yahoo-in-prices', run: () => fetchYahooIndex(http, `${symbol}.NS`) }, null))?.value ?? null;
 }
 
-interface ReportOptions { symbol: string; expiry: string; tokens: number[] }
+interface ReportOptions {
+  symbol: string; expiry: string; tokens: number[];
+  listed: number[];      // every strike listed for the expiry, ascending
+  subscribed: number[];  // the distinct strikes streamed, ascending
+}
 
 /**
  * Real-time prices from the Kite ticker for every F&O stock and watched stock, plus the four indices,
@@ -108,6 +119,9 @@ export class InPrices {
   private optionsByReport = new Map<number, ReportOptions>();
   private awaitingSpot = new Set<string>();
   private lastSaved = new Map<number, number>();
+  private lastResync = new Map<string, number>();
+  private instrumentsFailedAt = -Infinity;
+  private backingUp = false;
   private moveTimers = new Map<number, NodeJS.Timeout>();
   private syncing = false;
   private readonly deps: InPricesDeps;
@@ -187,30 +201,46 @@ export class InPrices {
   }
 
   /** Pick the option contracts for unreleased reports today and the next session, then resubscribe. */
-  private async syncOptions(): Promise<void> {
-    if (this.syncing || !this.session()) return;
+  private async syncOptions(): Promise<boolean> {
+    if (this.syncing || !this.session()) return false;
     this.syncing = true;
     try {
       const today = this.today();
       const reports = inReportsForSnapshot(this.db, today, nextNseTradingDay(addDaysIST(today, 1)), true);
-      const instruments = await this.deps.instruments();
-      if (!instruments) return;
       const spots = new Map<string, number>();
-      for (const [token, sym] of this.symbolOf) {
-        const t = this.ticks.get(token);
-        if (t) spots.set(sym, t.ltp);
+      for (const sym of this.tokenOf.keys()) {
+        const spot = this.spotOf(sym);
+        if (spot != null) spots.set(sym, spot);
+      }
+      this.awaitingSpot = new Set(reports.filter((r) => !spots.has(r.symbol)).map((r) => r.symbol));
+      const instruments = await this.deps.instruments();
+      if (!instruments) {
+        // Retry on a later price tick: every reporter counts as waiting.
+        this.instrumentsFailedAt = this.deps.now();
+        for (const r of reports) this.awaitingSpot.add(r.symbol);
+        return false;
       }
       this.options = optionTokensFor(instruments, reports, spots);
       this.optionsByReport = new Map();
       for (const [token, o] of this.options) {
         const r = reports.find((x) => x.id === o.reportId)!;
-        const e = this.optionsByReport.get(o.reportId)
-          ?? { symbol: r.symbol, expiry: chooseInExpiry(optionExpiries(instruments, r.symbol), r.reportDate, r.timing)!, tokens: [] };
+        let e = this.optionsByReport.get(o.reportId);
+        if (!e) {
+          const expiry = chooseInExpiry(optionExpiries(instruments, r.symbol), r.reportDate, r.timing)!;
+          const listed = [...new Set(filterOptionInstruments(instruments, r.symbol, expiry).map((i) => i.strike))].sort((a, b) => a - b);
+          e = { symbol: r.symbol, expiry, tokens: [], listed, subscribed: [] };
+          this.optionsByReport.set(o.reportId, e);
+        }
         e.tokens.push(token);
-        this.optionsByReport.set(o.reportId, e);
+        if (!e.subscribed.includes(o.strike)) e.subscribed.push(o.strike);
       }
-      this.awaitingSpot = new Set(reports.filter((r) => !spots.has(r.symbol)).map((r) => r.symbol));
+      const at = this.deps.now();
+      for (const e of this.optionsByReport.values()) {
+        e.subscribed.sort((a, b) => a - b);
+        this.lastResync.set(e.symbol, at);
+      }
       this.subscribe();
+      return true;
     } finally {
       this.syncing = false;
     }
@@ -223,8 +253,12 @@ export class InPrices {
     const sym = this.symbolOf.get(t.token);
     if (!sym) return;
     if (this.awaitingSpot.has(sym)) {
-      this.awaitingSpot.delete(sym);
-      void this.syncOptions(); // first price of a reporter: now its strikes are known
+      // First price of a reporter: now its strikes are known.
+      if (this.deps.now() - this.instrumentsFailedAt >= INSTRUMENTS_RETRY_MS) {
+        void this.syncOptions().then((ok) => { if (ok) this.awaitingSpot.delete(sym); });
+      }
+    } else if (this.leftStrikes(sym, t.ltp)) {
+      void this.syncOptions();
     }
     this.pending.add(sym);
     this.pushTimer ??= setTimeout(() => {
@@ -237,6 +271,22 @@ export class InPrices {
     }, PUSH_EVERY_MS);
   }
 
+  /** Today's last price of an equity; a tick from an earlier IST day is not a price to pick strikes by. */
+  private spotOf(sym: string): number | undefined {
+    const t = this.ticks.get(this.tokenOf.get(sym) ?? -1);
+    return t && new Date(t.at + IST_OFFSET_MS).toISOString().slice(0, 10) === this.today() ? t.ltp : undefined;
+  }
+
+  /** True when the price is beyond the second strike from either end of those streamed (and not re-picked in the last 30 s). */
+  private leftStrikes(sym: string, spot: number): boolean {
+    if (this.deps.now() - (this.lastResync.get(sym) ?? -Infinity) < RESYNC_EVERY_MS) return false;
+    for (const e of this.optionsByReport.values()) {
+      const s = e.subscribed;
+      if (e.symbol === sym && s.length > 0 && (s.length < 4 || spot < s[1]! || spot > s[s.length - 2]!)) return true;
+    }
+    return false;
+  }
+
   /** Saves at once when the last save is old enough, else when the window has passed. */
   private onOptionTick(reportId: number): void {
     if (this.moveTimers.has(reportId)) return;
@@ -247,7 +297,7 @@ export class InPrices {
 
   private saveMove(reportId: number): void {
     const plan = this.optionsByReport.get(reportId);
-    const spot = plan ? this.ticks.get(this.tokenOf.get(plan.symbol) ?? -1)?.ltp : undefined;
+    const spot = plan ? this.spotOf(plan.symbol) : undefined;
     if (!plan || !spot) return;
     const tops: OptionTop[] = [];
     let latest = 0;
@@ -260,6 +310,11 @@ export class InPrices {
     }
     const em = computeInExpectedMove(tops, spot, plan.expiry, plan.symbol);
     if (!em) return;
+    // The price may have left the streamed strikes: a far-away strike gives an in-the-money straddle, not the expected move.
+    const near = plan.listed.reduce((b, k) => (Math.abs(k - spot) < Math.abs(b - spot) ? k : b), plan.listed[0]!);
+    const i = plan.listed.indexOf(near);
+    const gaps = [plan.listed[i + 1]! - near, near - plan.listed[i - 1]!].filter((g) => g > 0);
+    if (gaps.length && Math.abs(em.strike - spot) > MAX_STRIKE_GAPS * Math.min(...gaps)) return;
     const now = this.deps.now();
     this.lastSaved.set(reportId, now);
     const changed = saveInLiveMove(this.db, reportId,
@@ -270,12 +325,28 @@ export class InPrices {
   /** Yahoo prices for equities silent for 2 minutes during the session. */
   async checkBackup(): Promise<void> {
     const now = this.deps.now();
-    if (!this.session() || !inSession(new Date(now).toISOString())) return;
+    // Also without a Kite session (login failed): the prices then come from Yahoo alone.
+    if (this.backingUp || !inSession(new Date(now).toISOString())) return;
+    this.backingUp = true;
+    try {
+      await this.backupPass(now);
+    } finally {
+      this.backingUp = false;
+    }
+  }
+
+  private async backupPass(now: number): Promise<void> {
     const due: string[] = [];
     for (const [token, sym] of this.symbolOf) {
       const last = Math.max(this.ticks.get(token)?.at ?? 0, this.lastTry.get(sym) ?? 0);
       if (now - last >= STALE_MS) due.push(sym);
     }
+    // Reporters of today and the next session first.
+    const today = this.today();
+    const range = { from: today, to: nextNseTradingDay(addDaysIST(today, 1)) };
+    const reporters = new Set([...inReportsForSnapshot(this.db, range.from, range.to, true).map((x) => x.symbol),
+      ...listInRange(this.db, { ...range, q: null }).map((x) => x.symbol)]);
+    due.sort((a, b) => Number(reporters.has(b)) - Number(reporters.has(a)));
     const out: Record<string, InLivePrice> = {};
     for (const sym of due.slice(0, BACKUP_PER_CHECK)) {
       const y = await this.deps.yahoo(sym).catch(() => null);

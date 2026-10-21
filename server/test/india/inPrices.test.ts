@@ -30,7 +30,14 @@ const option = (token: number, strike: number, type: 'CE' | 'PE'): KiteInstrumen
 const STRIKES = [970, 980, 990, 1000, 1010, 1020, 1030];
 const CHAIN = STRIKES.flatMap((k) => [option(1000 + k, k, 'CE'), option(2000 + k, k, 'PE')]);
 
-function setup(opts: { yahoo?: (s: string) => Promise<{ price: number; prevClose: number | null } | null> } = {}) {
+interface SetupOpts {
+  yahoo?: (s: string) => Promise<{ price: number; prevClose: number | null } | null>;
+  session?: typeof SESSION | null;
+  chain?: KiteInstrument[];
+  instruments?: () => Promise<KiteInstrument[] | null>;
+}
+
+function setup(opts: SetupOpts = {}) {
   const db = openDb(':memory:') as unknown as DatabaseSync;
   saveFoList(db, [
     { symbol: 'RELIANCE', name: 'RELIANCE INDUSTRIES', lotSize: 250 },
@@ -44,9 +51,9 @@ function setup(opts: { yahoo?: (s: string) => Promise<{ price: number; prevClose
   const stream = new FakeStream();
   const prices: Record<string, InLivePrice>[] = [];
   const moves: number[][] = [];
-  const p = new InPrices(db, () => SESSION, () => '2026-10-21', (x) => prices.push(x), {
+  const p = new InPrices(db, () => (opts.session === undefined ? SESSION : opts.session), () => '2026-10-21', (x) => prices.push(x), {
     makeStream: () => stream,
-    instruments: async () => CHAIN,
+    instruments: opts.instruments ?? (async () => opts.chain ?? CHAIN),
     yahoo: opts.yahoo ?? (async () => null),
     onMoves: (ids) => moves.push(ids),
   });
@@ -132,5 +139,97 @@ describe('Yahoo backup for silent equities', () => {
     vi.setSystemTime(new Date('2026-10-21T14:00:00.000Z')); // 19:30 IST
     await p.checkBackup();
     expect(yahoo).not.toHaveBeenCalled();
+  });
+});
+
+const WIDE = Array.from({ length: 21 }, (_, i) => 900 + i * 10).flatMap((k) => [option(1000 + k, k, 'CE'), option(2000 + k, k, 'PE')]);
+const quoteAll = (stream: FakeStream, strike: number) => {
+  stream.emit('tick', tick(2000 + strike, 28, { bid: 28, ask: 29 }));
+  stream.emit('tick', tick(1000 + strike, 29.5, { bid: 29.5, ask: 31 }));
+};
+
+describe('stale strikes', () => {
+  it('no live move is saved when the nearest quoted strike is more than 1.5 strike gaps from the price', async () => {
+    const { p, stream, db, reportId } = setup();
+    await p.refresh();
+    stream.emit('tick', tick(10, 1000));
+    await vi.advanceTimersByTimeAsync(0);
+    quoteAll(stream, 1000);
+    expect(liveMove(db, reportId)!.movePct).toBe(5.88);
+    stream.emit('tick', tick(10, 1100)); // gapped away from every subscribed strike (gap 10)
+    stream.emit('tick', tick(1000 + 1000, 40, { bid: 40, ask: 41 }));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(liveMove(db, reportId)!.movePct).toBe(5.88);
+  });
+
+  it('re-subscribes the strikes when the price leaves the middle of them, at most once per 30 s', async () => {
+    const { p, stream } = setup({ chain: WIDE });
+    await p.refresh();
+    stream.emit('tick', tick(10, 1000));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.last.full).not.toContain(2050);
+    const calls = stream.sets.length;
+    await vi.advanceTimersByTimeAsync(31_000);
+    stream.emit('tick', tick(10, 1050));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.last.full).toContain(2050);
+    const after = stream.sets.length;
+    expect(after).toBeGreaterThan(calls);
+    stream.emit('tick', tick(10, 1100)); // within 30 s of the last re-pick
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.sets.length).toBe(after);
+  });
+
+  it("yesterday's last tick does not pick today's strikes", async () => {
+    const { p, stream } = setup();
+    vi.setSystemTime(new Date('2026-10-20T05:00:00.000Z'));
+    await p.refresh();
+    stream.emit('tick', tick(10, 1000));
+    await vi.advanceTimersByTimeAsync(0);
+    vi.setSystemTime(new Date(NOW));
+    await p.refresh();
+    expect(stream.last.full).toEqual([]);
+    stream.emit('tick', tick(10, 1000));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.last.full.length).toBe(12);
+  });
+
+  it('a failed instrument load is retried on the next price tick', async () => {
+    let calls = 0;
+    const { p, stream } = setup({ instruments: async () => (++calls === 1 ? null : CHAIN) });
+    await p.refresh(); // 1: nothing yet
+    stream.emit('tick', tick(10, 1000)); // 2: instruments missing
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.last.full).toEqual([]);
+    await vi.advanceTimersByTimeAsync(11_000);
+    stream.emit('tick', tick(10, 1001)); // 3: loaded
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.last.full.length).toBe(12);
+  });
+});
+
+describe('Yahoo backup resilience', () => {
+  it('runs without a Kite session (login failed) during the session', async () => {
+    const yahoo = vi.fn(async () => ({ price: 5, prevClose: 4 }));
+    const { p } = setup({ yahoo, session: null });
+    await p.refresh();
+    await vi.advanceTimersByTimeAsync(121_000);
+    await p.checkBackup();
+    expect(yahoo).toHaveBeenCalledTimes(3);
+    expect(p.snapshot().RELIANCE).toMatchObject({ price: 5, source: 'backup' });
+  });
+
+  it('skips a pass while the previous one is still running', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const yahoo = vi.fn(async () => { await gate; return { price: 5, prevClose: 4 }; });
+    const { p } = setup({ yahoo });
+    await p.refresh();
+    await vi.advanceTimersByTimeAsync(121_000);
+    const first = p.checkBackup();
+    await p.checkBackup();
+    release();
+    await first;
+    expect(yahoo).toHaveBeenCalledTimes(3);
   });
 });
