@@ -5,7 +5,7 @@ import { StockList } from '../src/components/StockList';
 
 const dto = (over: Partial<ReportDto>): ReportDto => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2026-10-15', fiscalQuarter: 'Sep/2026',
-  timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
+  releasedAt: null, timing: 'BMO', timingSource: 'nasdaq', sessionClose: '16:00', rescheduledFrom: null, exchange: 'NYSE',
   sector: 'Technology', industry: 'Semiconductors', marketCap: 2.31e12, marketCapAsOf: '2026-10-15',
   eps: { estimate: 4.45, actual: null, surprisePct: null, result: null, noOfEsts: 6, lastYear: 2.92, lastYearReportDate: '2025-10-16' },
   revenue: { estimate: 3.3e10, actual: null, surprisePct: null, result: null, currency: 'USD' },

@@ -1,6 +1,7 @@
 import { buildServer } from './api/server.js';
 import { Broadcaster, registerStream } from './api/stream.js';
 import { LivePrices } from './live/livePrices.js';
+import { SecWatch } from './live/secWatch.js';
 import { config } from './config.js';
 import { openDb } from './db/repo.js';
 import { todayET } from './domain/marketCalendar.js';
@@ -64,6 +65,11 @@ const job = startScheduler(ctx, (ids) => live.publish('results', { ids }), (ids)
 // Warm the cache on start, under the scheduler's overlap guard; failures are recorded in /api/status.
 void warmUp(ctx, job);
 if (config.finnhubToken) prices.start();
+// One shared SEC client (<= 10 req/s overall). The 8-K watcher flips US reports to released within seconds.
+if (config.secUserAgent) {
+  const secHttp = makeHttp({ minIntervalMs: 120, headers: { 'User-Agent': config.secUserAgent } });
+  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids })).start(5000);
+}
 
 startInScheduler(inCtx, job, {
   onResults: (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); },

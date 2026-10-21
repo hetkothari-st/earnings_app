@@ -116,6 +116,7 @@ export interface ReportRecord {
   secAcceptedAt: string | null;   // ET wall clock, YYYY-MM-DDTHH:mm:ss
   secDocUrl: string | null;
   secIndexUrl: string | null;
+  releasedAt: string | null;
   calendarFetchedAt: string | null;
   revenueFetchedAt: string | null;
   secCheckedAt: string | null;

@@ -2,6 +2,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { SourceStatusDto } from '../api/types.js';
+import { DateTime } from 'luxon';
+import { ET, sessionClose } from '../domain/marketCalendar.js';
 import { normalizeTicker } from '../domain/ticker.js';
 import { ensureInSchema } from '../india/db/inRepo.js';
 import type {
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS reports (
   sec_check TEXT,
   sec_accepted_at TEXT,
   sec_doc_url TEXT,
+  released_at TEXT,
+  release_source TEXT,
   sec_index_url TEXT,
   calendar_fetched_at TEXT,
   revenue_fetched_at TEXT,
@@ -131,7 +135,7 @@ interface ReportRow {
   market_cap: number | null; market_cap_as_of: string | null; eps_estimate: number | null; eps_actual: number | null;
   eps_surprise_pct: number | null; eps_actual_source: string | null; eps_conflict: string | null; no_of_ests: number | null; last_year_eps: number | null; last_year_rpt_dt: string | null; revenue_estimate: number | null; revenue_actual: number | null; revenue_currency: string | null;
   exchange: string | null; sec_check: SecCheck | null; sec_accepted_at: string | null; sec_doc_url: string | null;
-  sec_index_url: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
+  sec_index_url: string | null; released_at: string | null; release_source: string | null; calendar_fetched_at: string | null; revenue_fetched_at: string | null; sec_checked_at: string | null;
   prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: PrevMoveBasis | null; sector: string | null; industry: string | null;
 }
 
@@ -156,6 +160,7 @@ function toRecord(r: JoinedRow): ReportRecord {
     lastYearEps: r.last_year_eps, lastYearReportDate: r.last_year_rpt_dt,
     revenueEstimate: r.revenue_estimate, revenueActual: r.revenue_actual, revenueCurrency: r.revenue_currency, exchange: r.exchange,
     secCheck: r.sec_check, secAcceptedAt: r.sec_accepted_at, secDocUrl: r.sec_doc_url, secIndexUrl: r.sec_index_url,
+    releasedAt: r.released_at,
     calendarFetchedAt: r.calendar_fetched_at, revenueFetchedAt: r.revenue_fetched_at, secCheckedAt: r.sec_checked_at,
     expectedMove: r.em_snapshot_at == null ? null : {
       expiry: r.em_expiry!, strike: r.em_strike!, callMid: r.em_call_mid!, putMid: r.em_put_mid!,
@@ -394,6 +399,52 @@ export function setSecResult(
   db.prepare(`UPDATE reports SET sec_check = ?, timing = ?, timing_source = ?, sec_accepted_at = ?, sec_doc_url = ?,
       sec_index_url = ?, sec_checked_at = ? WHERE id = ?`)
     .run(r.check, r.timing, r.timingSource, r.acceptedAt, r.docUrl, r.indexUrl, now, id);
+}
+
+/** The nearest report within +-3 calendar days of `date` that is not yet released (same day preferred). */
+export function reportForRelease(
+  db: Db, symbolKey: string, date: string,
+): { id: number; reportDate: string; releasedAt: string | null } | null {
+  const lo = shiftDate(date, -3);
+  const hi = shiftDate(date, 3);
+  const rows = db.prepare(`SELECT id, report_date AS reportDate, released_at AS releasedAt FROM reports
+      WHERE symbol_key = ? AND report_date BETWEEN ? AND ? AND released_at IS NULL`)
+    .all(symbolKey, lo, hi) as unknown as { id: number; reportDate: string; releasedAt: string | null }[];
+  const dist = (d: string) => Math.abs(Date.parse(`${d}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`));
+  rows.sort((a, b) => dist(a.reportDate) - dist(b.reportDate) || a.reportDate.localeCompare(b.reportDate));
+  return rows[0] ?? null;
+}
+
+/** True if a report for this key within +-3 days of `date` was already released. */
+export function hasReleasedNear(db: Db, symbolKey: string, date: string): boolean {
+  return db.prepare(`SELECT 1 FROM reports WHERE symbol_key = ? AND report_date BETWEEN ? AND ? AND released_at IS NOT NULL LIMIT 1`)
+    .get(symbolKey, shiftDate(date, -3), shiftDate(date, 3)) !== undefined;
+}
+
+function shiftDate(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Mark a report as released. Earliest time wins; the date and timing follow the actual release. Returns true if anything changed. */
+export function markReleased(db: Db, id: number, releasedAt: string, source: 'sec-8k'): boolean {
+  const existing = db.prepare('SELECT * FROM reports WHERE id = ?').get(id) as unknown as ReportRow | undefined;
+  if (!existing) return false;
+  if (existing.released_at && existing.released_at <= releasedAt) return false;
+
+  const et = DateTime.fromISO(releasedAt, { zone: 'utc' }).setZone(ET);
+  const etDate = et.toISODate()!;
+  let close: '16:00' | '13:00' = '16:00';
+  try { close = sessionClose(etDate); } catch { /* calendar missing for this year: assume a full session */ }
+  const minutes = et.hour * 60 + et.minute;
+  const closeMin = Number(close.slice(0, 2)) * 60;
+  const timing: Timing = minutes < 9 * 60 + 30 ? 'BMO' : minutes >= closeMin ? 'AMC' : 'DMH';
+
+  const moved = existing.report_date !== etDate;
+  db.prepare(`UPDATE reports SET released_at = ?, release_source = ?, report_date = ?, rescheduled_from = ?,
+      timing = ?, timing_source = 'sec' WHERE id = ?`)
+    .run(releasedAt, source, etDate, moved ? existing.report_date : existing.rescheduled_from, timing, id);
+  if (moved || timing !== existing.timing) dropExpectedMove(db, id);
+  return true;
 }
 
 /** Reports dated in [from, to] that have no final expected-move snapshot yet. */

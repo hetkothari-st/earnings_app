@@ -45,6 +45,7 @@ export function toDto(r: ReportRecord): ReportDto {
     timingSource: r.timingSource,
     sessionClose: close,
     rescheduledFrom: r.rescheduledFrom,
+    releasedAt: r.releasedAt,
     exchange: r.exchange,
     sector: r.sector,
     industry: r.industry,
