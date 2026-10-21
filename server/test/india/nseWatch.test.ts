@@ -14,12 +14,12 @@ const URL_ = 'https://nsearchives.nseindia.com/content/RSS/Online_announcements.
 const ITEM = `<item><title>Tata Communications Limited</title><link>https://nsearchives.nseindia.com/corporate/TATACOMM_15102026.pdf</link><description>Tata Communications Limited has informed the Exchange regarding Financial Results for the quarter ended September 30, 2026 |SUBJECT: Outcome of Board Meeting</description><pubDate>15-Oct-2026 15:10:00</pubDate></item>`;
 const feed = (items: string) => fixture('rss_Online_announcements.xml').replace('</channel>', `${items}</channel>`);
 
-function setup(body: () => string | Promise<string>, withRow = true) {
+function setup(body: () => string | Promise<string>, withRow: boolean | string = true, status: 'confirmed' | 'estimated' = 'confirmed') {
   const db = openDb(':memory:') as unknown as DatabaseSync;
   const now = '2026-10-15T10:00:00.000Z';
   saveFoList(db, [{ symbol: 'TATACOMM', name: 'TATA COMMUNICATIONS', lotSize: 350 }], now);
   loadFoCache(db);
-  if (withRow) upsertInCalendarRow(db, { symbol: 'TATACOMM', name: 'Tata Communications', quarterEnd: '2026-09-30', quarterLabel: 'Sep/2026', reportDate: '2026-10-15' }, now);
+  if (withRow) upsertInCalendarRow(db, { symbol: 'TATACOMM', name: 'Tata Communications', quarterEnd: '2026-09-30', quarterLabel: 'Sep/2026', reportDate: typeof withRow === 'string' ? withRow : '2026-10-15', dateStatus: status }, now);
   const http: Http = { text: async () => body(), json: async () => { throw new Error('unused'); } };
   const ctx: InJobContext = {
     db, http, kite: { quotes: async () => new Map(), candles: async () => [] }, kiteSession: () => null,
@@ -63,7 +63,7 @@ describe('NseWatch', () => {
   it('HTML instead of RSS: [] and state recorded', async () => {
     const { db, ctx } = setup(() => '<html>Request Rate Threshold Exceeded</html>');
     expect(await new NseWatch(ctx, () => {}).tick()).toEqual([]);
-    expect(db.prepare("SELECT state FROM source_status WHERE source = 'nse-announcements-fast'").get()).toMatchObject({ state: expect.any(String) });
+    expect(db.prepare("SELECT state FROM source_status WHERE source = 'nse-announcements-fast'").get()).toMatchObject({ state: 'blocked' });
     expect(db.prepare("SELECT last_error FROM source_status WHERE source = 'nse-announcements-fast'").get())
       .toMatchObject({ last_error: expect.stringMatching(/blocked/) });
   });
@@ -72,5 +72,33 @@ describe('NseWatch', () => {
     const { db, ctx } = setup(() => { throw new HttpError(403, URL_); });
     expect(await new NseWatch(ctx, () => {}).tick()).toEqual([]);
     expect(db.prepare("SELECT state FROM source_status WHERE source = 'nse-announcements-fast'").get()).toMatchObject({ state: 'blocked' });
+  });
+
+  const moved = (db: DatabaseSync) => rows(db)[0]!;
+  it.each([['1 day early', '2026-10-16'], ['1 day late', '2026-10-14']])('released %s: flips, date moves, rescheduled_from set', async (_n, calDate) => {
+    const { db, ctx } = setup(() => feed(ITEM), calDate);
+    expect(await new NseWatch(ctx, () => {}).tick()).toHaveLength(1);
+    expect(moved(db)).toMatchObject({ reportDate: '2026-10-15', rescheduledFrom: calDate, timingSource: 'nse-announcement' });
+    expect(rows(db)).toHaveLength(1);
+  });
+
+  it('an estimated row that moves also gets rescheduled_from', async () => {
+    const { db, ctx } = setup(() => feed(ITEM), '2026-10-17', 'estimated');
+    await new NseWatch(ctx, () => {}).tick();
+    expect(moved(db)).toMatchObject({ reportDate: '2026-10-15', rescheduledFrom: '2026-10-17', dateStatus: 'estimated' });
+  });
+
+  it('5 days off from an unreleased row: nothing flips, row untouched', async () => {
+    const { db, ctx } = setup(() => feed(ITEM), '2026-10-20');
+    expect(await new NseWatch(ctx, () => {}).tick()).toEqual([]);
+    expect(rows(db)).toHaveLength(1);
+    expect(moved(db)).toMatchObject({ reportDate: '2026-10-20', rescheduledFrom: null, releasedAt: null });
+  });
+
+  it('old feed items (replayed after a restart) are ignored', async () => {
+    const old = ITEM.replace('15-Oct-2026 15:10:00', '10-Oct-2026 15:10:00');
+    const { db, ctx } = setup(() => feed(old), false);
+    expect(await new NseWatch(ctx, () => {}).tick()).toEqual([]);
+    expect(rows(db)).toHaveLength(0);
   });
 });

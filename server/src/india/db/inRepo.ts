@@ -316,6 +316,26 @@ export function reportOnDate(db: DatabaseSync, symbol: string, date: string): nu
   return r?.id ?? null;
 }
 
+/** The unreleased report of `symbol` (any quarter) dated nearest to `day`, within `windowDays` calendar days. */
+export function nearestUnreleasedReport(db: DatabaseSync, symbol: string, day: string, windowDays = 3): { id: number; reportDate: string } | null {
+  const r = db.prepare(`SELECT id, report_date AS reportDate FROM in_reports
+    WHERE symbol = ? AND released_at IS NULL AND eps_actual IS NULL AND report_date IS NOT NULL
+      AND abs(julianday(report_date) - julianday(?)) <= ?
+    ORDER BY abs(julianday(report_date) - julianday(?)), report_date LIMIT 1`).get(symbol, day, windowDays, day) as { id: number; reportDate: string } | undefined;
+  return r ?? null;
+}
+
+/**
+ * The report came out on another day than the calendar said: move it. The old date is always kept in
+ * rescheduled_from; timing goes back to unknown and the expected/live moves of the old date are dropped.
+ */
+export function moveReportDate(db: DatabaseSync, id: number, newDate: string): void {
+  db.prepare(`UPDATE in_reports SET rescheduled_from = report_date, report_date = ?, timing = 'UNKNOWN', timing_source = NULL
+      WHERE id = ? AND report_date IS NOT ?`).run(newDate, id, newDate);
+  db.prepare('DELETE FROM in_expected_moves WHERE report_id = ?').run(id);
+  db.prepare('DELETE FROM in_live_moves WHERE report_id = ?').run(id);
+}
+
 export function listInRange(db: DatabaseSync, f: { from: string; to: string; q: string | null }): InReport[] {
   const where = ['r.report_date BETWEEN ? AND ?'];
   const params: (string | number)[] = [f.from, f.to];

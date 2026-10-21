@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
-import { mergeInFiling, recordRelease, reportOnDate, upsertInCalendarRow } from '../db/inRepo.js';
-import { addDaysIST, IST } from '../domain/nseCalendar.js';
+import { findInReportId, mergeInFiling, moveReportDate, nearestUnreleasedReport, recordRelease, reportOnDate, upsertInCalendarRow } from '../db/inRepo.js';
+import { addDaysIST, IST, timingForRelease } from '../domain/nseCalendar.js';
 import { latestQuarterEndBefore, quarterLabel } from '../domain/quarter.js';
 import { fetchNseRss, isResultSubject, parseAnnouncementDescription, resolveIntegratedFilingUrl, type RssItem } from '../sources/nseRss.js';
 import { resolveSymbol } from '../sources/symbolMatch.js';
@@ -38,6 +38,8 @@ export function handleAnnouncements(ctx: InJobContext, items: RssItem[], onFlipp
   if (!fo) return [];
   const changed: number[] = [];
   for (const item of items) {
+    // After a restart the feed replays old items: ignore anything older than two days.
+    if (Date.parse(ctx.now()) - item.pubDate.toMillis() > 2 * 86_400_000) continue;
     const key = `${item.link}|${item.pubDateRaw}`;
     if (announcements.has(key)) continue;
     announcements.add(key);
@@ -46,16 +48,29 @@ export function handleAnnouncements(ctx: InJobContext, items: RssItem[], onFlipp
     const symbol = resolveSymbol(item.title, fo.nameIndex);
     if (!symbol) continue;
     const day = item.pubDate.setZone(IST).toISODate()!;
-    // Same-day release, or one just after midnight for a meeting the day before.
-    let id = reportOnDate(ctx.db, symbol, day) ?? reportOnDate(ctx.db, symbol, addDaysIST(day, -1));
-    if (id == null) {
-      // A results announcement for an F&O stock whose notice we never saw: make the report now.
+    const releasedAt = item.pubDate.toUTC().toISO()!;
+    let id: number | null;
+    const near = nearestUnreleasedReport(ctx.db, symbol, day);
+    if (near) {
+      id = near.id;
+      // Fine as dated (same day, or just after midnight for a meeting the day before); otherwise it came out on another day.
+      if (!timingForRelease(near.reportDate, item.pubDate)) moveReportDate(ctx.db, id, day);
+    } else {
+      // Already released: keep the earliest time. Otherwise a quarter we know about but cannot place is only logged.
+      id = reportOnDate(ctx.db, symbol, day) ?? reportOnDate(ctx.db, symbol, addDaysIST(day, -1));
       const quarterEnd = latestQuarterEndBefore(day);
-      id = upsertInCalendarRow(ctx.db, {
-        symbol, name: fo.names.get(symbol) ?? symbol, quarterEnd, quarterLabel: quarterLabel(quarterEnd), reportDate: day,
-      }, ctx.now());
+      if (id == null && findInReportId(ctx.db, symbol, quarterEnd) != null) {
+        console.warn(`[nse-watch] ${symbol}: results announcement on ${day} matches no unreleased report within 3 days (${item.title})`);
+        continue;
+      }
+      if (id == null) {
+        // A results announcement for an F&O stock whose notice we never saw: make the report now.
+        id = upsertInCalendarRow(ctx.db, {
+          symbol, name: fo.names.get(symbol) ?? symbol, quarterEnd, quarterLabel: quarterLabel(quarterEnd), reportDate: day,
+        }, ctx.now());
+      }
     }
-    if (recordRelease(ctx.db, id, item.pubDate.toUTC().toISO()!, 'nse-announcement') && !changed.includes(id)) {
+    if (recordRelease(ctx.db, id, releasedAt, 'nse-announcement') && !changed.includes(id)) {
       changed.push(id);
       onFlipped?.(item, id);
     }
