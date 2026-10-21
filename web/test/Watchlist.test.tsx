@@ -9,6 +9,8 @@ type Calls = { url: string; method: string }[];
 let calls: Calls;
 let lists: Record<'US' | 'IN', string[]>;
 let rowsBody: Record<'US' | 'IN', unknown[]>;
+let putStatus: number;
+let putGate: Promise<void> | null;
 
 const usReport = (over: Record<string, unknown> = {}) => ({
   id: 1, symbol: 'TSM', name: 'Taiwan Semiconductor', reportDate: '2999-10-15', fiscalQuarter: 'Sep/2999', timing: 'BMO',
@@ -23,6 +25,8 @@ beforeEach(() => {
   calls = [];
   lists = { US: [], IN: ['RELIANCE'] };
   rowsBody = { US: [], IN: [] };
+  putStatus = 204;
+  putGate = null;
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     calls.push({ url, method });
@@ -36,6 +40,10 @@ beforeEach(() => {
     const m = /^\/api\/watchlist\/(US|IN)\/(.+)$/.exec(path!);
     if (m) {
       const sym = decodeURIComponent(m[2]!);
+      if (method === 'PUT') {
+        if (putGate) await putGate;
+        if (putStatus !== 204) return json(putStatus, { error: 'no' });
+      }
       const l = lists[m[1] as 'US' | 'IN'];
       if (method === 'PUT' && !l.includes(sym)) l.push(sym);
       if (method === 'DELETE') lists[m[1] as 'US' | 'IN'] = l.filter((s) => s !== sym);
@@ -122,4 +130,29 @@ test('India and US lists are separate', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Remove M&M from watchlist' }));
   await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url === '/api/watchlist/IN/M%26M')).toBe(true));
   expect(lists.US).toEqual([]);
+});
+
+test('a refused add shows a message and the star goes back off', async () => {
+  putStatus = 400;
+  render(<Calendar />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Add TSM to watchlist' }));
+  expect((await screen.findByRole('alert')).textContent).toBe('Could not add TSM: not a listed symbol');
+  expect((await screen.findByRole('button', { name: 'Add TSM to watchlist' })).className).not.toContain('on');
+});
+
+test('rows are fetched again after the add is confirmed, so the new symbol shows', async () => {
+  let release!: () => void;
+  putGate = new Promise<void>((r) => { release = r; });
+  render(<Calendar />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Watchlist' }));
+  const box = await screen.findByRole('combobox', { name: /Add a stock/ });
+  await screen.findByText(/Nothing on your watchlist/);
+  fireEvent.change(box, { target: { value: 'ts' } });
+  fireEvent.click(await screen.findByRole('option', { name: /TSM/ }));
+  rowsBody.US = [{ symbol: 'TSM', name: 'Taiwan Semiconductor', next: null, latest: null }];
+  const before = calls.filter((c) => c.url.startsWith('/api/watchlist/rows')).length;
+  await new Promise((r) => setTimeout(r, 50));
+  expect(calls.filter((c) => c.url.startsWith('/api/watchlist/rows')).length).toBe(before);
+  release();
+  expect(await screen.findByText('Taiwan Semiconductor', { selector: '.wl-name' })).toBeTruthy();
 });

@@ -138,14 +138,19 @@ export async function fetchWatchlist(market: 'US' | 'IN'): Promise<string[]> {
 
 const watchUrl = (market: 'US' | 'IN', symbol: string) => `/api/watchlist/${market}/${encodeURIComponent(symbol)}`;
 
+/** An API failure that keeps the HTTP status, so callers can word the message. */
+export class HttpError extends Error {
+  constructor(public status: number) { super(`Server returned ${status}`); }
+}
+
 export async function putWatch(market: 'US' | 'IN', symbol: string): Promise<void> {
   const res = await apiFetch(watchUrl(market, symbol), { method: 'PUT' });
-  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  if (!res.ok) throw new HttpError(res.status);
 }
 
 export async function deleteWatch(market: 'US' | 'IN', symbol: string): Promise<void> {
   const res = await apiFetch(watchUrl(market, symbol), { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  if (!res.ok) throw new HttpError(res.status);
 }
 
 export async function searchSymbols(market: 'US' | 'IN', q: string, signal?: AbortSignal): Promise<{ symbol: string; name: string; exchange: string }[]> {

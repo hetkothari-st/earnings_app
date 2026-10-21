@@ -8,6 +8,7 @@ import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, 
 import type { Market } from '../lib/market';
 import { todayEt } from '../lib/time';
 import { SymbolSearch } from './SymbolSearch';
+import { Star } from './Star';
 import { Tags } from './Tags';
 
 type Price = { price: number; changePct: number | null };
@@ -15,7 +16,6 @@ type Report = ReportDto | InReportDto;
 
 interface Props {
   market: Market;
-  zone: string;
   prices: Record<string, Price>;
   watch: Watchlist;
   /** Changes whenever results or moves arrive on the live stream. */
@@ -67,7 +67,6 @@ function Latest({ latest, market }: { latest: WatchRow['latest']; market: Market
 export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
   const [rows, setRows] = useState<WatchRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const key = [...watch.symbols].sort().join(',');
 
   useEffect(() => {
     const ac = new AbortController();
@@ -75,7 +74,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
       .then((r) => { setRows(r.rows); setError(null); })
       .catch((e: Error) => { if (!ac.signal.aborted) setError(e.message); });
     return () => ac.abort();
-  }, [market, key, reloadKey]);
+  }, [market, watch.version, reloadKey]);
 
   const t = today(market);
   const shown = (rows ?? []).filter((r) => watch.symbols.has(r.symbol));
@@ -118,7 +117,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
                   <span data-testid="latest-date">{latestDate}</span>
                   <Latest latest={r.latest} market={market} />
                 </span>
-                <button className="star on" aria-label={`Remove ${r.symbol} from watchlist`} onClick={() => { watch.remove(r.symbol).catch(() => {}); }}>★</button>
+                <Star symbol={r.symbol} on onToggle={(s) => { watch.remove(s).catch(() => {}); }} />
               </li>
             );
           })}

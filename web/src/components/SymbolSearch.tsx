@@ -20,7 +20,7 @@ export function SymbolSearch({ market, onPick }: { market: Market; onPick: (symb
     const timer = window.setTimeout(() => {
       searchSymbols(market, q)
         .then((r) => { if (id === seq.current) { setHits(r); setActive(r.length ? 0 : -1); setOpen(true); } })
-        .catch(() => {});
+        .catch(() => { if (id === seq.current) { setHits([]); setActive(-1); } });
     }, 200);
     return () => window.clearTimeout(timer);
   }, [text, market]);

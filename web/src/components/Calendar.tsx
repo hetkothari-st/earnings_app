@@ -141,8 +141,9 @@ export function Calendar() {
       {market === 'US' && load.status === 'ok' && <StaleBanner sources={load.data.sources} />}
 
       <main className="content">
+        {watch.error && <p className="warn-text" role="alert">{watch.error}</p>}
         {showWatch && (
-          <WatchlistView market={market} zone={zone} prices={market === 'IN' ? inPrices : prices} watch={watch} reloadKey={reloadKey} />
+          <WatchlistView market={market} prices={market === 'IN' ? inPrices : prices} watch={watch} reloadKey={reloadKey} />
         )}
         {/* US day view: session band */}
         {!showWatch && market === 'US' && load.status === 'ok' && view === 'day' && usRows.length > 0 && (
