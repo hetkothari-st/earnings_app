@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import type { WatchRowsResponse } from '../../src/api/types.js';
 import { createSession, ensureAuthSchema } from '../../src/auth/store.js';
-import { type Db, openDb, upsertCalendarRow } from '../../src/db/repo.js';
-import { listInForSymbols, listInRange, saveFoList, syncWatched, upsertInCalendarRow } from '../../src/india/db/inRepo.js';
+import { type Db, listRange, openDb, reportForRelease, upsertCalendarRow } from '../../src/db/repo.js';
+import { listInForSymbols, listInRange, recordRelease, saveFoList, syncWatched, upsertInCalendarRow } from '../../src/india/db/inRepo.js';
 import type { InJobContext } from '../../src/india/jobs/context.js';
 import { resetInResultsState } from '../../src/india/jobs/results.js';
 import { getFoCache, loadFoCache } from '../../src/india/jobs/stocks.js';
@@ -107,10 +107,28 @@ describe('GET /api/watchlist/rows', () => {
     addWatch(db, '1A', 'IN', 'INFY', clock + 1000);
     syncWatched(dbn, ['RELAXO', 'INFY'], new Map([['RELAXO', 'RELAXO FOOTWEARS']]), NOW);
     upsertInCalendarRow(dbn, { symbol: 'RELAXO', name: 'RELAXO FOOTWEARS', quarterEnd: '2026-09-30', quarterLabel: 'Sep/2026', reportDate: '2026-10-28' }, NOW);
-    upsertInCalendarRow(dbn, { symbol: 'RELAXO', name: 'RELAXO FOOTWEARS', quarterEnd: '2026-06-30', quarterLabel: 'Jun/2026', reportDate: '2026-08-05' }, NOW);
+    const jun = upsertInCalendarRow(dbn, { symbol: 'RELAXO', name: 'RELAXO FOOTWEARS', quarterEnd: '2026-06-30', quarterLabel: 'Jun/2026', reportDate: '2026-08-05' }, NOW);
+    recordRelease(dbn, jun, '2026-08-05T10:00:00.000Z', 'nse-announcement');
     const body = (await get('IN')).json() as WatchRowsResponse;
     expect(body.rows[0]).toMatchObject({ symbol: 'RELAXO', next: { fiscalQuarter: 'Sep/2026' }, latest: { fiscalQuarter: 'Jun/2026' } });
     expect(body.rows[1]).toEqual({ symbol: 'INFY', name: 'INFOSYS', next: null, latest: null });
+  });
+
+  test('Yahoo-backup history is latest only when no report has an actual, with a null date', async () => {
+    addWatch(db, '1A', 'US', 'AAPL', clock);
+    db.prepare(`INSERT INTO watch_history VALUES ('AAPL', 'Jun/2026', '2026-06-30', 1.91, 'yahoo', ?)`).run(NOW);
+    const first = ((await get('US')).json() as WatchRowsResponse).rows[0]!;
+    expect(first.latest).toMatchObject({ source: 'yahoo', reportDate: null, fiscalQuarter: 'Jun/2026', eps: { actual: 1.91 } });
+    upsertCalendarRow(db, us('Mar/2026', '2026-04-30', 2.01), NOW, '2026-04-30');
+    expect(((await get('US')).json() as WatchRowsResponse).rows[0]!.latest).toMatchObject({ fiscalQuarter: 'Mar/2026', reportDate: '2026-04-30' });
+  });
+
+  test('a report dated before today with no actual and not released is next, not latest', async () => {
+    addWatch(db, '1A', 'US', 'AAPL', clock);
+    upsertCalendarRow(db, us('Sep/2026', '2026-10-10', null), NOW, '2026-10-10');
+    const row = ((await get('US')).json() as WatchRowsResponse).rows[0]!;
+    expect(row.latest).toBeNull();
+    expect(row.next).toMatchObject({ fiscalQuarter: 'Sep/2026' });
   });
 
   test('rows needs sign-in and a market', async () => {
@@ -134,6 +152,10 @@ describe('US watch backfill', () => {
   let db: Db;
   beforeEach(() => { db = openDb(':memory:'); });
   const mk = (sources: Partial<Sources>): JobContext => ({ db, sources: sources as Sources, now: () => NOW, today: () => '2026-10-15' });
+  const us = (fiscalQuarter: string, reportDate: string) => ({
+    symbol: 'AAPL', name: 'Apple Inc.', reportDate, fiscalQuarter, timing: 'AMC' as const, marketCap: null, epsEstimate: 1.5, noOfEsts: 10,
+    epsActual: 1.9 as number | null, epsSurprisePct: 6 as number | null, lastYearEps: null, lastYearReportDate: null,
+  });
   const rows = () => db.prepare('SELECT symbol_key, fiscal_quarter, report_date, eps_actual, eps_estimate, eps_actual_source FROM reports ORDER BY report_date').all();
 
   test('the real Nasdaq earnings-surprise response parses to past quarters', () => {
@@ -158,9 +180,12 @@ describe('US watch backfill', () => {
     await backfill('AAPL'); // already done: no second fetch
     expect(yahooCalls).toBe(1);
     expect(nasdaqCalls).toBe(1);
-    expect(rows()).toMatchObject([
-      { symbol_key: 'AAPL', fiscal_quarter: 'Mar/2026', eps_actual: 2.01, eps_actual_source: 'yahoo' },
-      { symbol_key: 'AAPL', fiscal_quarter: 'Jun/2026', eps_actual: 1.91, eps_actual_source: 'yahoo' },
+    // Yahoo gives no report date: nothing goes into reports (calendar, release matching); it goes to watch_history.
+    expect(rows()).toEqual([]);
+    expect(listRange(db, { from: '2000-01-01', to: '2099-12-31', minCap: null, q: null })).toEqual([]);
+    expect(db.prepare('SELECT fiscal_quarter, period_end, eps_actual, source FROM watch_history ORDER BY period_end').all()).toMatchObject([
+      { fiscal_quarter: 'Mar/2026', period_end: '2026-03-31', eps_actual: 2.01, source: 'yahoo' },
+      { fiscal_quarter: 'Jun/2026', period_end: '2026-06-30', eps_actual: 1.91, source: 'yahoo' },
     ]);
   });
 
@@ -176,6 +201,20 @@ describe('US watch backfill', () => {
       { fiscal_quarter: 'Mar/2026', eps_actual: 2.01 },
       { fiscal_quarter: 'Jun/2026', eps_actual: 1.95, eps_estimate: 1.9, eps_actual_source: 'nasdaq' },
     ]);
+  });
+
+  test('a backfilled row with an actual is not a release candidate; the real unreleased row is', () => {
+    upsertCalendarRow(db, us('Jun/2026', '2026-10-14'), NOW, '2026-10-14'); // backfilled history, actual present
+    upsertCalendarRow(db, { ...us('Sep/2026', '2026-10-16'), epsActual: null, epsSurprisePct: null }, NOW, '2026-10-15');
+    const hit = reportForRelease(db, 'AAPL', '2026-10-15')!;
+    expect(hit.reportDate).toBe('2026-10-16');
+  });
+
+  test('fill-empty writes Nasdaq surprise only together with its estimate', async () => {
+    upsertCalendarRow(db, { ...us('Jun/2026', '2026-07-30'), epsActual: null, epsSurprisePct: null, epsEstimate: 1.5 }, NOW, '2026-07-30');
+    await createWatchBackfill(mk({ earningsSurprise: async () => parseNasdaqEarningsSurprise(JSON.parse(fixtureText('us/nasdaq_earnings_surprise_aapl.json'))) }))('AAPL');
+    expect(db.prepare(`SELECT eps_actual, eps_estimate, eps_surprise_pct FROM reports WHERE fiscal_quarter = 'Jun/2026'`).get())
+      .toEqual({ eps_actual: 1.91, eps_estimate: 1.5, eps_surprise_pct: null });
   });
 
   test('both sources failing stores nothing and a later call retries', async () => {

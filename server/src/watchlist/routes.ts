@@ -4,7 +4,7 @@ import { toDto } from '../api/dto.js';
 import { type Db, listForSymbols } from '../db/repo.js';
 import { ET } from '../domain/marketCalendar.js';
 import { normalizeTicker } from '../domain/ticker.js';
-import type { ReportDto, SymbolsResponse, WatchlistResponse, WatchRow, WatchRowsResponse } from '../api/types.js';
+import type { ReportDto, SymbolsResponse, WatchlistResponse, WatchHistoryDto, WatchRow, WatchRowsResponse } from '../api/types.js';
 import { toInDto } from '../india/api/dto.js';
 import { listInForSymbols } from '../india/db/inRepo.js';
 import { IST } from '../india/domain/nseCalendar.js';
@@ -61,20 +61,27 @@ export function registerWatchlist(
     const today = DateTime.fromMillis(now(), { zone: m === 'US' ? ET : IST });
     const from = today.minus({ days: 400 }).toISODate()!;
     const to = today.plus({ days: 400 }).toISODate()!;
-    const todayIso = today.toISODate()!;
     const bySymbol = new Map<string, (ReportDto | InReportDto)[]>();
     const add = (k: string, d: ReportDto | InReportDto) => bySymbol.set(k, [...(bySymbol.get(k) ?? []), d]);
     if (m === 'US') for (const r of listForSymbols(db, symbols, from, to)) add(r.symbolKey, toDto(r));
     else for (const r of listInForSymbols(db, symbols, from, to)) add(r.symbol, toInDto(r));
+    const history = new Map<string, WatchHistoryDto>(); // latest Yahoo-backup quarter per US symbol
+    if (m === 'US' && symbols.length) {
+      const h = db.prepare(`SELECT symbol_key AS k, fiscal_quarter AS q, period_end AS p, eps_actual AS e FROM watch_history
+          WHERE symbol_key IN (${symbols.map(() => '?').join(',')}) AND eps_actual IS NOT NULL ORDER BY period_end`).all(...symbols) as { k: string; q: string; p: string; e: number }[];
+      for (const r of h) history.set(r.k, { source: 'yahoo', reportDate: null, fiscalQuarter: r.q, periodEnd: r.p, eps: { actual: r.e } });
+    }
+    const hasActual = (d: ReportDto | InReportDto) =>
+      d.eps.actual != null || d.revenue.actual != null || ('profit' in d && d.profit.actual != null);
     const body: WatchRowsResponse = { rows: symbols.map((symbol): WatchRow => {
       const all = bySymbol.get(symbol) ?? []; // oldest first
-      // Out (released, or dated before today) is past; the rest is upcoming.
-      const isPast = (d: ReportDto | InReportDto) => d.releasedAt != null || d.reportDate < todayIso;
+      // Past = released or has an actual. Anything else is pending (even if dated before today), so it is `next`.
+      const isPast = (d: ReportDto | InReportDto) => d.releasedAt != null || hasActual(d);
       return {
         symbol,
         name: all[all.length - 1]?.name ?? index.nameOf(m, symbol) ?? symbol,
         next: all.find((d) => !isPast(d)) ?? null,
-        latest: [...all].reverse().find(isPast) ?? null,
+        latest: [...all].reverse().find(isPast) ?? history.get(symbol) ?? null,
       };
     }) };
     return body;

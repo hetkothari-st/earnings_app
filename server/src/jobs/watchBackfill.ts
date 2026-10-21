@@ -5,7 +5,7 @@ import type { PastEps } from '../sources/nasdaq.js';
 import { createFailover } from '../sources/failover.js';
 import { type JobContext, track } from './context.js';
 
-type PastSource = 'nasdaq' | 'yahoo';
+type PastSource = 'nasdaq';
 
 /**
  * Stores past quarters for a watched symbol, keyed like the calendar (symbol_key + fiscal quarter, e.g. 'Sep/2026').
@@ -17,10 +17,10 @@ export function storePastEps(db: Db, symbol: string, name: string, rows: PastEps
   db.exec('BEGIN');
   try {
     for (const r of rows) {
-      const existing = (db.prepare('SELECT id, eps_actual FROM reports WHERE symbol_key = ? AND fiscal_quarter = ?').get(key, r.fiscalQuarter)
+      const existing = (db.prepare('SELECT id, eps_actual, eps_estimate FROM reports WHERE symbol_key = ? AND fiscal_quarter = ?').get(key, r.fiscalQuarter)
         // The calendar sometimes keeps a report without its fiscal quarter ('date:...'); same day is the same report.
-        ?? db.prepare(`SELECT id, eps_actual FROM reports WHERE symbol_key = ? AND report_date = ? AND fiscal_quarter LIKE 'date:%'`).get(key, r.reportDate)
-      ) as { id: number; eps_actual: number | null } | undefined;
+        ?? db.prepare(`SELECT id, eps_actual, eps_estimate FROM reports WHERE symbol_key = ? AND report_date = ? AND fiscal_quarter LIKE 'date:%'`).get(key, r.reportDate)
+      ) as { id: number; eps_actual: number | null; eps_estimate: number | null } | undefined;
       if (!existing) {
         db.prepare(`INSERT INTO reports (symbol, symbol_key, name, fiscal_quarter, report_date, timing, eps_estimate, eps_actual, eps_surprise_pct,
             eps_actual_source, calendar_fetched_at) VALUES (?, ?, ?, ?, ?, 'UNKNOWN', ?, ?, ?, ?, ?)`)
@@ -28,8 +28,9 @@ export function storePastEps(db: Db, symbol: string, name: string, rows: PastEps
         touched++;
       } else if (existing.eps_actual == null) {
         db.prepare(`UPDATE reports SET eps_actual = ?, eps_actual_source = ?, eps_estimate = COALESCE(eps_estimate, ?),
-            eps_surprise_pct = COALESCE(eps_surprise_pct, ?) WHERE id = ?`)
-          .run(r.epsActual, source, r.epsEstimate, r.epsSurprisePct, existing.id);
+            eps_surprise_pct = CASE WHEN eps_estimate IS NULL THEN COALESCE(eps_surprise_pct, ?) ELSE eps_surprise_pct END
+          WHERE id = ?`)
+          .run(r.epsActual, source, r.epsEstimate, r.epsSurprisePct, existing.id); // Nasdaq's surprise goes with Nasdaq's estimate only
         touched++;
       } else {
         db.prepare('UPDATE reports SET eps_estimate = COALESCE(eps_estimate, ?) WHERE id = ? AND eps_estimate IS NULL').run(r.epsEstimate, existing.id);
@@ -41,6 +42,16 @@ export function storePastEps(db: Db, symbol: string, name: string, rows: PastEps
     throw err;
   }
   return touched;
+}
+
+/** Yahoo-backup history: kept apart from reports because Yahoo gives no report date. */
+export function storeHistory(db: Db, symbol: string, rows: PastEps[], now: string): number {
+  const key = normalizeTicker(symbol);
+  const up = db.prepare(`INSERT INTO watch_history (symbol_key, fiscal_quarter, period_end, eps_actual, source, fetched_at)
+      VALUES (?, ?, ?, ?, 'yahoo', ?) ON CONFLICT (symbol_key, fiscal_quarter) DO NOTHING`);
+  let n = 0;
+  for (const r of rows) n += Number(up.run(key, r.fiscalQuarter, r.reportDate, r.epsActual, now).changes);
+  return n;
 }
 
 /**
@@ -80,7 +91,9 @@ export function createWatchBackfill(ctx: JobContext, nameOf: (symbol: string) =>
       if (!got) return;
       const name = (ctx.db.prepare('SELECT name FROM reports WHERE symbol_key = ? LIMIT 1').get(key) as { name: string } | undefined)?.name
         ?? nameOf(key) ?? symbol;
-      storePastEps(ctx.db, symbol, name, got.value, got.via === 'fast' ? 'nasdaq' : 'yahoo', ctx.now());
+      // reportDate on a Yahoo row is only the quarter end: it goes to watch_history, never into reports.
+      if (got.via === 'fast') storePastEps(ctx.db, symbol, name, got.value, 'nasdaq', ctx.now());
+      else storeHistory(ctx.db, symbol, got.value, ctx.now());
       markBackfilled(ctx.db, doneKey, ctx.now());
     } catch (err) {
       await track(ctx, 'watch-backfill', async () => { throw err; });

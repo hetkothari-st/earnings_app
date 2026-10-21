@@ -93,6 +93,16 @@ CREATE TABLE IF NOT EXISTS source_status (
   state TEXT,
   blocked_until TEXT
 );
+-- Past EPS from the Yahoo backup: no real report date, so kept out of reports (calendar, release matching).
+CREATE TABLE IF NOT EXISTS watch_history (
+  symbol_key TEXT NOT NULL,
+  fiscal_quarter TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  eps_actual REAL,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  PRIMARY KEY (symbol_key, fiscal_quarter)
+);
 CREATE TABLE IF NOT EXISTS backfill_progress (
   key TEXT PRIMARY KEY,
   done_at TEXT NOT NULL
@@ -427,14 +437,15 @@ export function setSecResult(
     .run(r.check, r.timing, r.timingSource, r.acceptedAt, r.docUrl, r.indexUrl, now, id);
 }
 
-/** The nearest report within +-3 calendar days of `date` that is not yet released (same day preferred). */
+/** The nearest report within +-3 calendar days of `date` that is not yet released and has no actual (same day preferred). */
 export function reportForRelease(
   db: Db, symbolKey: string, date: string,
 ): { id: number; reportDate: string; releasedAt: string | null } | null {
   const lo = shiftDate(date, -3);
   const hi = shiftDate(date, 3);
   const rows = db.prepare(`SELECT id, report_date AS reportDate, released_at AS releasedAt FROM reports
-      WHERE symbol_key = ? AND report_date BETWEEN ? AND ? AND released_at IS NULL`)
+      WHERE symbol_key = ? AND report_date BETWEEN ? AND ? AND released_at IS NULL
+        AND eps_actual IS NULL`) // a row that already has an EPS actual (backfilled history) is not a release candidate
     .all(symbolKey, lo, hi) as unknown as { id: number; reportDate: string; releasedAt: string | null }[];
   const dist = (d: string) => Math.abs(Date.parse(`${d}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`));
   rows.sort((a, b) => dist(a.reportDate) - dist(b.reportDate) || a.reportDate.localeCompare(b.reportDate));

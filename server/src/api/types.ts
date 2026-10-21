@@ -97,10 +97,18 @@ export interface SymbolEntry {
 export interface SymbolsResponse { results: SymbolEntry[] }
 export interface WatchlistResponse { symbols: string[] }
 /** One watched symbol: its next upcoming report and its most recent past one (either may be missing). */
+/** Past EPS from the Yahoo backup: no report date is known. */
+export interface WatchHistoryDto {
+  source: 'yahoo';
+  reportDate: null;
+  fiscalQuarter: string;
+  periodEnd: string;
+  eps: { actual: number };
+}
 export interface WatchRow {
   symbol: string;
   name: string;
   next: ReportDto | InReportDto | null;
-  latest: ReportDto | InReportDto | null;
+  latest: ReportDto | InReportDto | WatchHistoryDto | null;
 }
 export interface WatchRowsResponse { rows: WatchRow[] }
