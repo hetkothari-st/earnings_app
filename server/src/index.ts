@@ -1,6 +1,7 @@
 import { buildServer } from './api/server.js';
 import { Broadcaster, registerStream } from './api/stream.js';
 import { LivePrices } from './live/livePrices.js';
+import { NseWatch } from './india/live/nseWatch.js';
 import { SecWatch } from './live/secWatch.js';
 import { config } from './config.js';
 import { savePrelim } from './db/prelim.js';
@@ -95,5 +96,8 @@ void (async () => {
   if (kiteCreds) await ensureSession(kiteCreds, { attempts: 1 });
   inPrices.start();
   await warmUpIndia(inCtx, job);
+  // Flips India reports within seconds; ticks no-op until the F&O list is loaded. Own client: 1 request/s to nsearchives.
+  const nseHttp = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA } });
+  new NseWatch({ ...inCtx, http: nseHttp }, (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); }).start(5000);
   inPrices.refresh();
 })();

@@ -1,8 +1,8 @@
 import { DateTime } from 'luxon';
-import { mergeInFiling, recordRelease, reportOnDate } from '../db/inRepo.js';
+import { mergeInFiling, recordRelease, reportOnDate, upsertInCalendarRow } from '../db/inRepo.js';
 import { addDaysIST, IST } from '../domain/nseCalendar.js';
-import { quarterLabel } from '../domain/quarter.js';
-import { fetchNseRss, isResultSubject, parseAnnouncementDescription, resolveIntegratedFilingUrl } from '../sources/nseRss.js';
+import { latestQuarterEndBefore, quarterLabel } from '../domain/quarter.js';
+import { fetchNseRss, isResultSubject, parseAnnouncementDescription, resolveIntegratedFilingUrl, type RssItem } from '../sources/nseRss.js';
 import { resolveSymbol } from '../sources/symbolMatch.js';
 import { parseIntegratedFiling } from '../sources/xbrl.js';
 import { type InJobContext, trackIn } from './context.js';
@@ -26,6 +26,41 @@ function isQuarter(start: string | null, end: string | null): boolean {
   if (!start || !end) return false;
   const days = DateTime.fromISO(end).diff(DateTime.fromISO(start), 'days').days + 1;
   return days >= 89 && days <= 92;
+}
+
+/**
+ * Results announcements from Online_announcements: flips the report to released (earliest time wins).
+ * Shared by the 1-minute job and NseWatch; items already handled by either are skipped. A new
+ * report is created for an F&O stock whose board-meeting notice was never seen. Returns ids that changed.
+ */
+export function handleAnnouncements(ctx: InJobContext, items: RssItem[], onFlipped?: (item: RssItem, id: number) => void): number[] {
+  const fo = getFoCache();
+  if (!fo) return [];
+  const changed: number[] = [];
+  for (const item of items) {
+    const key = `${item.link}|${item.pubDateRaw}`;
+    if (announcements.has(key)) continue;
+    announcements.add(key);
+    const { text, subject } = parseAnnouncementDescription(item.description);
+    if (!isResultSubject(subject) || !/financial\s+results?|results?\s+for\s+the\s+(quarter|period)/i.test(`${subject} ${text}`)) continue;
+    const symbol = resolveSymbol(item.title, fo.nameIndex);
+    if (!symbol) continue;
+    const day = item.pubDate.setZone(IST).toISODate()!;
+    // Same-day release, or one just after midnight for a meeting the day before.
+    let id = reportOnDate(ctx.db, symbol, day) ?? reportOnDate(ctx.db, symbol, addDaysIST(day, -1));
+    if (id == null) {
+      // A results announcement for an F&O stock whose notice we never saw: make the report now.
+      const quarterEnd = latestQuarterEndBefore(day);
+      id = upsertInCalendarRow(ctx.db, {
+        symbol, name: fo.names.get(symbol) ?? symbol, quarterEnd, quarterLabel: quarterLabel(quarterEnd), reportDate: day,
+      }, ctx.now());
+    }
+    if (recordRelease(ctx.db, id, item.pubDate.toUTC().toISO()!, 'nse-announcement') && !changed.includes(id)) {
+      changed.push(id);
+      onFlipped?.(item, id);
+    }
+  }
+  return changed;
 }
 
 /**
@@ -74,19 +109,7 @@ export async function refreshInResults(ctx: InJobContext): Promise<number[]> {
   }
 
   const ann = await trackIn(ctx, 'nse-online-announcements', () => fetchNseRss(ctx.http, 'Online_announcements'));
-  for (const item of ann ?? []) {
-    const key = `${item.link}|${item.pubDateRaw}`;
-    if (announcements.has(key)) continue;
-    announcements.add(key);
-    const { text, subject } = parseAnnouncementDescription(item.description);
-    if (!isResultSubject(subject) || !/financial\s+results?|results?\s+for\s+the\s+(quarter|period)/i.test(`${subject} ${text}`)) continue;
-    const symbol = resolveSymbol(item.title, fo.nameIndex);
-    if (!symbol) continue;
-    const day = item.pubDate.setZone(IST).toISODate()!;
-    // Same-day release, or one just after midnight for a meeting the day before.
-    const id = reportOnDate(ctx.db, symbol, day) ?? reportOnDate(ctx.db, symbol, addDaysIST(day, -1));
-    if (id != null && recordRelease(ctx.db, id, item.pubDate.toUTC().toISO()!, 'nse-announcement')) changed.add(id);
-  }
+  for (const id of handleAnnouncements(ctx, ann ?? [])) changed.add(id);
 
   // Keep memory bounded: links older than a day are gone from the feeds.
   for (const [k, v] of filings) if (Date.parse(now) - v.firstSeen > 24 * 3_600_000) filings.delete(k);
