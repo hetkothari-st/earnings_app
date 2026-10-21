@@ -576,3 +576,30 @@ A verified live sample of the SEC feed is at `C:\Users\ST269\AppData\Local\Temp\
 - [ ] **Step 2:** The same in India (16:00–20:00 IST) for 5 F&O stocks, with Kite credentials set. Also confirm live expected move ticks.
 - [ ] **Step 3:** `npm run coverage-check -w server` passes.
 - [ ] **Step 4: Commit** `docs: live check results`.
+
+## Status (2026-10-21)
+
+Tasks 1–15 built and reviewed (subagent-driven, per-task review + final branch review and fix wave). Task 16 (live check) pending — needs a US results morning and Kite credentials.
+
+Reader gates after corpus runs: US revenue 24/24 (on), US GAAP EPS 31/31 (on, shown "GAAP", no colour), US adjusted EPS 8/11 (off), India EPS/revenue/profit 6/6, 6/6, 5/5 on 11 PDFs (off until ≥20 compared — grow with `npm run collect-in-corpus -w server`).
+
+Coverage on the live DB copy: US epsEstimate 88.7%, marketCap 100%, timing 51.6% (below 70), previousMove 89.8%, expectedMove 31.8% (below 60); India 0/0 until the server runs once.
+
+### Rulings made during execution
+
+- Ruling 1: Task 4 adds `fastFields: { usEps, usRevenue, inEps, inRevenue, inProfit }` (all false) to server/src/config.ts — someone must create it before T5 reads it — cost if wrong: trivial move.
+- Ruling 2: Task 7 modifies (not creates) server/src/cli/readerCorpus.ts to add `--india` — T4 creates it — cost: none.
+- Ruling 3: Task 11 keys visible symbols by signed-in user id (from currentUser), expiring after 2 min — auth exposes user, not session id; users rarely have two screens — cost: two tabs of one user share one visible set (union would be better; small).
+- Ruling 4: Task 15 "backup" markers apply to prices (LivePrice.source) and the markets strip; other fields rely on existing labels (date_status 'estimated', timing_source) plus the status page — keeps scope bounded — cost: no per-field backup marker on estimates.
+- Ruling 5: US fast EPS split into two gated fields — usEpsGaap (100% on corpus, shown labelled GAAP, no colour) and usEpsAdjusted (72.7%, off) — spec gate is per accepted value; GAAP-labelled-no-colour is the spec's own fallback; mismatches were basis differences (company vs Nasdaq adjusted), not misreads — cost if wrong: quick US EPS shows GAAP-labelled values without colour until Nasdaq arrives
+- Ruling 6: a GAAP-basis preliminary EPS replaced by the official (adjusted) Nasdaq figure is NOT flagged corrected — different basis, not an error; prelim simply clears — cost if wrong: client doesn't see that the quick GAAP number differed
+- Ruling 7: Task 7 ships the India PDF reader with whatever real corpus exists after 70+ min of collection; India fast gates stay off unless ≥95% over ≥20; a collector script grows the corpus later — NSE feeds are today-only so a 30-pair corpus can't be built in one sitting — cost if wrong: India quick numbers show '—' (flip still within seconds) until the corpus is grown and gates re-run
+- Ruling 8: search ties among prefix matches break by market cap (US: max reports.market_cap per symbol; India: in_stocks.market_cap, F&O before non-F&O), then shorter symbol — no free popularity feed; cap is the best free signal we already store — cost if wrong: occasional odd ordering for stocks with no stored cap
+- Ruling 9: Yahoo-backup history (no report date) goes to a separate watch_history table, never into reports; watchlist rows show it as latest results with date "—" — reports.report_date is NOT NULL and drives calendar + release matching — cost if wrong: one more small table
+- Ruling 10: reportForRelease (US) skips rows that already have an EPS actual (backfilled/past reports are already released) — avoids flipping history rows; no released_at time is invented — cost if wrong: a report whose official actual landed before the SEC flip loses its exact release time (timing stays from Nasdaq)
+- Ruling 11: three separate SEC limiters (120/150/150 ms) can together exceed the global 10 req/s — carried into Task 14 as a required item: one shared SEC Http for all SEC callers — global constraint is binding — cost if wrong: SEC rate-limit block (failover then backs off)
+- Ruling 12: live market cap skipped (stored cap shown) when price×shares differs from the stored cap by more than 3× — multi-class issuers report per-class shares, so the product can be wrong — carried into Task 14 — cost if wrong: a genuinely moved cap after a >3× swing shows the stored value
+- Ruling 13: US Yahoo date backup creates 'estimated' upcoming rows only for watched US stocks with no upcoming report (Nasdaq-confirmed rows never touched); when Nasdaq later lists the stock, its row replaces the estimated one (match symbol_key + estimated row within ±14 days) instead of duplicating — otherwise the backup is dead code (nothing ever creates an estimated row) — cost if wrong: watched off-calendar US stocks show no next date until Nasdaq lists them
+- Ruling 14: Task 16 (live verification) is deferred to the user — it needs a US results morning (06:00–09:30 ET, now past for today) and Kite credentials for India, neither available in this session; the final branch review proceeds without it — cost if wrong: live latency/accuracy unconfirmed until the user runs it
+- Final: parked — US revenue prelim not checked against row revenue_currency (foreign filers rarely file 8-K 2.02) — Ruling: leave; plausibility guard blanks most mismatches — cost if wrong: a USD quick revenue shown in another currency's format for a non-USD domestic filer
+- Final: parked — watch-add backfill/estimates race gives bare-ticker name on estimated row; toFinnhub maps every '-' to '.' (preferreds); Eastern-equivalent zones show duplicate time — minor, display only
