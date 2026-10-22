@@ -53,10 +53,15 @@ const inCtx: InJobContext = {
 };
 const inPrices = InPrices.forContext(inCtx, (p) => live.publish('in-prices', { prices: p }), (ids) => live.publish('in-moves', { ids }));
 const kiteCreds = getKiteCredentials();
-/** Daily (and admin-triggered) Zerodha login: 3 tries 5 minutes apart. */
+/**
+ * Automatic Zerodha login (password + TOTP) only when KITE_AUTO_LOGIN=1: every failed try counts against the
+ * account, and Zerodha blocks it after a few. Without it, the admin logs in on Zerodha's own page.
+ */
+const kiteAuto = kiteCreds && process.env.KITE_AUTO_LOGIN === '1' ? kiteCreds : null;
+/** Daily (and admin-triggered) automatic Zerodha login: one try. */
 const kiteLogin = async () => {
-  if (!kiteCreds) return;
-  await ensureSession(kiteCreds, { force: true, attempts: 3, retryMs: 5 * 60_000 });
+  if (!kiteAuto) return;
+  await ensureSession(kiteAuto, { force: true, attempts: 1 });
   inPrices.refresh();
 };
 
@@ -94,7 +99,7 @@ const app = buildServer(db, {
     indexNames: IN_INDICES.map((i) => i.name),
     yahooIndex: (name) => fetchYahooIndex(yahoo, IN_INDICES.find((i) => i.name === name)!.yahoo),
     kiteStatus,
-    kiteLogin: kiteCreds ? () => ensureSession(kiteCreds, { force: true }).then(() => inPrices.refresh()) : undefined,
+    kiteLogin: kiteAuto ? () => ensureSession(kiteAuto, { force: true }).then(() => inPrices.refresh()) : undefined,
     kiteBrowserStart: kiteCreds ? () => startBrowserLogin(kiteCreds) : undefined,
     kiteBrowserComplete: kiteCreds ? async (token, state) => {
       const ok = await completeBrowserLogin(kiteCreds, token, state);
@@ -144,7 +149,7 @@ startInScheduler(inCtx, job, {
 });
 // Without Kite credentials the calendar, estimates and results still work; prices and moves show "—".
 void (async () => {
-  if (kiteCreds) await ensureSession(kiteCreds, { attempts: 1 });
+  if (kiteAuto) await ensureSession(kiteAuto, { attempts: 1 });
   inPrices.start();
   syncInWatched();
   await warmUpIndia(inCtx, job);

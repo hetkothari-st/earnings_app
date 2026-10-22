@@ -106,7 +106,7 @@ export function registerInRoutes(
 
   app.post('/api/admin/kite/login', async (req, reply) => {
     if (!requireAdmin(req, reply)) return reply;
-    if (!opts.kiteLogin) return reply.code(400).send({ error: 'Zerodha is not configured' });
+    if (!opts.kiteLogin) return reply.code(400).send({ error: 'Automatic login is off. Use "Log in on the Zerodha page".' });
     await opts.kiteLogin();
     return opts.kiteStatus?.() ?? {};
   });
