@@ -6,3 +6,13 @@ data/
 node_modules/
 **/node_modules/
 web/dist/
+*.log
+.jetro/
+.git/
+
+# Local scripts and files that hold secrets or private data: never upload
+gen_totp.mjs
+totp_live.mjs
+server/debug_*.mjs
+nke.pdf
+**/.env
