@@ -22,11 +22,13 @@
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "tsx": "4.23.15",
+    "ws": "8.22.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/luxon": "3.7.6",
     "@types/node": "24.19.2",
+    "@types/ws": "8.18.2",
     "typescript": "5.9.3",
     "vitest": "4.0.6"
   },

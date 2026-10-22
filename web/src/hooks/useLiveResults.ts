@@ -8,9 +8,18 @@ export interface IndiaLive {
   onPrices?: (prices: Record<string, InLivePriceDto>) => void;
 }
 
+/** Reconnect waits after a WebSocket closes: doubling from 1 s to 10 s. */
+const WS_RETRY_MS = 1000;
+const WS_RETRY_MAX_MS = 10_000;
+/** Sockets that never open this many times in a row (blocked by a proxy): use the event stream instead. */
+const WS_GIVE_UP_AFTER = 3;
+
 /**
  * Listens to the server's live stream. `onIds` gets report ids whose results just arrived;
  * `onMoves` gets ids whose intraday expected move changed.
+ *
+ * A WebSocket (/api/ws) first: Cloudflare quick tunnels hold an event stream back for seconds but pass
+ * WebSocket frames on at once. If sockets never open, the server-sent event stream (/api/stream) instead.
  */
 export function useLiveResults(
   onIds: (ids: number[]) => void,
@@ -23,38 +32,74 @@ export function useLiveResults(
   const cb = useRef({ onIds, onMoves, onPrices, india, onReconnect });
   cb.current = { onIds, onMoves, onPrices, india, onReconnect };
   useEffect(() => {
-    if (typeof EventSource === 'undefined') return;
-    const source = new EventSource('/api/stream');
-    let dropped = false;
-    source.addEventListener('error', () => { dropped = true; });
-    source.addEventListener('open', () => {
-      if (dropped) cb.current.onReconnect?.();
-      dropped = false;
-    });
-    const listen = (event: string, pick: () => ((ids: number[]) => void) | undefined) =>
-      source.addEventListener(event, (e: MessageEvent) => {
-        try {
-          const { ids } = JSON.parse(e.data) as { ids: number[] };
-          if (Array.isArray(ids) && ids.length) pick()?.(ids);
-        } catch {
-          // malformed frame: ignore
-        }
+    const dispatch = (event: string, data: string) => {
+      try {
+        const body = JSON.parse(data) as { ids?: number[]; prices?: Record<string, unknown> };
+        const ids = Array.isArray(body.ids) && body.ids.length ? body.ids : null;
+        const prices = body.prices && typeof body.prices === 'object' ? body.prices : null;
+        const c = cb.current;
+        if (event === 'results' && ids) c.onIds(ids);
+        else if (event === 'moves' && ids) c.onMoves?.(ids);
+        else if (event === 'in-results' && ids) c.india?.onIds?.(ids);
+        else if (event === 'in-moves' && ids) c.india?.onMoves?.(ids);
+        else if (event === 'prices' && prices) c.onPrices?.(prices as Record<string, LivePrice>);
+        else if (event === 'in-prices' && prices) c.india?.onPrices?.(prices as Record<string, InLivePriceDto>);
+      } catch {
+        // malformed frame: ignore
+      }
+    };
+
+    let stopped = false;
+    let cleanup = () => {};
+
+    const startEventStream = () => {
+      if (typeof EventSource === 'undefined') return;
+      const source = new EventSource('/api/stream');
+      let dropped = false;
+      source.addEventListener('error', () => { dropped = true; });
+      source.addEventListener('open', () => {
+        if (dropped) cb.current.onReconnect?.();
+        dropped = false;
       });
-    listen('results', () => cb.current.onIds);
-    listen('moves', () => cb.current.onMoves);
-    listen('in-results', () => cb.current.india?.onIds);
-    listen('in-moves', () => cb.current.india?.onMoves);
-    const prices = <T,>(event: string, pick: () => ((p: Record<string, T>) => void) | undefined) =>
-      source.addEventListener(event, (e: MessageEvent) => {
-        try {
-          const { prices: p } = JSON.parse(e.data) as { prices: Record<string, T> };
-          if (p && typeof p === 'object') pick()?.(p);
-        } catch {
-          // malformed frame: ignore
-        }
-      });
-    prices<LivePrice>('prices', () => cb.current.onPrices);
-    prices<InLivePriceDto>('in-prices', () => cb.current.india?.onPrices);
-    return () => source.close();
+      for (const event of ['results', 'moves', 'in-results', 'in-moves', 'prices', 'in-prices']) {
+        source.addEventListener(event, (e: MessageEvent) => dispatch(event, String(e.data)));
+      }
+      cleanup = () => source.close();
+    };
+
+    if (typeof WebSocket === 'undefined') {
+      startEventStream();
+      return () => cleanup();
+    }
+
+    let wait = WS_RETRY_MS;
+    let failedOpens = 0;
+    let everOpened = false;
+    let timer: number | undefined;
+    const connect = () => {
+      const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws`);
+      let opened = false;
+      ws.onopen = () => {
+        opened = true;
+        failedOpens = 0;
+        wait = WS_RETRY_MS;
+        if (everOpened) cb.current.onReconnect?.();
+        everOpened = true;
+      };
+      ws.onmessage = (e: MessageEvent) => {
+        const text = String(e.data);
+        const nl = text.indexOf('\n');
+        if (nl > 0) dispatch(text.slice(0, nl), text.slice(nl + 1));
+      };
+      ws.onclose = () => {
+        if (stopped) return;
+        if (!opened && ++failedOpens >= WS_GIVE_UP_AFTER && !everOpened) return startEventStream();
+        timer = window.setTimeout(connect, wait);
+        wait = Math.min(wait * 2, WS_RETRY_MAX_MS);
+      };
+      cleanup = () => { ws.onclose = null; ws.close(); };
+    };
+    connect();
+    return () => { stopped = true; window.clearTimeout(timer); cleanup(); };
   }, []);
 }

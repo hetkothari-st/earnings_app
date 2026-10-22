@@ -26,6 +26,7 @@ let paths: string[];
 beforeEach(() => {
   paths = [];
   vi.stubGlobal('EventSource', FakeSource);
+  vi.stubGlobal('WebSocket', undefined); // event-stream path
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     const path = url.split('?')[0]!;
     paths.push(path);

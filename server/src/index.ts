@@ -1,5 +1,8 @@
 import { buildServer } from './api/server.js';
 import { Broadcaster, registerStream } from './api/stream.js';
+import { parseCookies } from './auth/cookies.js';
+import { SESSION_COOKIE } from './auth/routes.js';
+import { findSessionUser } from './auth/store.js';
 import { LivePrices } from './live/livePrices.js';
 import { NseWatch } from './india/live/nseWatch.js';
 import { SecWatch } from './live/secWatch.js';
@@ -113,7 +116,11 @@ const app = buildServer(db, {
     } : undefined,
   },
 });
-registerStream(app, live);
+// Live stream: signed-in users only (the HTTP routes check the same session cookie).
+registerStream(app, live, (cookie) => {
+  const token = parseCookies(cookie)[SESSION_COOKIE];
+  return !!token && findSessionUser(db, token, Date.now()) != null;
+});
 startSymbolRefresh(symbolIndex, {
   ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers(), db) } : {}),
   IN: async () => {
