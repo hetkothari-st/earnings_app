@@ -26,7 +26,7 @@ import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
 import { SymbolIndex, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
 import { createKiteApi } from './india/sources/kiteApi.js';
-import { ensureSession, getKiteCredentials, getSession, kiteStatus } from './india/sources/kiteLogin.js';
+import { completeBrowserLogin, ensureSession, getKiteCredentials, getSession, kiteStatus, startBrowserLogin } from './india/sources/kiteLogin.js';
 import { createYahooInFetcher, fetchYahooIndex } from './india/sources/yahooIn.js';
 import { fetchYahooPastDates } from './india/sources/yahooPastDates.js';
 
@@ -95,6 +95,12 @@ const app = buildServer(db, {
     yahooIndex: (name) => fetchYahooIndex(yahoo, IN_INDICES.find((i) => i.name === name)!.yahoo),
     kiteStatus,
     kiteLogin: kiteCreds ? () => ensureSession(kiteCreds, { force: true }).then(() => inPrices.refresh()) : undefined,
+    kiteBrowserStart: kiteCreds ? () => startBrowserLogin(kiteCreds) : undefined,
+    kiteBrowserComplete: kiteCreds ? async (token, state) => {
+      const ok = await completeBrowserLogin(kiteCreds, token, state);
+      if (ok) inPrices.refresh();
+      return ok;
+    } : undefined,
   },
 });
 registerStream(app, live);

@@ -12,6 +12,7 @@ type SocketLike = {
 type SocketCtor = new (url: string) => SocketLike;
 
 const OPEN = 1;
+const STABLE_MS = 60_000;
 export const toFinnhub = (s: string) => s.trim().toUpperCase().replace(/[/-]/g, '.'); // keys are normalized (BRK-B); Finnhub writes BRK.B
 
 /**
@@ -27,14 +28,20 @@ export class FinnhubStream {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly Ctor: SocketCtor;
   private readonly reconnectMs: number;
+  private readonly maxReconnectMs: number;
+  /** Next wait before reconnecting. Doubles after a connect that failed or dropped within a minute (Finnhub
+   * answers 429 to repeated connects, and retrying fast keeps it there); back to reconnectMs after a minute open. */
+  private waitMs: number;
 
   constructor(
     private readonly token: string,
     private readonly onTrades: (trades: Trade[]) => void,
-    opts: { WebSocketImpl?: SocketCtor; reconnectMs?: number } = {},
+    opts: { WebSocketImpl?: SocketCtor; reconnectMs?: number; maxReconnectMs?: number } = {},
   ) {
     this.Ctor = opts.WebSocketImpl ?? (globalThis.WebSocket as unknown as SocketCtor);
     this.reconnectMs = opts.reconnectMs ?? 5000;
+    this.maxReconnectMs = opts.maxReconnectMs ?? 300_000;
+    this.waitMs = this.reconnectMs;
   }
 
   setSymbols(symbols: string[]): void {
@@ -55,7 +62,8 @@ export class FinnhubStream {
     const ws = new this.Ctor(`wss://ws.finnhub.io?token=${this.token}`);
     this.socket = ws;
     this.subscribed = new Set();
-    ws.onopen = () => { console.log('[prices] stream connected'); this.sync(); };
+    let openedAt: number | null = null;
+    ws.onopen = () => { openedAt = Date.now(); console.log('[prices] stream connected'); this.sync(); };
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(String(e.data)) as { type?: string; data?: { s: string; p: number; t: number }[] };
@@ -69,9 +77,12 @@ export class FinnhubStream {
       }
     };
     ws.onclose = (e) => {
-      console.log(`[prices] stream closed ${e?.code ?? ''} ${e?.reason ?? ''}`.trim());
+      if (openedAt != null && Date.now() - openedAt >= STABLE_MS) this.waitMs = this.reconnectMs;
+      const wait = this.waitMs;
+      this.waitMs = Math.min(this.waitMs * 2, this.maxReconnectMs);
+      console.log(`[prices] stream closed ${e?.code ?? ''} ${e?.reason ?? ''}`.trim() + `, retry in ${Math.round(wait / 1000)}s`);
       if (this.socket === ws) this.socket = null;
-      if (!this.stopped) this.timer = setTimeout(() => this.connect(), this.reconnectMs);
+      if (!this.stopped) this.timer = setTimeout(() => this.connect(), wait);
     };
     ws.onerror = () => ws.close();
   }

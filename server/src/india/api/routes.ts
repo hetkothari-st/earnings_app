@@ -19,6 +19,9 @@ export interface InServerOptions {
   indexNames?: string[];
   kiteStatus?: () => KiteStatusDto;
   kiteLogin?: () => Promise<void>;
+  /** Backup login on Zerodha's own page: the URL to send the admin to, and the callback's token exchange. */
+  kiteBrowserStart?: () => string;
+  kiteBrowserComplete?: (requestToken: string, state: string) => Promise<boolean>;
 }
 
 function validDate(s: string | undefined): s is string {
@@ -106,5 +109,20 @@ export function registerInRoutes(
     if (!opts.kiteLogin) return reply.code(400).send({ error: 'Zerodha is not configured' });
     await opts.kiteLogin();
     return opts.kiteStatus?.() ?? {};
+  });
+
+  app.post('/api/admin/kite/browser-login', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return reply;
+    if (!opts.kiteBrowserStart) return reply.code(400).send({ error: 'Zerodha is not configured' });
+    return { url: opts.kiteBrowserStart() };
+  });
+
+  /** Zerodha redirects here after the admin logs in on its page (set this URL as the app's redirect URL on Kite). */
+  app.get('/api/admin/kite/callback', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return reply;
+    const q = req.query as Record<string, string | undefined>;
+    const ok = !!opts.kiteBrowserComplete && q.status === 'success' && !!q.request_token && !!q.state
+      && await opts.kiteBrowserComplete(q.request_token, q.state);
+    return reply.redirect(`/admin?kite=${ok ? 'ok' : 'error'}`);
   });
 }

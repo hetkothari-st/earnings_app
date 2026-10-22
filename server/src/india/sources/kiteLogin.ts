@@ -73,10 +73,14 @@ export async function loginKite(creds: KiteCredentials, fetchImpl: typeof fetch 
     body: new URLSearchParams({ user_id: creds.userId, password: creds.password }).toString(),
     redirect: 'manual',
   });
-  const loginBody = (await loginRes.json()) as { data?: { request_id?: string; twofa_type?: string } };
+  const loginBody = (await loginRes.json().catch(() => ({}))) as { message?: unknown; data?: { request_id?: string; twofa_type?: string } };
   const requestId = loginBody.data?.request_id;
   const tfaType = loginBody.data?.twofa_type ?? 'totp';
-  if (!requestId) throw new Error('Kite login step 1 failed: no request_id');
+  if (!requestId) {
+    // Zerodha's own reason (e.g. "Invalid CAPTCHA values." after repeated logins); it never echoes the password.
+    const why = typeof loginBody.message === 'string' ? `: ${loginBody.message.slice(0, 120).replace(/\.+$/, '')}` : '';
+    throw new Error(`Kite login step 1 failed (HTTP ${loginRes.status})${why}. Use "Log in on the Zerodha page" on the admin page.`);
+  }
 
   // Step 2: TOTP 2FA — use exactly the twofa_type Zerodha specified
   const totp = await generateTotp(creds.totpSecret);
@@ -112,7 +116,11 @@ export async function loginKite(creds: KiteCredentials, fetchImpl: typeof fetch 
   }
   if (!requestToken) throw new Error('Kite login: could not extract request_token from redirect');
 
-  // Step 4: Exchange request_token for access_token
+  return exchangeRequestToken(creds, requestToken, fetchImpl);
+}
+
+/** Step 4 (both logins): swap a request_token for the day's access token and keep it in memory. */
+async function exchangeRequestToken(creds: KiteCredentials, requestToken: string, fetchImpl: typeof fetch): Promise<string> {
   const checksum = crypto.createHash('sha256')
     .update(creds.apiKey + requestToken + creds.apiSecret)
     .digest('hex');
@@ -121,12 +129,48 @@ export async function loginKite(creds: KiteCredentials, fetchImpl: typeof fetch 
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Kite-Version': '3' },
     body: new URLSearchParams({ api_key: creds.apiKey, request_token: requestToken, checksum }).toString(),
   });
-  const tokenBody = (await tokenRes.json()) as { data?: { access_token?: string } };
+  const tokenBody = (await tokenRes.json().catch(() => ({}))) as { data?: { access_token?: string } };
   const accessToken = tokenBody.data?.access_token;
-  if (!accessToken) throw new Error('Kite login: session/token exchange failed');
+  if (!accessToken) throw new Error(`Kite login: session/token exchange failed (HTTP ${tokenRes.status})`);
 
   _session = { apiKey: creds.apiKey, accessToken, expiresAt: tokenExpiry(Date.now()) };
   return accessToken;
+}
+
+/**
+ * Backup login when the automatic one fails (Zerodha asks for a CAPTCHA after repeated logins): the admin
+ * logs in on Zerodha's own page, which redirects to the app's callback with a request_token. `state` comes
+ * back in redirect_params so the callback only accepts a login this server started (10 minutes, once).
+ */
+const _pendingStates = new Map<string, number>();
+const STATE_TTL_MS = 10 * 60_000;
+
+export function startBrowserLogin(creds: KiteCredentials, nowMs = Date.now()): string {
+  for (const [k, exp] of _pendingStates) if (exp <= nowMs) _pendingStates.delete(k);
+  const state = crypto.randomBytes(16).toString('hex');
+  _pendingStates.set(state, nowMs + STATE_TTL_MS);
+  const params = new URLSearchParams({ v: '3', api_key: creds.apiKey, redirect_params: `state=${state}` });
+  return `https://kite.zerodha.com/connect/login?${params}`;
+}
+
+export async function completeBrowserLogin(
+  creds: KiteCredentials, requestToken: string, state: string, fetchImpl: typeof fetch = fetch, nowMs = Date.now(),
+): Promise<boolean> {
+  const exp = _pendingStates.get(state);
+  _pendingStates.delete(state);
+  try {
+    if (!exp || exp <= nowMs) throw new Error('Kite login: browser login expired or not started here; try again');
+    if (!/^[A-Za-z0-9]{8,64}$/.test(requestToken)) throw new Error('Kite login: bad request_token');
+    await exchangeRequestToken(creds, requestToken, fetchImpl);
+    _status.lastLoginAt = new Date(nowMs).toISOString();
+    _status.lastError = null;
+    return true;
+  } catch (err) {
+    _status.lastError = err instanceof Error ? err.message : String(err);
+    _status.lastErrorAt = new Date(nowMs).toISOString();
+    console.error('[kite-login]', _status.lastError);
+    return false;
+  }
 }
 
 /**

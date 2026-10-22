@@ -93,3 +93,13 @@ export async function kiteLoginNow(): Promise<Result<KiteStatusDto>> {
   }
   return { ok: true, data: (await res.json()) as KiteStatusDto };
 }
+
+/** Backup Zerodha login: the URL of Zerodha's own login page, which sends the admin back to /admin. */
+export async function kiteBrowserLoginUrl(): Promise<Result<string>> {
+  const res = await apiFetch('/api/admin/kite/browser-login', { method: 'POST' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, error: body.error ?? `Server returned ${res.status}` };
+  }
+  return { ok: true, data: ((await res.json()) as { url: string }).url };
+}

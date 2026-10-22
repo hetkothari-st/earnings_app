@@ -59,6 +59,36 @@ describe('FinnhubStream', () => {
     s.stop();
     vi.useRealTimers();
   });
+  test('failed connects (HTTP 429) back off, doubling to the cap; a minute open resets the wait', () => {
+    vi.useFakeTimers();
+    const s = new FinnhubStream('tok', vi.fn(), { WebSocketImpl: FakeSocket as never, reconnectMs: 1000, maxReconnectMs: 4000 });
+    s.setSymbols(['A']);
+    const waits: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const sock = FakeSocket.last;
+      sock.close(); // never opened
+      let waited = 0;
+      while (FakeSocket.last === sock) { vi.advanceTimersByTime(500); waited += 500; }
+      waits.push(waited);
+    }
+    expect(waits).toEqual([1000, 2000, 4000, 4000]);
+    const flap = FakeSocket.last;
+    flap.open();
+    vi.advanceTimersByTime(10_000);
+    flap.close(); // dropped within a minute: still backing off
+    vi.advanceTimersByTime(1000);
+    expect(FakeSocket.last).toBe(flap);
+    vi.advanceTimersByTime(3000);
+    const stable = FakeSocket.last;
+    expect(stable).not.toBe(flap);
+    stable.open();
+    vi.advanceTimersByTime(60_000);
+    stable.close();
+    vi.advanceTimersByTime(1000);
+    expect(FakeSocket.last).not.toBe(stable);
+    s.stop();
+    vi.useRealTimers();
+  });
 });
 
 describe('parseQuote', () => {

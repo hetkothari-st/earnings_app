@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from 'react';
 import {
-  type AdminUser, bulkIds, bulkPreview, createUser, createUsersBulk, deleteUser, fetchKiteStatus, kiteLoginNow, listUsers,
+  type AdminUser, bulkIds, bulkPreview, createUser, createUsersBulk, deleteUser, fetchKiteStatus, kiteBrowserLoginUrl, kiteLoginNow, listUsers,
   MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
 } from '../adminApi';
 import type { KiteStatusDto } from '../api';
@@ -270,9 +270,14 @@ function UserRows({ user, self, editing, onEdit, onSaved, onDeleted, onCancel }:
 /** Zerodha (Kite) connection for India prices and option quotes. */
 function ZerodhaPanel() {
   const [status, setStatus] = useState<KiteStatusDto | null>(null);
-  const [msg, setMsg] = useState<Msg>(null);
+  // Back from Zerodha's login page (the backup login): say how it went once, then tidy the address bar.
+  const [msg, setMsg] = useState<Msg>(() => {
+    const k = new URLSearchParams(window.location.search).get('kite');
+    return k === 'ok' ? { kind: 'ok', text: 'Connected to Zerodha' } : k === 'error' ? { kind: 'error', text: 'Zerodha page login did not complete' } : null;
+  });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('kite')) window.history.replaceState(null, '', '/admin');
     void fetchKiteStatus().then((r) => (r.ok ? setStatus(r.data) : setMsg({ kind: 'error', text: r.error })));
   }, []);
   const login = async () => {
@@ -283,6 +288,13 @@ function ZerodhaPanel() {
     if (!r.ok) return setMsg({ kind: 'error', text: r.error });
     setStatus(r.data);
     setMsg(r.data.connected ? { kind: 'ok', text: 'Connected to Zerodha' } : { kind: 'error', text: r.data.lastError ?? 'Login failed' });
+  };
+  const pageLogin = async () => {
+    setBusy(true);
+    setMsg(null);
+    const r = await kiteBrowserLoginUrl();
+    if (!r.ok) { setBusy(false); return setMsg({ kind: 'error', text: r.error }); }
+    window.location.assign(r.data);
   };
   return (
     <section className="admin-card" aria-label="Zerodha">
@@ -295,6 +307,12 @@ function ZerodhaPanel() {
           <p>{status.connected ? 'Connected' : 'Not connected'} · last login {when(status.lastLoginAt)}</p>
           {status.lastError && <p className="admin-msg admin-msg-error">Last error ({when(status.lastErrorAt)}): {status.lastError}</p>}
           <button type="button" onClick={() => void login()} disabled={busy}>{busy ? 'Logging in…' : 'Log in now'}</button>
+          {' '}
+          <button type="button" onClick={() => void pageLogin()} disabled={busy}>Log in on the Zerodha page</button>
+          <p className="admin-muted">
+            Use the Zerodha page when "Log in now" fails (Zerodha sometimes asks for a CAPTCHA). Your Kite app's
+            redirect URL must be <code>{window.location.origin}/api/admin/kite/callback</code>.
+          </p>
         </>
       )}
     </section>
