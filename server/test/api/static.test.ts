@@ -45,3 +45,14 @@ describe('serving the built web app', () => {
     expect(res.headers['content-type']).toMatch(/json/);
   });
 });
+
+describe('Zerodha return to the site root', () => {
+  test('a request_token on / is forwarded to the Kite callback with its query', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'web-'));
+    writeFileSync(join(dir, 'index.html'), '<html></html>');
+    const app = buildServer(openDb(':memory:'), { webRoot: dir });
+    const r = await app.inject({ url: '/?type=login&status=success&request_token=abc123XYZ&state=s1' });
+    expect([r.statusCode, r.headers.location]).toEqual([302, '/api/admin/kite/callback?type=login&status=success&request_token=abc123XYZ&state=s1']);
+    expect((await app.inject({ url: '/?x=1' })).statusCode).toBe(200);
+  });
+});

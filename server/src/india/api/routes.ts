@@ -119,8 +119,10 @@ export function registerInRoutes(
 
   /** Zerodha redirects here after the admin logs in on its page (set this URL as the app's redirect URL on Kite). */
   app.get('/api/admin/kite/callback', async (req, reply) => {
-    if (!requireAdmin(req, reply)) return reply;
     const q = req.query as Record<string, string | undefined>;
+    // Which step failed, without the token itself.
+    console.log(`[kite-callback] signed in: ${!!currentUser(req)}, status: ${q.status ?? '-'}, token: ${!!q.request_token}, state: ${!!q.state}`);
+    if (!requireAdmin(req, reply)) return reply;
     const ok = !!opts.kiteBrowserComplete && q.status === 'success' && !!q.request_token && !!q.state
       && await opts.kiteBrowserComplete(q.request_token, q.state);
     return reply.redirect(`/admin?kite=${ok ? 'ok' : 'error'}`);

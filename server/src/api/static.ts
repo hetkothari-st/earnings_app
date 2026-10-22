@@ -18,6 +18,9 @@ export function registerWebApp(app: FastifyInstance, webRoot: string): void {
     if (req.method !== 'GET' || path.toLowerCase().startsWith('/api')) {
       return reply.code(404).send({ error: 'Not found' });
     }
+    // Zerodha's return when the Kite app's redirect URL is the site itself: hand it to the callback.
+    const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+    if (path === '/' && /[?&]request_token=/.test(query)) return reply.redirect(`/api/admin/kite/callback${query}`);
     const target = normalize(join(root, path));
     let file = index;
     if (target.startsWith(root + sep)) {
