@@ -131,6 +131,9 @@ export async function fetchInEarnings(
   return res.json() as Promise<InEarningsResponse>;
 }
 
+/** One Indian index on the markets strip. */
+export type InMarket = { index: string; price: number | null; changePct: number | null; asOf: string | null; source: 'kite' | 'yahoo' | null };
+
 export async function fetchInPrices(): Promise<Record<string, InLivePriceDto>> {
   const res = await apiFetch('/api/in/prices');
   if (!res.ok) throw new Error(`Server returned ${res.status}`);

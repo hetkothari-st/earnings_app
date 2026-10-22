@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
-import type { InLivePriceDto, LivePrice } from '../api';
+import type { InLivePriceDto, InMarket, LivePrice } from '../api';
 
 /** India events: results and moves by report id, prices by NSE symbol. */
 export interface IndiaLive {
   onIds?: (ids: number[]) => void;
   onMoves?: (ids: number[]) => void;
   onPrices?: (prices: Record<string, InLivePriceDto>) => void;
+  /** Index levels (NIFTY 50, SENSEX, ...) as they tick. */
+  onIndices?: (indices: InMarket[]) => void;
 }
 
 /** Reconnect waits after a WebSocket closes: doubling from 1 s to 10 s. */
@@ -34,7 +36,7 @@ export function useLiveResults(
   useEffect(() => {
     const dispatch = (event: string, data: string) => {
       try {
-        const body = JSON.parse(data) as { ids?: number[]; prices?: Record<string, unknown> };
+        const body = JSON.parse(data) as { ids?: number[]; prices?: Record<string, unknown>; indices?: InMarket[] };
         const ids = Array.isArray(body.ids) && body.ids.length ? body.ids : null;
         const prices = body.prices && typeof body.prices === 'object' ? body.prices : null;
         const c = cb.current;
@@ -44,6 +46,7 @@ export function useLiveResults(
         else if (event === 'in-moves' && ids) c.india?.onMoves?.(ids);
         else if (event === 'prices' && prices) c.onPrices?.(prices as Record<string, LivePrice>);
         else if (event === 'in-prices' && prices) c.india?.onPrices?.(prices as Record<string, InLivePriceDto>);
+        else if (event === 'in-indices' && Array.isArray(body.indices)) c.india?.onIndices?.(body.indices);
       } catch {
         // malformed frame: ignore
       }
@@ -61,7 +64,7 @@ export function useLiveResults(
         if (dropped) cb.current.onReconnect?.();
         dropped = false;
       });
-      for (const event of ['results', 'moves', 'in-results', 'in-moves', 'prices', 'in-prices']) {
+      for (const event of ['results', 'moves', 'in-results', 'in-moves', 'prices', 'in-prices', 'in-indices']) {
         source.addEventListener(event, (e: MessageEvent) => dispatch(event, String(e.data)));
       }
       cleanup = () => source.close();

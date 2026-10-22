@@ -55,7 +55,11 @@ const inCtx: InJobContext = {
   now: () => new Date().toISOString(),
   todayIST,
 };
-const inPrices = InPrices.forContext(inCtx, (p) => live.publish('in-prices', { prices: p }), (ids) => live.publish('in-moves', { ids }));
+const inPrices = InPrices.forContext(inCtx, (p) => live.publish('in-prices', { prices: p }), (ids) => live.publish('in-moves', { ids }),
+  // Live index levels for the markets strip, in /api/in/markets's shape.
+  (m) => live.publish('in-indices', {
+    indices: [...m].map(([index, p]) => ({ index, price: p.price, changePct: p.changePct, asOf: p.at, source: p.source === 'stream' ? 'kite' : 'yahoo' })),
+  }));
 const kiteCreds = getKiteCredentials();
 /**
  * Automatic Zerodha login (password + TOTP) only when KITE_AUTO_LOGIN=1: every failed try counts against the

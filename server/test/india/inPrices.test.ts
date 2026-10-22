@@ -261,3 +261,20 @@ describe('Yahoo backup resilience', () => {
     expect(yahoo).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('index ticks', () => {
+  it('reach onIndices within one push window, by index name', async () => {
+    const got: Map<string, InLivePrice>[] = [];
+    const stream = new FakeStream();
+    const db = openDb(':memory:') as unknown as DatabaseSync;
+    const q = new InPrices(db, () => SESSION, () => '2026-10-21', () => {}, { makeStream: () => stream, onIndices: (m) => got.push(m) });
+    await q.refresh();
+    stream.emit('tick', tick(256265, 22623.45, { close: 22810.5, isIndex: true }));
+    stream.emit('tick', tick(265, 73168.56, { close: 73705, isIndex: true }));
+    expect(got).toEqual([]);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(got).toHaveLength(1);
+    expect(got[0]!.get('NIFTY 50')).toMatchObject({ price: 22623.45, changePct: -0.82, source: 'stream' });
+    expect(got[0]!.get('SENSEX')).toMatchObject({ price: 73168.56, changePct: -0.73 });
+  });
+});

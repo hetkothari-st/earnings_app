@@ -23,6 +23,7 @@ export const IN_INDICES: { name: string; token: number; yahoo: string }[] = [
 ];
 
 const PUSH_EVERY_MS = 500;
+const INDEX_TOKENS = new Set(IN_INDICES.map((i) => i.token));
 const RESUBSCRIBE_EVERY_MS = 5 * 60_000;
 /** Kite allows 3,000 instruments per connection. */
 export const MAX_STREAM_TOKENS = 3_000;
@@ -85,6 +86,8 @@ export interface InPricesDeps {
   /** NFO instruments (cached per day). */
   instruments: () => Promise<KiteInstrument[] | null>;
   onMoves: (ids: number[]) => void;
+  /** Index levels changed (NIFTY, SENSEX, ...): the latest of each, by name. */
+  onIndices: (indices: Map<string, InLivePrice>) => void;
 }
 
 /** Yahoo chart price (`<SYMBOL>.NS`) behind the failover, which records errors and backs off on blocks. */
@@ -112,6 +115,7 @@ export class InPrices {
   private pending = new Set<string>();
   private pushTimer: NodeJS.Timeout | null = null;
   private refreshTimer: NodeJS.Timeout | null = null;
+  private indexPending = false;
   private backupTimer: NodeJS.Timeout | null = null;
   private backups = new Map<string, InLivePrice & { fetchedAt: number }>();
   private lastTry = new Map<string, number>();
@@ -139,6 +143,7 @@ export class InPrices {
       yahoo: async () => null,
       instruments: async () => null,
       onMoves: () => {},
+      onIndices: () => {},
       ...deps,
     };
   }
@@ -146,11 +151,13 @@ export class InPrices {
   /** Production wiring: the NFO cache and Yahoo (behind the failover) come from the job context. */
   static forContext(
     ctx: InJobContext, onPrices: (prices: Record<string, InLivePrice>) => void, onMoves: (ids: number[]) => void,
+    onIndices: (indices: Map<string, InLivePrice>) => void = () => {},
   ): InPrices {
     return new InPrices(ctx.db, ctx.kiteSession, ctx.todayIST, onPrices, {
       yahoo: createYahooPriceBackup(ctx.db, ctx.http),
       instruments: () => nfoInstruments(ctx),
       onMoves,
+      onIndices,
     });
   }
 
@@ -251,7 +258,10 @@ export class InPrices {
     const opt = this.options.get(t.token);
     if (opt) return this.onOptionTick(opt.reportId);
     const sym = this.symbolOf.get(t.token);
-    if (!sym) return;
+    if (!sym) {
+      if (INDEX_TOKENS.has(t.token)) { this.indexPending = true; this.schedulePush(); }
+      return;
+    }
     if (this.awaitingSpot.has(sym)) {
       // First price of a reporter: now its strikes are known.
       if (this.deps.now() - this.instrumentsFailedAt >= INSTRUMENTS_RETRY_MS) {
@@ -261,13 +271,24 @@ export class InPrices {
       void this.syncOptions();
     }
     this.pending.add(sym);
+    this.schedulePush();
+  }
+
+  /** Ticks are gathered for PUSH_EVERY_MS, then the changed prices (and indices) go out together. */
+  private schedulePush(): void {
     this.pushTimer ??= setTimeout(() => {
       this.pushTimer = null;
-      const all = this.snapshot();
-      const out: Record<string, InLivePrice> = {};
-      for (const s of this.pending) if (all[s]) out[s] = all[s];
-      this.pending.clear();
-      if (Object.keys(out).length) this.onPrices(out);
+      if (this.pending.size) {
+        const all = this.snapshot();
+        const out: Record<string, InLivePrice> = {};
+        for (const s of this.pending) if (all[s]) out[s] = all[s];
+        this.pending.clear();
+        if (Object.keys(out).length) this.onPrices(out);
+      }
+      if (this.indexPending) {
+        this.indexPending = false;
+        this.deps.onIndices(this.indices());
+      }
     }, PUSH_EVERY_MS);
   }
 

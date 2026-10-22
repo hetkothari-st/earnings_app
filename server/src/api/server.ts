@@ -26,7 +26,7 @@ export const MARKET_INDICES = [
   { exchange: 'NSE', index: 'NIFTY 50', symbol: '^NSEI' },
   { exchange: 'BSE', index: 'SENSEX', symbol: '^BSESN' },
 ] as const;
-const MARKETS_TTL_MS = 60_000;
+const MARKETS_TTL_MS = 15_000;
 
 export interface ServerOptions {
   indexQuote?: (symbol: string) => Promise<IndexQuote>;

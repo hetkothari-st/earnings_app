@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EarningsResponse, Timing } from '../../../server/src/api/types';
 import type { InReportDto } from '../../../server/src/india/api/types';
-import { fetchEarnings, fetchInEarnings, fetchInPrices, fetchNotes, fetchPrices, fetchReport, type InEarningsResponse, type InLivePriceDto, type LivePrice, type Note, saveNote } from '../api';
+import { fetchEarnings, fetchInEarnings, fetchInPrices, fetchNotes, fetchPrices, fetchReport, type InEarningsResponse, type InLivePriceDto, type InMarket, type LivePrice, type Note, saveNote } from '../api';
 import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
 import { useVisibleSymbols } from '../hooks/useVisibleSymbols';
@@ -45,6 +45,7 @@ export function Calendar() {
   const [notes, setNotes] = useState<Map<number, Note>>(new Map());
   const [prices, setPrices] = useState<Record<string, LivePrice>>({});
   const [inPrices, setInPrices] = useState<Record<string, InLivePriceDto>>({});
+  const [inIndices, setInIndices] = useState<InMarket[]>([]);
   const [load, setLoad] = useState<Load<EarningsResponse>>({ status: 'loading' });
   const [inLoad, setInLoad] = useState<Load<InEarningsResponse>>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
@@ -103,6 +104,7 @@ export function Calendar() {
       onIds: flash('IN'),
       onMoves: (ids) => queue('IN', ids),
       onPrices: (p) => setInPrices((prev) => ({ ...prev, ...p })),
+      onIndices: (list) => setInIndices((prev) => [...prev.filter((m) => !list.some((n) => n.index === m.index)), ...list]),
     },
     () => {
       reload();
@@ -176,7 +178,7 @@ export function Calendar() {
 
   return (
     <div className="app">
-      {market === 'IN' ? <IndiaMarketBar /> : <LiveMarketBar />}
+      {market === 'IN' ? <IndiaMarketBar live={inIndices} /> : <LiveMarketBar />}
       <Header
         view={view} onView={setView} range={range} custom={custom} onCustom={setCustom}
         onShift={(dir) => setAnchor((a) => shiftAnchor(view, a, dir))} onToday={() => setAnchor(market === 'IN' ? todayIst() : todayEt())}

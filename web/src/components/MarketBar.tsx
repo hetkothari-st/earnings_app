@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MarketIndexDto, MarketsResponse } from '../../../server/src/api/types';
-import { apiFetch } from '../api';
+import { apiFetch, type InMarket } from '../api';
 import { changeClass, formatChange } from '../lib/format';
 
 const level = (n: number | null) =>
@@ -22,7 +22,7 @@ export function MarketBar({ indices }: { indices: MarketIndexDto[] }) {
   );
 }
 
-/** Polls /api/markets every minute; renders nothing until the first answer. */
+/** Polls /api/markets every 15 s; renders nothing until the first answer. */
 export function LiveMarketBar() {
   const [indices, setIndices] = useState<MarketIndexDto[] | null>(null);
   useEffect(() => {
@@ -32,20 +32,24 @@ export function LiveMarketBar() {
       .then((b) => { if (alive && b) setIndices(b.indices); })
       .catch(() => {});
     load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(load, 15_000);
     return () => { alive = false; clearInterval(t); };
   }, []);
   return indices ? <MarketBar indices={indices} /> : null;
 }
 
-type InMarket = { index: string; price: number | null; changePct: number | null; asOf: string | null; source: 'kite' | 'yahoo' | null };
 const IN_EXCHANGE: Record<string, string> = { SENSEX: 'BSE' };
 const inLevel = (n: number | null) =>
   n == null ? '—' : n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** NIFTY 50, SENSEX, NIFTY BANK, NIFTY MIDCAP 100: Kite live (polled every 15 s), Yahoo fallback. */
-export function IndiaMarketBar() {
-  const [indices, setIndices] = useState<InMarket[] | null>(null);
+/**
+ * NIFTY 50, SENSEX, NIFTY BANK, NIFTY MIDCAP 100. `live` carries Kite ticks pushed over the live stream;
+ * /api/in/markets (every 15 s) fills the rest and is the Yahoo fallback.
+ */
+export function IndiaMarketBar({ live = [] }: { live?: InMarket[] }) {
+  const [polled, setIndices] = useState<InMarket[] | null>(null);
+  const byName = new Map(live.map((m) => [m.index, m]));
+  const indices = polled?.map((m) => byName.get(m.index) ?? m) ?? null;
   useEffect(() => {
     let alive = true;
     const load = () => apiFetch('/api/in/markets')
