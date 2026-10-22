@@ -16,3 +16,7 @@ totp_live.mjs
 server/debug_*.mjs
 nke.pdf
 **/.env
+
+# Not needed by the live site (62 MB of test fixtures)
+server/test/
+docs/
