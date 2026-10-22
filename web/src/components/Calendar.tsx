@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EarningsResponse, Timing } from '../../../server/src/api/types';
 import type { InReportDto } from '../../../server/src/india/api/types';
-import { fetchEarnings, fetchInEarnings, fetchInPrices, fetchNotes, fetchPrices, type InEarningsResponse, type InLivePriceDto, type LivePrice, type Note, saveNote } from '../api';
+import { fetchEarnings, fetchInEarnings, fetchInPrices, fetchNotes, fetchPrices, fetchReport, type InEarningsResponse, type InLivePriceDto, type LivePrice, type Note, saveNote } from '../api';
 import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
 import { useVisibleSymbols } from '../hooks/useVisibleSymbols';
@@ -20,6 +20,10 @@ import { StaleBanner } from './StaleBanner';
 import { StockList } from './StockList';
 import { InStockList } from './InStockList';
 import { WatchlistView } from './WatchlistView';
+
+/** Live updates are gathered this long before fetching; more ids than MAX_PATCH reload the range instead. */
+const PATCH_DELAY_MS = 250;
+const MAX_PATCH = 25;
 
 type Load<T> = { status: 'loading' } | { status: 'ok'; data: T } | { status: 'error'; error: string };
 
@@ -56,15 +60,55 @@ export function Calendar() {
     if (market === 'IN') setView('week');
   }, [market]);
 
-  const flash = (ids: number[]) => { setHighlight(new Set(ids)); setReloadKey((k) => k + 1); window.setTimeout(() => setHighlight(new Set()), 6000); };
+  // Live updates: ids are gathered for a moment, then only those reports are fetched and patched into the
+  // rows on screen. A big burst, a report not on screen yet, or a failed fetch reloads the range once.
+  const [watchKey, setWatchKey] = useState(0);
+  const pending = useRef({ US: new Set<number>(), IN: new Set<number>() });
+  const flushTimer = useRef<number | null>(null);
+  const shown = useRef({ US: new Set<number>(), IN: new Set<number>() });
+  const reload = () => setReloadKey((k) => k + 1);
+  const patch = async (m: 'US' | 'IN', ids: number[]) => {
+    if (ids.length > MAX_PATCH || ids.some((id) => !shown.current[m].has(id))) return reload();
+    try {
+      const got = new Map((await Promise.all(ids.map((id) => fetchReport(m, id)))).filter((r) => r != null).map((r) => [r.id, r]));
+      const swap = <T extends { id: number }>(rows: T[]) => rows.map((r) => (got.get(r.id) as T | undefined) ?? r);
+      if (m === 'US') setLoad((prev) => (prev.status === 'ok' ? { status: 'ok', data: { ...prev.data, rows: swap(prev.data.rows) } } : prev));
+      else setInLoad((prev) => (prev.status === 'ok' ? { status: 'ok', data: { ...prev.data, rows: swap(prev.data.rows) } } : prev));
+    } catch {
+      reload();
+    }
+  };
+  const queue = (m: 'US' | 'IN', ids: number[]) => {
+    for (const id of ids) pending.current[m].add(id);
+    flushTimer.current ??= window.setTimeout(() => {
+      flushTimer.current = null;
+      setWatchKey((k) => k + 1);
+      for (const mk of ['US', 'IN'] as const) {
+        const list = [...pending.current[mk]];
+        pending.current[mk].clear();
+        if (list.length) void patch(mk, list);
+      }
+    }, PATCH_DELAY_MS);
+  };
+  const flash = (m: 'US' | 'IN') => (ids: number[]) => {
+    setHighlight(new Set(ids));
+    queue(m, ids);
+    window.setTimeout(() => setHighlight(new Set()), 6000);
+  };
   useLiveResults(
-    flash,
-    () => setReloadKey((k) => k + 1),
+    flash('US'),
+    (ids) => queue('US', ids),
     (p) => setPrices((prev) => ({ ...prev, ...p })),
     {
-      onIds: flash,
-      onMoves: () => setReloadKey((k) => k + 1),
+      onIds: flash('IN'),
+      onMoves: (ids) => queue('IN', ids),
       onPrices: (p) => setInPrices((prev) => ({ ...prev, ...p })),
+    },
+    () => {
+      reload();
+      setWatchKey((k) => k + 1);
+      fetchPrices().then(setPrices).catch(() => {});
+      fetchInPrices().then(setInPrices).catch(() => {});
     },
   );
   const { expanded, toggle } = useExpanded();
@@ -120,6 +164,7 @@ export function Calendar() {
 
   // US calendar
   const usRows = load.status === 'ok' ? load.data.rows : [];
+  shown.current.US = new Set(usRows.map((r) => r.id));
   const days = daySummary(usRows, new Set());
   const jump = (timing: Timing) =>
     document.querySelector(`[data-date="${range.from}"][data-timing="${timing}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -127,6 +172,7 @@ export function Calendar() {
 
   // India rows
   const inRows: InReportDto[] = inLoad.status === 'ok' ? inLoad.data.rows : [];
+  shown.current.IN = new Set(inRows.map((r) => r.id));
 
   return (
     <div className="app">
@@ -145,7 +191,7 @@ export function Calendar() {
       <main className="content">
         {watch.error && <p className="warn-text" role="alert">{watch.error}</p>}
         {showWatch && (
-          <WatchlistView market={market} prices={market === 'IN' ? inPrices : prices} watch={watch} reloadKey={reloadKey} />
+          <WatchlistView market={market} prices={market === 'IN' ? inPrices : prices} watch={watch} reloadKey={reloadKey + watchKey} />
         )}
         {/* US day view: session band */}
         {!showWatch && market === 'US' && load.status === 'ok' && view === 'day' && usRows.length > 0 && (

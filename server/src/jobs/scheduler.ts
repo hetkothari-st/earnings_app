@@ -98,9 +98,10 @@ export function startScheduler(
 export async function warmUp(ctx: JobContext, job: JobRunner): Promise<void> {
   await job('results', () => refreshResults(ctx).then(() => undefined))();
   await job('calendar', () => refreshCalendar(ctx))();
+  // Share counts (live market cap) go first: the options snapshot below takes many minutes.
+  const shares = usSharesJob(ctx);
+  if (shares) await job('shares', shares)();
   await job('sectors', () => refreshSectors(ctx))();
   await job('moves', () => snapshotMoves(ctx))();
   await job('prevMoves', () => computePrevMoves(ctx))();
-  const shares = usSharesJob(ctx);
-  if (shares) await job('shares', shares)();
 }

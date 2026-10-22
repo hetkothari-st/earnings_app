@@ -29,6 +29,7 @@ export function registerStream(app: FastifyInstance, broadcaster: Broadcaster): 
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no', // proxies must pass each event on at once
     });
     reply.raw.write(': connected\n\n');
     const off = broadcaster.subscribe((frame) => reply.raw.write(frame));

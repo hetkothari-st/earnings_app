@@ -22,6 +22,14 @@ export async function fetchEarnings(
   return res.json() as Promise<EarningsResponse>;
 }
 
+/** One report as the calendar lists it; null when it is gone. Live updates patch rows with these. */
+export async function fetchReport(market: 'US' | 'IN', id: number): Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | null> {
+  const res = await apiFetch(market === 'IN' ? `/api/in/earnings/${id}` : `/api/earnings/${id}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return res.json() as Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number]>;
+}
+
 export async function fetchStatus(): Promise<StatusResponse> {
   const res = await apiFetch('/api/status');
   if (!res.ok) throw new Error(`Server returned ${res.status}`);

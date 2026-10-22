@@ -144,7 +144,8 @@ if (secHttp) {
     const v = readUsRelease(await secHttp.text(exhibitUrl), quarterEnd);
     if (savePrelim(db, reportId, v, new Date().toISOString())) live.publish('results', { ids: [reportId] });
   };
-  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids }), reader).start(5000);
+  // Every 2 s: one feed request each (SEC allows 10/s); a release shows on screen within a few seconds of filing.
+  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids }), reader).start(2000);
 }
 
 startInScheduler(inCtx, job, {
@@ -176,6 +177,6 @@ void (async () => {
     const v = await readInResultsPdf(await queuedPdf(pdfUrl), rep.quarterEnd);
     if (saveInPrelim(db, reportId, v, new Date().toISOString())) live.publish('in-results', { ids: [reportId] });
   };
-  new NseWatch({ ...inCtx, http: nseHttp }, (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); }, inReader).start(5000);
+  new NseWatch({ ...inCtx, http: nseHttp }, (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); }, inReader).start(3000);
   inPrices.refresh();
 })();

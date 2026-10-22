@@ -17,12 +17,20 @@ export function useLiveResults(
   onMoves?: (ids: number[]) => void,
   onPrices?: (prices: Record<string, LivePrice>) => void,
   india?: IndiaLive,
+  /** The stream came back after a drop: events sent meanwhile were missed, so reload. */
+  onReconnect?: () => void,
 ): void {
-  const cb = useRef({ onIds, onMoves, onPrices, india });
-  cb.current = { onIds, onMoves, onPrices, india };
+  const cb = useRef({ onIds, onMoves, onPrices, india, onReconnect });
+  cb.current = { onIds, onMoves, onPrices, india, onReconnect };
   useEffect(() => {
     if (typeof EventSource === 'undefined') return;
     const source = new EventSource('/api/stream');
+    let dropped = false;
+    source.addEventListener('error', () => { dropped = true; });
+    source.addEventListener('open', () => {
+      if (dropped) cb.current.onReconnect?.();
+      dropped = false;
+    });
     const listen = (event: string, pick: () => ((ids: number[]) => void) | undefined) =>
       source.addEventListener(event, (e: MessageEvent) => {
         try {

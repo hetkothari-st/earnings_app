@@ -16,7 +16,7 @@ const MAX_SYMBOLS = 50;
 const QUOTES_PER_MINUTE = 55;
 const REPICK_MS = 5000;
 const QUOTE_MS = 1100;
-const PUSH_MS = 1000;
+const PUSH_MS = 500;
 const VISIBLE_TTL_MS = 2 * 60_000;
 
 export interface Quote { price: number; prevClose: number; time: number }

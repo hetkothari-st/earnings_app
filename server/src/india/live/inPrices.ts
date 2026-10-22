@@ -22,7 +22,7 @@ export const IN_INDICES: { name: string; token: number; yahoo: string }[] = [
   { name: 'NIFTY MIDCAP 100', token: 256777, yahoo: 'NIFTY_MIDCAP_100.NS' },
 ];
 
-const PUSH_EVERY_MS = 1_000;
+const PUSH_EVERY_MS = 500;
 const RESUBSCRIBE_EVERY_MS = 5 * 60_000;
 /** Kite allows 3,000 instruments per connection. */
 export const MAX_STREAM_TOKENS = 3_000;
