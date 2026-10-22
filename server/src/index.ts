@@ -17,6 +17,7 @@ import { fetchIndexQuote, fetchStockQuote } from './sources/yahoo.js';
 import { todayIST } from './india/domain/nseCalendar.js';
 import type { InJobContext } from './india/jobs/context.js';
 import { startInScheduler, warmUpIndia } from './india/jobs/scheduler.js';
+import { computeInPrevMoves } from './india/jobs/prevMoves.js';
 import { getInReport, saveInPrelim, syncWatched } from './india/db/inRepo.js';
 import { loadFoCache } from './india/jobs/stocks.js';
 import { createWatchBackfill } from './jobs/watchBackfill.js';
@@ -103,7 +104,11 @@ const app = buildServer(db, {
     kiteBrowserStart: kiteCreds ? () => startBrowserLogin(kiteCreds) : undefined,
     kiteBrowserComplete: kiteCreds ? async (token, state) => {
       const ok = await completeBrowserLogin(kiteCreds, token, state);
-      if (ok) inPrices.refresh();
+      if (ok) {
+        inPrices.refresh();
+        // Previous moves need Kite candles: without a session at start or 08:30 they were skipped.
+        void job('india-prev-moves', () => computeInPrevMoves(inCtx))();
+      }
       return ok;
     } : undefined,
   },
