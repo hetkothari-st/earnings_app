@@ -20,7 +20,9 @@ const full = (code: string, name: string, adr: string, adrRatio: number, cik: nu
 const basic = (code: string, name: string, cadence: 'Q' | 'H' = 'H', fyEndMonth = 12): HkUniverseEntry =>
   ({ code, name, cadence, fyEndMonth, adr: null, adrRatio: null, cik: null });
 
-// Cadence was checked against Yahoo earningsHistory on 2026-10-27 (quarter-spaced rows => 'Q'; empty => kept 'H').
+// Cadence: 'Q' = quarter-spaced Yahoo earningsHistory (checked 2026-10-27) or an A-share listing.
+// Remaining 'H' entries are the HK Listing Rules default (interim + annual only); Yahoo had no period
+// history for them on 2026-10-27, so 'H' is not confirmed.
 // 0011 Hang Seng Bank dropped: no Yahoo .HK quote.
 export const HK_UNIVERSE: readonly HkUniverseEntry[] = [
   // Full level: ADR listed, SEC filer, Cboe chain.
