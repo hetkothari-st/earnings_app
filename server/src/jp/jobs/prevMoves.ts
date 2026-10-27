@@ -20,7 +20,8 @@ const daysBetween = (later: string, earlier: string) => (Date.parse(later) - Dat
  * ADR's US row as a JST date (US AMC → next day, before the Tokyo open: BMO; US BMO / DMH → same day, after the
  * Tokyo close: AMC); else a stored Yahoo past date. Every prior date, the app's own included, must lie 45–140 days
  * back. Known timing
- * gives basis 'known'; unknown timing is treated as AMC, basis 'assumed'. A failed close fetch leaves the row to be
+ * gives basis 'known'; unknown timing is treated as AMC, basis 'assumed'. A prior from the ADR's US row is always
+ * 'assumed': US-side timing cannot prove the Tokyo timing. A failed close fetch leaves the row to be
  * retried; a miss never blanks an earlier value.
  */
 export async function computeJpPrevMoves(ctx: JpJobContext, opts: { budget?: number } = {}): Promise<void> {
@@ -51,7 +52,7 @@ export async function computeJpPrevMoves(ctx: JpJobContext, opts: { budget?: num
         .sort((a, b) => b.date.localeCompare(a.date))[0];
       if (us) {
         const timing: JpTiming = us.timing === 'AMC' ? 'BMO' : us.timing === 'UNKNOWN' ? 'UNKNOWN' : 'AMC';
-        prior = { date: us.date, timing, known: timing !== 'UNKNOWN' };
+        prior = { date: us.date, timing, known: false };
       }
     }
     if (!prior) {

@@ -455,14 +455,14 @@ describe('refreshJpYahooResults', () => {
 });
 
 describe('computeJpPrevMoves', () => {
-  it('previous move from the ADR US row with US BMO → JST AMC window', async () => {
+  it('previous move from the ADR US row with US BMO → JST AMC window; basis assumed (US timing cannot prove Tokyo timing)', async () => {
     const closes = new Map([['2026-08-04', 3000], ['2026-08-05', 3150]]);
     const { db, ctx, closeCalls } = setup({ closes });
     usRow(db, 'TM', '2026-08-04', 'BMO');
     const id = upsertJpCalendarRow(db, row('7203', { periodEnd: '2026-09-30', fiscalQuarter: 2, fyEnd: '2027-03-31' }, '2Q FY27', '2026-11-05'), NOW);
     await computeJpPrevMoves(ctx);
     expect(closeCalls).toEqual([['7203.T', '2026-07-30', '2026-08-06']]);
-    expect(getJpReport(db, id)).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-08-04', prevMoveBasis: 'known' });
+    expect(getJpReport(db, id)).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-08-04', prevMoveBasis: 'assumed' });
   });
 
   it('previous move from jp_past_dates with unknown timing → assumed', async () => {
