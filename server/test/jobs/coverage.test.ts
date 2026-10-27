@@ -6,6 +6,7 @@ import { describe, expect, test } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import { listRange, openDb, saveExpectedMove, upsertCalendarRow } from '../../src/db/repo.js';
 import { saveHkExpectedMove, syncHkUniverse, upsertHkCalendarRow } from '../../src/hk/db/hkRepo.js';
+import { saveJpExpectedMove, syncJpUniverse, upsertJpCalendarRow } from '../../src/jp/db/jpRepo.js';
 import { computeCoverage, coverageOk, runCoverageCheck } from '../../src/jobs/coverage.js';
 import { saveFoList, saveInExpectedMove, upsertInCalendarRow } from '../../src/india/db/inRepo.js';
 import type { CalendarRow } from '../../src/types.js';
@@ -76,7 +77,7 @@ describe('coverage', () => {
       const db = openDb(path);
       seedUs(db);
       const lines: string[] = [];
-      expect(runCoverageCheck(db, TODAY, TODAY, TODAY, (l) => lines.push(l))).toBe(1);
+      expect(runCoverageCheck(db, TODAY, TODAY, TODAY, TODAY, (l) => lines.push(l))).toBe(1);
       expect(lines.join('\n')).toContain('BELOW MINIMUM');
       db.close();
       const cli = join(import.meta.dirname, '../../src/cli/coverageCheck.ts');
@@ -103,7 +104,12 @@ describe('coverage', () => {
     const h = upsertHkCalendarRow(db, { code: '9988', name: 'Alibaba', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26', reportDate: '2026-10-25', dateStatus: 'confirmed' }, NOW);
     db.prepare('UPDATE hk_reports SET eps_estimate = 1, prev_move_pct = 1 WHERE id = ?').run(h);
     saveHkExpectedMove(db, h, { adr: 'BABA', expiry: '2026-10-29', strike: 1, callMid: 1, putMid: 1, underlying: 1, movePct: 3, illiquid: false, quoteDate: '2026-10-23' }, false, NOW);
-    expect(runCoverageCheck(db, TODAY, TODAY, TODAY, () => {})).toBe(0);
+    syncJpUniverse(db, [{ code: '7203', edinetCode: 'E02144', name: 'TOYOTA', nameJa: 'トヨタ', fyEndMonth: 3, industryJa: null, adr: 'TM', adrRatio: 10, cik: 1094517 }], NOW);
+    db.prepare('UPDATE jp_stocks SET market_cap = 1e13').run();
+    const j = upsertJpCalendarRow(db, { code: '7203', name: 'TOYOTA', period: { periodEnd: '2026-09-30', fiscalQuarter: 2, fyEnd: '2027-03-31' }, periodLabel: '2Q FY27', reportDate: '2026-10-25', dateStatus: 'confirmed' }, NOW);
+    db.prepare('UPDATE jp_reports SET eps_estimate = 1, prev_move_pct = 1 WHERE id = ?').run(j);
+    saveJpExpectedMove(db, j, { adr: 'TM', expiry: '2026-10-29', strike: 1, callMid: 1, putMid: 1, underlying: 1, movePct: 3, illiquid: false, quoteDate: '2026-10-23' }, false, NOW);
+    expect(runCoverageCheck(db, TODAY, TODAY, TODAY, TODAY, () => {})).toBe(0);
   });
 
   test('GET /api/status carries coverage for all markets', async () => {

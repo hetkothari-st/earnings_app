@@ -547,7 +547,7 @@ export function setInEstimates(
 
 export function getInPref(db: DatabaseSync, userId: string): Market {
   const row = db.prepare('SELECT market FROM user_prefs WHERE user_id = ?').get(userId) as { market: string } | undefined;
-  return row?.market === 'IN' || row?.market === 'HK' ? row.market : 'US';
+  return row?.market === 'IN' || row?.market === 'HK' || row?.market === 'JP' ? row.market : 'US';
 }
 
 export function setInPref(db: DatabaseSync, userId: string, market: Market, now: string): void {

@@ -13,7 +13,11 @@ import { toHkDto } from '../hk/api/dto.js';
 import { listHkForSymbols } from '../hk/db/hkRepo.js';
 import { HKT } from '../hk/domain/hkCalendar.js';
 import type { HkReportDto } from '../hk/api/types.js';
-import { hkEntries, SymbolIndex } from './search.js';
+import { toJpDto } from '../jp/api/dto.js';
+import { listJpForSymbols } from '../jp/db/jpRepo.js';
+import { JST } from '../jp/domain/jpCalendar.js';
+import type { JpReportDto } from '../jp/api/types.js';
+import { hkEntries, jpEntries, SymbolIndex } from './search.js';
 import { addWatch, listWatch, MAX_WATCH, removeWatch, type WatchMarket } from './store.js';
 
 export interface WatchlistOptions {
@@ -26,12 +30,14 @@ export interface WatchlistOptions {
 // Used only while a market's index has not loaded yet, so adding a symbol right after a restart still works.
 const SYMBOL_FORMAT = /^[A-Z0-9&.\-]{1,24}$/;
 
-const asMarket = (v: unknown): WatchMarket | null => (v === 'US' || v === 'IN' || v === 'HK' ? v : null);
+const asMarket = (v: unknown): WatchMarket | null => (v === 'US' || v === 'IN' || v === 'HK' || v === 'JP' ? v : null);
 const normalize = (market: WatchMarket, raw: string): string => {
   if (market === 'US') return normalizeTicker(raw);
+  if (market === 'JP') return raw.trim().toUpperCase();
   if (market === 'HK') { const t = raw.trim(); return /^\d{1,4}$/.test(t) ? t.padStart(4, '0') : t; }
   return raw.trim().toUpperCase();
 };
+const JP_CODE = /^[0-9][0-9A-Z]{3}$/;
 
 /** GET /api/symbols, GET /api/watchlist, PUT/DELETE /api/watchlist/:market/:symbol for the signed-in user. */
 export function registerWatchlist(
@@ -40,8 +46,10 @@ export function registerWatchlist(
   const index = opts.index ?? new SymbolIndex();
   // The HK list is the fixed universe: load it now, so non-universe codes are rejected even right after a restart.
   if (index.size('HK') === 0) index.set('HK', hkEntries(db));
+  // Same for Japan, once jp_stocks has been filled; until then a code is checked by format.
+  if (index.size('JP') === 0) index.set('JP', jpEntries(db));
   const NOT_SIGNED_IN = { error: 'Not signed in' };
-  const BAD_MARKET = { error: 'market must be US, IN or HK' };
+  const BAD_MARKET = { error: 'market must be US, IN, HK or JP' };
 
   app.get('/api/symbols', async (req, reply) => {
     if (!currentUser(req)) return reply.code(401).send(NOT_SIGNED_IN);
@@ -68,15 +76,16 @@ export function registerWatchlist(
     const m = asMarket((req.query as { market?: string }).market);
     if (!m) return reply.code(400).send(BAD_MARKET);
     const symbols = listWatch(db, user, m);
-    const today = DateTime.fromMillis(now(), { zone: m === 'US' ? ET : m === 'IN' ? IST : HKT });
+    const today = DateTime.fromMillis(now(), { zone: m === 'US' ? ET : m === 'IN' ? IST : m === 'HK' ? HKT : JST });
     const from = today.minus({ days: 400 }).toISODate()!;
     const to = today.plus({ days: 400 }).toISODate()!;
-    type AnyDto = ReportDto | InReportDto | HkReportDto;
+    type AnyDto = ReportDto | InReportDto | HkReportDto | JpReportDto;
     const bySymbol = new Map<string, AnyDto[]>();
     const add = (k: string, d: AnyDto) => bySymbol.set(k, [...(bySymbol.get(k) ?? []), d]);
     if (m === 'US') for (const r of listForSymbols(db, symbols, from, to)) add(r.symbolKey, toDto(r));
     else if (m === 'IN') for (const r of listInForSymbols(db, symbols, from, to)) add(r.symbol, toInDto(r));
-    else for (const r of listHkForSymbols(db, symbols, from, to)) add(r.code, toHkDto(r));
+    else if (m === 'HK') for (const r of listHkForSymbols(db, symbols, from, to)) add(r.code, toHkDto(r));
+    else for (const r of listJpForSymbols(db, symbols, from, to)) add(r.code, toJpDto(r));
     const history = new Map<string, WatchHistoryDto>(); // latest Yahoo-backup quarter per US symbol
     if (m === 'US' && symbols.length) {
       const h = db.prepare(`SELECT symbol_key AS k, fiscal_quarter AS q, period_end AS p, eps_actual AS e FROM watch_history
@@ -106,6 +115,7 @@ export function registerWatchlist(
     const m = asMarket(params.market);
     if (!m) return reply.code(400).send(BAD_MARKET);
     const symbol = normalize(m, params.symbol);
+    if (m === 'JP' && !JP_CODE.test(symbol)) return reply.code(400).send({ error: 'Unknown symbol' });
     const known = index.size(m) > 0 ? index.has(m, symbol) : SYMBOL_FORMAT.test(symbol);
     if (!known) return reply.code(400).send({ error: 'Unknown symbol' });
     const current = listWatch(db, user, m);

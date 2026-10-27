@@ -3,6 +3,7 @@ import type { Db } from '../db/repo.js';
 import { ET, sessionClose } from '../domain/marketCalendar.js';
 import { IST } from '../india/domain/nseCalendar.js';
 import { HKT } from '../hk/domain/hkCalendar.js';
+import { JST } from '../jp/domain/jpCalendar.js';
 import type { Timing } from '../types.js';
 
 export const MAX_NOTE_LENGTH = 5000;
@@ -70,10 +71,24 @@ export function hkNoteDeadline(r: { reportDate: string; timing: Timing | 'DMH'; 
   return new Date(released.toMillis() + KEEP_AFTER_RESULTS_MS).toISOString();
 }
 
+/**
+ * Japan: 24 hours after the release if known, else 09:00 JST for before-open, end of day for unknown,
+ * otherwise the 15:30 close.
+ */
+export function jpNoteDeadline(r: { reportDate: string; timing: Timing | 'DMH'; releasedAt: string | null }): string {
+  let released: DateTime;
+  if (r.releasedAt) released = DateTime.fromISO(r.releasedAt);
+  else if (r.timing === 'BMO') released = DateTime.fromISO(`${r.reportDate}T09:00`, { zone: JST });
+  else if (r.timing === 'UNKNOWN') released = DateTime.fromISO(`${r.reportDate}T23:59:59`, { zone: JST });
+  else released = DateTime.fromISO(`${r.reportDate}T15:30`, { zone: JST });
+  return new Date(released.toMillis() + KEEP_AFTER_RESULTS_MS).toISOString();
+}
+
 interface Row {
   userId: string; reportId: number; text: string; updatedAt: string; reportDate: string | null; timing: Timing | null; secAcceptedAt: string | null;
   inReportDate: string | null; inTiming: Timing | null; inReleasedAt: string | null;
   hkReportDate: string | null; hkTiming: Timing | 'DMH' | null; hkReleasedAt: string | null;
+  jpReportDate: string | null; jpTiming: Timing | 'DMH' | null; jpReleasedAt: string | null;
 }
 
 function rows(db: Db, userId: string | null): Row[] {
@@ -81,9 +96,10 @@ function rows(db: Db, userId: string | null): Row[] {
   return db.prepare(`SELECT n.user_id AS userId, n.report_id AS reportId, n.text, n.updated_at AS updatedAt,
         r.report_date AS reportDate, r.timing, r.sec_accepted_at AS secAcceptedAt,
         i.report_date AS inReportDate, i.timing AS inTiming, i.released_at AS inReleasedAt,
-        h.report_date AS hkReportDate, h.timing AS hkTiming, h.released_at AS hkReleasedAt
-      FROM notes n LEFT JOIN reports r ON r.id = n.report_id LEFT JOIN in_reports i ON i.id = n.report_id LEFT JOIN hk_reports h ON h.id = n.report_id
-      ${userId == null ? '' : 'WHERE n.user_id = ?'} ORDER BY COALESCE(r.report_date, i.report_date, h.report_date)`)
+        h.report_date AS hkReportDate, h.timing AS hkTiming, h.released_at AS hkReleasedAt,
+        j.report_date AS jpReportDate, j.timing AS jpTiming, j.released_at AS jpReleasedAt
+      FROM notes n LEFT JOIN reports r ON r.id = n.report_id LEFT JOIN in_reports i ON i.id = n.report_id LEFT JOIN hk_reports h ON h.id = n.report_id LEFT JOIN jp_reports j ON j.id = n.report_id
+      ${userId == null ? '' : 'WHERE n.user_id = ?'} ORDER BY COALESCE(r.report_date, i.report_date, h.report_date, j.report_date)`)
     .all(...(userId == null ? [] : [userId])) as unknown as Row[];
 }
 
@@ -91,6 +107,7 @@ const deadlineOf = (r: Row) => {
   if (r.reportDate && r.timing) return noteDeadline({ reportDate: r.reportDate, timing: r.timing, secAcceptedAt: r.secAcceptedAt });
   if (r.inReportDate && r.inTiming) return inNoteDeadline({ reportDate: r.inReportDate, timing: r.inTiming, releasedAt: r.inReleasedAt });
   if (r.hkReportDate && r.hkTiming) return hkNoteDeadline({ reportDate: r.hkReportDate, timing: r.hkTiming, releasedAt: r.hkReleasedAt });
+  if (r.jpReportDate && r.jpTiming) return jpNoteDeadline({ reportDate: r.jpReportDate, timing: r.jpTiming, releasedAt: r.jpReleasedAt });
   return null;
 };
 

@@ -1,11 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { DateTime } from 'luxon';
 import type { DatabaseSync } from 'node:sqlite';
+import { isAdmin } from '../../auth/store.js';
+import { config } from '../../config.js';
 import type { IndexQuote } from '../../sources/yahoo.js';
-import { getJpReport, listJpRange } from '../db/jpRepo.js';
+import { getJpReport, lastEdinetSeenAt, lastJpSecSeenAt, listJpRange } from '../db/jpRepo.js';
 import { JP_INDICES } from '../universe.js';
 import { toJpDto } from './dto.js';
-import type { JpEarningsResponse, JpLivePriceDto, JpMarketDto } from './types.js';
+import type { JpAdminDto, JpEarningsResponse, JpLivePriceDto, JpMarketDto } from './types.js';
 
 const MAX_RANGE_DAYS = 400;
 const MARKETS_TTL_MS = 15_000;
@@ -17,6 +19,8 @@ export interface JpServerOptions {
   indices?: () => JpMarketDto[];
   /** Fallback: a Yahoo quote per JP_INDICES symbol. */
   indexQuote?: (yahooSymbol: string) => Promise<IndexQuote>;
+  /** Records the Japan codes a signed-in user currently sees (their price slots). */
+  setVisible?: (userId: string, codes: string[]) => void;
 }
 
 function validDate(s: string | undefined): s is string {
@@ -27,7 +31,7 @@ function validDate(s: string | undefined): s is string {
 export function registerJpRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
-  _currentUser: (req: FastifyRequest) => string | null,
+  currentUser: (req: FastifyRequest) => string | null,
   nowFn: () => number = Date.now,
   opts: JpServerOptions = {},
 ): void {
@@ -67,5 +71,19 @@ export function registerJpRoutes(
     }));
     marketsCache = { at: nowFn(), body: { indices } };
     return marketsCache.body;
+  });
+
+  /** Counts, source settings and the last 6-K / EDINET document seen, for the admin page. Admins only. Never includes the key. */
+  app.get('/api/admin/jp', async (req, reply) => {
+    const user = currentUser(req);
+    if (!user) return reply.code(401).send({ error: 'Not signed in' });
+    if (!isAdmin(db, user)) return reply.code(403).send({ error: 'Admins only' });
+    const c = db.prepare(`SELECT COALESCE(SUM(level = 'full'), 0) AS full, COALESCE(SUM(level != 'full'), 0) AS basic FROM jp_stocks WHERE active = 1`).get() as { full: number; basic: number };
+    const body: JpAdminDto = {
+      full: c.full, basic: c.basic, secConfigured: !!config.secUserAgent, edinetConfigured: !!config.edinetApiKey,
+      readerOn: !!(config.fastFields.jpEps || config.fastFields.jpRevenue),
+      lastSixKAt: lastJpSecSeenAt(db), lastEdinetAt: lastEdinetSeenAt(db),
+    };
+    return body;
   });
 }
