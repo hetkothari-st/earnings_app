@@ -1,6 +1,6 @@
 import type { JpFigureDto, JpLivePriceDto, JpReportDto } from '../../../server/src/jp/api/types';
 import type { Note } from '../api';
-import { changeClass, formatChange, formatDateHeading, formatJpEps, formatJpMoney, formatJpPrice, ytdLabel } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatJpEps, formatJpMoney, formatJpPrice, jpSpanLabel } from '../lib/format';
 import type { SortKey } from '../lib/sort';
 import { clock, CurrencyFigure, ExpectedMoveLine, LiveMoveLine, PreviousMoveLine, TIMING_SHORT } from './foreignParts';
 import { byDate } from './listParts';
@@ -93,7 +93,7 @@ function JpDetails({ r, zone, note, onSaveNote, price }: {
   onSaveNote: (reportId: number, text: string) => Promise<void>; price: JpLivePriceDto | undefined;
 }) {
   const sourceOf = (f: JpFigureDto) => (f.actualSource === 'yahoo' ? 'Yahoo' : f.actualSource === 'edinet' ? 'EDINET' : null);
-  const spanOf = (f: JpFigureDto) => (f.actualSpan === 'ytd' ? ytdLabel(f.ytdMonths) : null);
+  const spanOf = (f: JpFigureDto) => jpSpanLabel(r.fiscalQuarter, f);
   const fromEdinet = r.eps.actualSource === 'edinet' || r.revenue.actualSource === 'edinet';
   return (
     <div className="stock-body">

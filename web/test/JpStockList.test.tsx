@@ -46,6 +46,24 @@ describe('JpStockList', () => {
     expect(screen.getByText('Revenue estimate / actual').nextElementSibling!.textContent).toContain('YTD (9 months)');
   });
 
+  test('FY row with a quarter-span actual shows "Q4 only (3 months)" next to the value; no colour', () => {
+    const r = dto({
+      period: 'FY26', periodEnd: '2026-03-31', fiscalQuarter: 4, reportDate: '2026-05-08',
+      eps: { ...fig, estimate: 250, estimateCurrency: 'JPY', estimateSpan: 'year', actual: 60, actualCurrency: 'JPY', actualSource: 'sec', actualSpan: 'quarter' },
+      revenue: { ...fig, estimate: 48e12, estimateCurrency: 'JPY', estimateSpan: 'year', actual: 12e12, actualCurrency: 'JPY', actualSource: 'sec', actualSpan: 'quarter' },
+    });
+    mount([r], ['JP:7203']);
+    const eps = screen.getByText('EPS estimate / actual').nextElementSibling!;
+    expect(eps.textContent).toContain('¥60.00');
+    expect(eps.textContent).toContain('Q4 only (3 months)');
+    expect(screen.getByText('Revenue estimate / actual').nextElementSibling!.textContent).toContain('Q4 only (3 months)');
+    expect(document.querySelector('.act.beat, .act.miss')).toBeNull();
+    // A Q1–Q3 quarter actual needs no label.
+    const q2 = dto({ id: 3_000_000_002, symbol: '6758', eps: { ...fig, actual: 60, actualCurrency: 'JPY', actualSource: 'sec', actualSpan: 'quarter' } });
+    mount([q2], ['JP:6758']);
+    expect(screen.getAllByText('EPS estimate / actual')[1]!.nextElementSibling!.textContent).not.toContain('Q4 only');
+  });
+
   test('EDINET actual shows from EDINET and the credit line', () => {
     const r = dto({
       level: 'basic', adrTicker: null, adrRatio: null,

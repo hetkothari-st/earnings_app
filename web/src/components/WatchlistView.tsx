@@ -6,7 +6,7 @@ import type { JpReportDto } from '../../../server/src/jp/api/types';
 import type { ReportDto } from '../../../server/src/api/types';
 import { fetchWatchRows, type WatchRow } from '../api';
 import type { Watchlist } from '../hooks/useWatchlist';
-import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatHkEps, formatHkMoney, formatHkPrice, formatInrCr, formatJpEps, formatJpMoney, formatJpPrice, formatMoney, ytdLabel } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatHkEps, formatHkMoney, formatHkPrice, formatInrCr, formatJpEps, formatJpMoney, formatJpPrice, formatMoney, jpSpanLabel } from '../lib/format';
 import type { Market } from '../lib/market';
 import { todayHkt, todayJst } from '../lib/liveCap';
 import { todayEt } from '../lib/time';
@@ -69,7 +69,7 @@ function Latest({ latest, market }: { latest: WatchRow['latest']; market: Market
   if (market === 'JP') {
     const j = r as JpReportDto;
     if (j.eps.actual == null && j.revenue.actual == null) return <span className="muted">—</span>;
-    const span = (f: JpReportDto['eps']) => (f.actualSpan === 'ytd' ? ytdLabel(f.ytdMonths) : null);
+    const span = (f: JpReportDto['eps']) => jpSpanLabel(j.fiscalQuarter, f);
     return (
       <>
         <Figure label="EPS" actual={j.eps.actual} result={j.eps.result} format={(n) => formatJpEps(n, j.eps.actualCurrency)} preliminary={false} corrected={false} />

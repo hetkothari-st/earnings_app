@@ -28,6 +28,20 @@ test('JP watchlist: EDINET actual shows the EDINET marker and the credit line', 
   expect(screen.getByText('Source: EDINET (Financial Services Agency), edited')).toBeTruthy();
 });
 
+test('JP watchlist: an FY row with a quarter-span actual shows "Q4 only (3 months)"', async () => {
+  const fy = {
+    ...latest, period: 'FY26', periodEnd: '2026-03-31', fiscalQuarter: 4, reportDate: '2026-05-08',
+    eps: { ...fig, estimate: 250, estimateCurrency: 'JPY', estimateSpan: 'year', actual: 60, actualCurrency: 'JPY', actualSource: 'sec', actualSpan: 'quarter' },
+    revenue: { ...fig, actual: 12e12, actualCurrency: 'JPY', actualSource: 'sec', actualSpan: 'quarter' },
+  };
+  vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+    url.startsWith('/api/watchlist/rows') ? json(200, { rows: [{ symbol: '7203', name: 'Toyota Motor', next: null, latest: fy }] }) : json(404, {})));
+  render(<WatchlistView market="JP" prices={{}} watch={watch} />);
+  const row = (await screen.findByText('Toyota Motor')).closest('li')!;
+  await waitFor(() => expect(row.textContent).toContain('¥60.00'));
+  expect(row.textContent!.match(/Q4 only \(3 months\)/g)).toHaveLength(2);
+});
+
 test('useMarket accepts a server-side JP pref', async () => {
   localStorage.clear();
   vi.stubGlobal('fetch', vi.fn(async () => json(200, { market: 'JP' })));

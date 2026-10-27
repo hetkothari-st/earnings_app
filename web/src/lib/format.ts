@@ -109,3 +109,13 @@ export function formatJpEps(n: number | null, currency: string | null | undefine
 export function ytdLabel(months: number | null): string | null {
   return months == null ? null : `YTD (${months} months)`;
 }
+
+/**
+ * The span label next to a Japan actual: "YTD (n months)" for a year-to-date figure; on a full-year (4th-quarter)
+ * row a standalone-quarter figure is "Q4 only (3 months)"; otherwise none.
+ */
+export function jpSpanLabel(fiscalQuarter: number | null | undefined, f: { actualSpan: 'quarter' | 'ytd' | null; ytdMonths: number | null }): string | null {
+  if (f.actualSpan === 'ytd') return ytdLabel(f.ytdMonths);
+  if (f.actualSpan === 'quarter' && fiscalQuarter === 4) return 'Q4 only (3 months)';
+  return null;
+}
