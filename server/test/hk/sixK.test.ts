@@ -248,3 +248,31 @@ describe('parseDateNotice', () => {
     expect(parseDateNotice('The company will announce the results of the poll on May 5, 2026.')).toBeNull();
   });
 });
+
+describe('final review: date and timing stay inside the verb\'s own sentence', () => {
+  it('an EGM date in a later sentence is not the results date', () => {
+    const text = 'The Company will publish its interim results for the six months ended 30 June 2026 in due course. The interim dividend will be paid on 10 October 2026 to shareholders on the register on 15 September 2026. The extraordinary general meeting will be held on 1 October 2026.';
+    expect(parseDateNotice(text)?.date).not.toBe('2026-10-01');
+    expect(parseDateNotice(text)).toBeNull();
+  });
+
+  it('"before the U.S. market opens" then an AGM date in the next sentence: no date', () => {
+    const text = 'Acme will release its unaudited financial results for the third quarter 2026 before the U.S. market opens. The annual general meeting of the Company will be held on 30 December 2026.';
+    expect(parseDateNotice(text)?.date).not.toBe('2026-12-30');
+    expect(parseDateNotice(text)).toBeNull();
+  });
+
+  it('"U.S." and "p.m." do not end the sentence: the date after them is still read', () => {
+    expect(parseDateNotice('Acme will release its unaudited financial results for the third quarter 2026 before the U.S. Market opens on November 20, 2026.'))
+      .toEqual({ date: '2026-11-20', timing: 'AMC' });
+    expect(parseDateNotice('Acme will announce its interim results at 4:30 p.m. Hong Kong time on August 13, 2026.'))
+      .toEqual({ date: '2026-08-13', timing: 'AMC' });
+  });
+});
+
+describe('final review: a date notice with a revenue row is a date notice', () => {
+  it('a notice dated after filing wins over the results phrase + revenue row', () => {
+    const html = '<p>Acme announces date of third quarter 2026 earnings release. Acme will report its unaudited results for the quarter ended September 30, 2026 on November 20, 2026.</p><table><tr><td>Revenue guidance</td><td>1,000</td></tr></table>';
+    expect(classifyHkExhibit(html, { filedOn: '2026-11-05' })).toEqual({ kind: 'date-notice', date: '2026-11-20', timing: 'UNKNOWN' });
+  });
+});

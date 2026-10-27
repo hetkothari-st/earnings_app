@@ -71,10 +71,23 @@ const DIVIDEND_DATE = /\b(?:payable|paid|payment|record|register|closed|closure|
 /** HKEX Rule 13.43 notice: "a meeting of [a committee of] the Board … will be held on D … to consider|approve … results|earnings release". */
 const BOARD_MEETING = /\bmeeting\s+of\s+(?:a\s+committee\s+of\s+)?the\s+Board\b[^.]{0,120}?\bwill\s+be\s+held\s+on\s+/gi;
 
+/** Abbreviations whose period does not end a sentence ("U.S. Market", "4:30 p.m. Hong Kong time"). */
+const NOT_SENTENCE_END = /\b(?:U\.S|U\.K|[ap]\.m|Inc|Ltd|Co|Corp|No)$/i;
+
+/** `text` up to the end of its first sentence: the first `[.!?;]` followed by whitespace and a capital. */
+function ownSentence(text: string): string {
+  for (const m of text.matchAll(/[.!?;]\s+(?=[A-Z])/g)) {
+    if (m[0][0] === '.' && NOT_SENTENCE_END.test(text.slice(0, m.index!))) continue;
+    return text.slice(0, m.index!);
+  }
+  return text;
+}
+
 /**
  * Release date and timing from a date notice (Ruling 4). Dates are HK dates.
  * Clause: "[to|will] announce|report|release|upload|publish … results … on D", or the passive
- * "results … will be announced|released|published on D". The nearest date after the verb is D, skipping
+ * "results … will be announced|released|published on D". The nearest date after the verb, in the verb's own
+ * sentence (timing phrases too), is D, skipping
  * dividend payment / record dates. Failing those, an HKEX board-meeting notice ("a meeting of the Board will be
  * held on D to consider … results") gives D.
  * Timing, first match wins:
@@ -86,15 +99,20 @@ const BOARD_MEETING = /\bmeeting\s+of\s+(?:a\s+committee\s+of\s+)?the\s+Board\b[
  */
 export function parseDateNotice(text: string): { date: string; timing: HkTiming } | null {
   const best: { rank: number; date: string; timing: HkTiming }[] = [];
-  const active = /\b(?:(?:to|will(?:\s+further)?)\s+)?(?:announce|report|release|upload|publish)\b[\s\S]{0,160}?\bresults?\b/gi;
+  // Each verb is tried on its own ("earnings release. Acme will report its results on D": the "release" with no
+  // "results" in its sentence must not swallow the "report" clause after it).
+  const verbs = /\b(?:(?:to|will(?:\s+further)?)\s+)?(?:announce|report|release|upload|publish)\b/gi;
   const passive = /\bresults?\b[\s\S]{0,200}?\b(?:will(?:\s+further)?\s+be|be)\s+[a-z ,]{0,80}?(?:announced|released|published)\s+on\s+/gi;
 
-  for (const c of text.matchAll(active)) {
+  for (const c of text.matchAll(verbs)) {
+    // Date and timing come only from the verb's own sentence (an AGM / EGM date in the next sentence is not it).
+    const window = ownSentence(text.slice(c.index!, c.index! + 400));
+    const results = /\bresults?\b/i.exec(window.slice(0, c[0].length + 160 + 7));
+    if (!results) continue;
     // "announce the results of the poll / voting / general meeting" is a meeting notice, not earnings.
-    const own = text.slice(c.index!, c.index! + c[0].length + 80);
+    const own = text.slice(c.index!, c.index! + results.index + results[0].length + 80);
     if (/poll|vot(?:e|ing)|results\s+of\s+(?:the\s+)?(?:annual|extraordinary|general)\b|meeting\s+results/i.test(own)) continue;
     if (!EARNINGS_WORDS.test(text.slice(Math.max(0, c.index! - 300), c.index! + 400))) continue;
-    const window = text.slice(c.index!, c.index! + 400);
 
     // A dividend's payment / record / book-closure date is never the results date.
     const nearest = datesAfter(window, '\\bon\\s+').find((d) => !DIVIDEND_DATE.test(window.slice(Math.max(0, d.index - 40), d.index)))?.date;
@@ -253,6 +271,10 @@ function hasResultsTable(html: string): boolean {
 /** Classify an exhibit (or 6-K main document) as an earnings release, a results-date notice, or something else. */
 export function classifyHkExhibit(html: string, opts: { filedOn?: string } = {}): HkExhibit {
   const text = htmlToText(html);
+  // A notice whose opening names a results date after it was filed is a date notice, even with a "Revenue
+  // guidance" row. (A release's own "next results on D" line sits deep in the body: HSBC at ~110k chars.)
+  const opening = parseDateNotice(text.slice(0, 5000));
+  if (opening && opts.filedOn && opening.date > opts.filedOn) return { kind: 'date-notice', ...opening };
 
   if (RESULTS_PHRASE.test(text.slice(0, 5000))) {
     // A results release cannot report a period ending after it was filed (`filedOn`: the acceptance date).
