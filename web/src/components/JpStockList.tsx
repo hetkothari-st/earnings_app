@@ -119,7 +119,10 @@ function JpDetails({ r, zone, note, onSaveNote, price }: {
 
         <dt>Release</dt>
         <dd>
-          {r.releasedAt ? (
+          {r.releasedAt && r.level !== 'full' ? (
+            // Basic rows have no SEC filing: say only that the results are out.
+            <>{r.timing !== 'UNKNOWN' && `${TIMING_SHORT[r.timing]}, `}Results out</>
+          ) : r.releasedAt ? (
             // SEC acceptance is an upper bound on the release time, not the release time itself.
             <>
               {r.timing !== 'UNKNOWN' && `${TIMING_SHORT[r.timing]}, `}Filed with SEC by {clock(r.releasedAt, JST)} JST

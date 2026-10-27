@@ -74,8 +74,13 @@ function Latest({ latest, market }: { latest: WatchRow['latest']; market: Market
       <>
         <Figure label="EPS" actual={j.eps.actual} result={j.eps.result} format={(n) => formatJpEps(n, j.eps.actualCurrency)} preliminary={false} corrected={false} />
         {span(j.eps) && <span className="muted"> {span(j.eps)}</span>}
+        {j.eps.actual != null && j.eps.actualSource === 'edinet' && <span className="muted"> from EDINET</span>}
         <Figure label="Revenue" actual={j.revenue.actual} result={j.revenue.result} format={(n) => formatJpMoney(n, j.revenue.actualCurrency)} preliminary={false} corrected={false} />
         {span(j.revenue) && <span className="muted"> {span(j.revenue)}</span>}
+        {j.revenue.actual != null && j.revenue.actualSource === 'edinet' && <span className="muted"> from EDINET</span>}
+        {(j.eps.actualSource === 'edinet' || j.revenue.actualSource === 'edinet') && (
+          <span className="muted"> Source: EDINET (Financial Services Agency), edited</span>
+        )}
       </>
     );
   }

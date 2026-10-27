@@ -82,6 +82,13 @@ describe('JpStockList', () => {
     expect(screen.getByRole('link', { name: 'SEC 6-K' })).toBeTruthy();
   });
 
+  test('basic row with releasedAt says Results out, no SEC wording', () => {
+    mount([dto({ level: 'basic', adrTicker: null, adrRatio: null, releasedAt: '2026-11-05T07:30:00.000Z' })], ['JP:7203']);
+    const dd = screen.getByText('Release').nextElementSibling!;
+    expect(dd.textContent).toContain('Results out');
+    expect(dd.textContent).not.toMatch(/SEC|Filed/);
+  });
+
   test('expanded key is JP:<code>', () => {
     const { rerender } = mount([dto({})], ['7203']);
     expect(screen.queryByText('EPS estimate / actual')).toBeNull();
