@@ -3,6 +3,7 @@
  *   npm run reader-corpus -w server                    (US press releases, print only)
  *   npm run reader-corpus -w server -- --write         (also write test/fixtures/us/releases/report.json)
  *   npm run reader-corpus -w server -- --india [--write] (India results PDFs, test/fixtures/india/pdf/)
+ *   npm run reader-corpus -w server -- --hk            (HK 6-K releases, test/fixtures/hk/releases/, exact match)
  * Reads every test/fixtures/us/releases/*.htm and compares accepted values with
  * expected.json (EPS ±0.01, revenue ±0.5%). Adjusted EPS is gated against Nasdaq;
  * GAAP EPS against the release (hand-read); revenue against Finnhub or the release.
@@ -11,6 +12,8 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
+import type { HkPeriodKind } from '../hk/domain/period.js';
+import { readHkRelease } from '../hk/sources/releaseHk.js';
 import { readInResultsPdf } from '../india/sources/resultsPdf.js';
 import { readUsRelease } from '../sources/releaseReader.js';
 
@@ -26,7 +29,43 @@ function finish(s: Stat): void {
 }
 
 if (process.argv.includes('--india')) await runIndia();
+else if (process.argv.includes('--hk')) runHk();
 else runUs();
+
+/**
+ * HK (Ruling 10): every hand-checked entry of test/fixtures/hk/releases/expected.json is read for its period.
+ * A field is exact when equal to the hand-read value (EPS to the stated decimals, revenue to the unit), blank
+ * when the reader returned null, wrong otherwise. A release is exact when all five fields are; the gate needs
+ * >= 20 checked releases, all exact, none wrong.
+ */
+function runHk(): void {
+  const dir = fileURLToPath(new URL('../../test/fixtures/hk/releases/', import.meta.url));
+  interface HkExpected {
+    adr: string; periodEnd: string; kind: HkPeriodKind; checked: boolean; note: string;
+    eps: number | null; epsBasis: string | null; epsCurrency: string | null; revenue: number | null; revenueCurrency: string | null;
+  }
+  const FIELDS = ['eps', 'epsBasis', 'epsCurrency', 'revenue', 'revenueCurrency'] as const;
+  const expected: Record<string, HkExpected> = JSON.parse(readFileSync(`${dir}expected.json`, 'utf8'));
+  let checked = 0, exact = 0, wrong = 0, unchecked = 0;
+  for (const [file, e] of Object.entries(expected).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!e.checked) { unchecked++; continue; }
+    checked++;
+    const got = readHkRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, kind: e.kind });
+    const marks = FIELDS.map((f) => (got[f] === e[f] ? 'exact' : got[f] === null ? 'blank' : 'wrong'));
+    const verdict = marks.includes('wrong') ? 'wrong' : marks.includes('blank') ? 'blank' : 'exact';
+    if (verdict === 'exact') exact++;
+    if (verdict === 'wrong') wrong++;
+    console.log(`${verdict.padEnd(5)} ${file} (${e.kind})`);
+    FIELDS.forEach((f, i) => { if (marks[i] !== 'exact') console.log(`      ${f}: got ${got[f]}, expected ${e[f]} [${marks[i]}]`); });
+    if (verdict !== 'exact' && got.notes.length) console.log(`      notes: ${got.notes.join('; ')}`);
+  }
+  const gatePasses = checked >= 20 && exact === checked && wrong === 0;
+  console.log(`checked ${checked}, exact ${exact}, wrong ${wrong}${unchecked ? `, not yet checked ${unchecked}` : ''}`);
+  for (const k of ['hkEps', 'hkRevenue'] as const) {
+    const cfg = config.fastFields[k] ?? false;
+    console.log(`${k}=${gatePasses}  config ${cfg}${cfg === gatePasses ? '' : '  <-- config disagrees with corpus'}`);
+  }
+}
 
 function runUs(): void {
 const dir = fileURLToPath(new URL('../../test/fixtures/us/releases/', import.meta.url));
