@@ -791,8 +791,30 @@ const JP_HALF_TOKEN = /\b(1h|h1|2h|h2)\b/i;
 const JP_EXPLICIT_SPAN = /\b(three|six|nine|twelve|3|6|9|12)[\s-]*months?\b|\b(first|1st) quarter\b|\bfiscal years? ended\b|\byears? ended\b|\bfirst half\b|\bhalf[\s-]*year\b/i;
 /** The release's fiscal quarter (1–4) and fiscal-year label (the calendar year the fiscal year ends in). */
 interface JpFiscal { quarter?: number; year?: number }
-/** Tables of the parent company alone, not the group. */
-const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|parent[\s-]only|\(\s*reference\s*\)/i;
+/** Text naming the parent company alone, not the group ("Summary of Non-consolidated Financial Results", 単体). */
+const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|parent[\s-]only|単体/i;
+/** Text naming the group again ("Consolidated Statements of Income", 連結), never the "consolidated" of "non-consolidated". */
+const JP_CONSOLIDATED = /(?<!non[\s-]?)\bconsolidated\b|連結/gi;
+
+/**
+ * Document sections, in order: for each table, whether it sits in a non-consolidated (parent-only) section. The text
+ * between tables is scanned in order; a mention of non-consolidated / parent-only / 単体 opens such a section and a
+ * mention of consolidated / 連結 closes it, the last mention before a table deciding. Tables are found with the same
+ * pattern as `parseTables`, so the flags line up with its tables.
+ */
+function jpNonConsolidatedSections(html: string): boolean[] {
+  const between = html.split(/<table\b[\s\S]*?<\/table>/gi);
+  const out: boolean[] = [];
+  let state = false;
+  for (const seg of between.slice(0, -1)) {
+    const text = decode(seg);
+    let last = -1;
+    for (const m of text.matchAll(new RegExp(JP_NON_CONSOLIDATED.source, 'gi'))) if (m.index >= last) { last = m.index; state = true; }
+    for (const m of text.matchAll(JP_CONSOLIDATED)) if (m.index > last) { last = m.index; state = false; }
+    out.push(state);
+  }
+  return out;
+}
 const JP_FORECAST = /forecast|outlook|guidance|projection|estimate|\bplan(ned)?\b|target|prospect/i;
 
 function jpKinds(text: string): Set<JpSpan | 'ambiguous'> {
@@ -874,10 +896,11 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
   const found: Record<'revenue' | 'basic' | 'diluted', JpCandidate[]> = { revenue: [], basic: [], diluted: [] };
   const isEpsField = (f: JpField | null) => f === 'basic' || f === 'diluted' || f === 'both';
 
-  for (const table of parseTables(html, { rowspan: true })) {
+  const nonConsolidated = jpNonConsolidatedSections(html);
+  for (const [ti, table] of parseTables(html, { rowspan: true }).entries()) {
     const caption = tableCaption(table, true);
-    // Forecast tables and the parent company's own (non-consolidated, "(Reference)") figures are never read.
-    if (JP_FORECAST.test(caption) || JP_NON_CONSOLIDATED.test(caption)) continue;
+    // Forecast tables and tables in the parent company's own (non-consolidated) sections are never read.
+    if (JP_FORECAST.test(caption) || nonConsolidated[ti]) continue;
     const nonData: string[] = [];
     let headers: Cell[][] = [];
     let titles: Cell[][] = [];
@@ -935,6 +958,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
       section = '';
       sectionRaw = '';
     }
+    // A table whose own heading rows name non-consolidated / parent-only figures; "(Reference)" alone does not.
     if (!rowsOut.length || JP_NON_CONSOLIDATED.test(nonData.join(' '))) continue;
 
     const tableText = `${nonData.join(' ')} ${caption}`;
