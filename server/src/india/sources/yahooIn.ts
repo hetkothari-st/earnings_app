@@ -2,6 +2,7 @@ import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { type Http, SourceFormatError } from '../../sources/http.js';
 import { createQuoteSummaryFetcher } from '../../sources/yahooEarnings.js';
+import { yahooLimiter } from '../../sources/yahooLimiter.js';
 import { IST } from '../domain/nseCalendar.js';
 
 /** What Yahoo knows about one NSE stock (`<SYMBOL>.NS`). A backup source: never the result date's confirmation. */
@@ -71,8 +72,10 @@ export function parseYahooInSummary(json: unknown): YahooInSummary {
   };
 }
 
+/** quoteSummary for an NSE stock; requests wait for the cross-market Yahoo budget (`yahooLimiter`). */
 export function createYahooInFetcher(): (nseSymbol: string) => Promise<YahooInSummary | null> {
-  const get = createQuoteSummaryFetcher('price,assetProfile,earningsTrend,calendarEvents,defaultKeyStatistics', parseYahooInSummary);
+  const get = createQuoteSummaryFetcher('price,assetProfile,earningsTrend,calendarEvents,defaultKeyStatistics', parseYahooInSummary,
+    { limiter: yahooLimiter });
   return (nseSymbol) => get(`${nseSymbol}.NS`);
 }
 

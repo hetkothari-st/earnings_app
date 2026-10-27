@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { BROWSER_UA, HttpError } from '../../sources/http.js';
 import { openYahooSession } from '../../sources/yahooEarnings.js';
+import { yahooLimiter } from '../../sources/yahooLimiter.js';
 import { timingFromIst } from '../domain/nseCalendar.js';
 
 export interface YahooPastDate { date: string; timing: 'BMO' | 'AMC' | 'DMH' | null }
@@ -40,7 +41,6 @@ export interface YahooPastDatesDeps {
 }
 
 let cached: { headers: Record<string, string>; crumb: string } | null = null;
-let nextSlot = 0;
 
 /** Past result dates (newest first) of a Yahoo symbol. Throws on HTTP errors so callers can record them. */
 export async function fetchYahooPastDatesFor(
@@ -54,11 +54,7 @@ export async function fetchYahooPastDatesFor(
     query: { operator: 'eq', operands: ['ticker', yahooSymbol] },
   });
   for (let attempt = 0; ; attempt++) {
-    if (!deps.fetchImpl) { // one request a second, like the other Yahoo calls
-      const slot = Math.max(Date.now(), nextSlot);
-      nextSlot = slot + 1000;
-      if (slot > Date.now()) await new Promise((r) => setTimeout(r, slot - Date.now()));
-    }
+    if (!deps.fetchImpl) await yahooLimiter.wait(); // the cross-market Yahoo budget (1 request/s overall)
     const session = await open();
     const res = await doFetch(`${URL_BASE}?crumb=${encodeURIComponent(session.crumb)}`, {
       method: 'POST',

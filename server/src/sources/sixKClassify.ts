@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import type { LocalTiming } from '../domain/exchangeCalendar.js';
 import { isFigure, parseTables, type Cell } from './releaseReader.js';
 import type { FilingDoc } from './secFeed.js';
 
@@ -12,8 +13,8 @@ export type SixKProfile = 'hk' | 'jp';
 /** `'nine'` only for `'jp'`; the HK output never contains it. */
 export type SixKSpan = 'quarter' | 'half' | 'nine' | 'year';
 
-/** Release timing against the local exchange session. */
-export type LocalTiming = 'BMO' | 'DMH' | 'AMC' | 'UNKNOWN';
+/** Release timing against the local exchange session (the exchange calendar's type). */
+export type { LocalTiming };
 
 export type SixKExhibit =
   | { kind: 'results'; periodEnd: string; span: SixKSpan }

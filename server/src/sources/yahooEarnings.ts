@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { BROWSER_UA, type Http, HttpError, makeHttp, SourceFormatError } from './http.js';
+import type { SlotLimiter } from './yahooLimiter.js';
 
 /** What Yahoo Finance knows about a company's reported and upcoming quarters. */
 export interface YahooSummary {
@@ -111,24 +112,28 @@ export function yahooFill(s: YahooSummary, report: { reportDate: string; fiscalQ
  * when Yahoo rejects it. Unknown symbols return null.
  */
 /** A Yahoo session: cookie-carrying Http plus the crumb its API calls need (and the raw headers, for POSTs). */
-export async function openYahooSession(): Promise<{ http: Http; crumb: string; headers: Record<string, string> }> {
+export async function openYahooSession(
+  o: { limiter?: SlotLimiter } = {},
+): Promise<{ http: Http; crumb: string; headers: Record<string, string> }> {
   const res = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': BROWSER_UA }, redirect: 'manual' });
   const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
   const headers = { 'User-Agent': BROWSER_UA, Cookie: cookie };
   const crumb = await (await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', { headers })).text();
   if (!crumb || crumb.includes('<')) throw new SourceFormatError('Yahoo: could not obtain a session crumb');
-  return { http: makeHttp({ minIntervalMs: 1000, headers }), crumb, headers };
+  return { http: makeHttp({ minIntervalMs: 1000, headers, limiter: o.limiter }), crumb, headers };
 }
 
 /**
  * quoteSummary for one symbol with the given modules, parsed by `parse`. One session is reused
  * and renewed when Yahoo rejects it. Unknown symbols return null.
  */
-export function createQuoteSummaryFetcher<T>(modules: string, parse: (json: unknown) => T): (symbol: string) => Promise<T | null> {
+export function createQuoteSummaryFetcher<T>(
+  modules: string, parse: (json: unknown) => T, o: { limiter?: SlotLimiter } = {},
+): (symbol: string) => Promise<T | null> {
   let session: { http: Http; crumb: string } | null = null;
   return async (symbol) => {
     for (let attempt = 0; attempt < 2; attempt++) {
-      session ??= await openYahooSession();
+      session ??= await openYahooSession(o);
       const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`
         + `?modules=${modules}&crumb=${encodeURIComponent(session.crumb)}`;
       try {
