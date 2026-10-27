@@ -638,29 +638,34 @@ export function lastJpSecSeenAt(db: DatabaseSync): string | null {
 
 // ---------- EDINET bookkeeping ----------
 
-export type EdinetOutcome = 'merged' | 'no-row' | 'blank' | 'error';
+/**
+ * `merged`: actuals written. `superseded`: parsed and matched, but a higher or earlier source kept every field.
+ * `no-row` / `blank` / `parse-error`: final, never retried. `error`: download failed, retried with backoff.
+ */
+export type EdinetOutcome = 'merged' | 'superseded' | 'no-row' | 'blank' | 'parse-error' | 'error';
 
-/** Attempts after which an errored document is given up (it then counts as seen for good). */
-export const EDINET_MAX_ATTEMPTS = 5;
-/** Wait before retrying an errored document: 15 min, doubling per attempt. */
-const edinetRetryDelayMs = (attempts: number): number => 15 * 60_000 * 2 ** (attempts - 1);
+/**
+ * Wait before retrying an errored document: 15 min, doubling per attempt, at most 6 h. There is no attempt cap:
+ * a document is only listed again while its date is inside the 7-day polling window, which bounds the retries.
+ */
+const edinetRetryDelayMs = (attempts: number): number => Math.min(15 * 60_000 * 2 ** (attempts - 1), 6 * 60 * 60_000);
 
 /**
  * True when the document needs no (further) handling. Without `now`, any recorded outcome counts. With `now`, an
- * 'error' outcome counts only while its retry is not yet due, or after EDINET_MAX_ATTEMPTS attempts.
+ * 'error' outcome counts only while its retry is not yet due.
  */
 export function edinetSeen(db: DatabaseSync, docId: string, now?: string): boolean {
-  const r = db.prepare('SELECT outcome, attempts, retry_after FROM jp_edinet_seen WHERE doc_id = ?').get(docId) as
-    { outcome: string; attempts: number; retry_after: string | null } | undefined;
+  const r = db.prepare('SELECT outcome, retry_after FROM jp_edinet_seen WHERE doc_id = ?').get(docId) as
+    { outcome: string; retry_after: string | null } | undefined;
   if (!r) return false;
-  if (now === undefined || r.outcome !== 'error' || r.attempts >= EDINET_MAX_ATTEMPTS) return true;
+  if (now === undefined || r.outcome !== 'error') return true;
   return r.retry_after != null && Date.parse(r.retry_after) > Date.parse(now);
 }
 
 /**
- * Each EDINET document is handled once: the first 'merged' / 'no-row' / 'blank' outcome is kept for good. An
+ * Each EDINET document is handled once: the first final outcome (anything but 'error') is kept for good. An
  * 'error' outcome is provisional: a later error counts one more attempt and pushes the retry out (backoff), and a
- * later success replaces it.
+ * later final outcome replaces it.
  */
 export function markEdinetSeen(
   db: DatabaseSync, docId: string, code: string | null, docType: string, periodEnd: string | null, outcome: EdinetOutcome, now: string,

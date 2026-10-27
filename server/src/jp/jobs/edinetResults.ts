@@ -1,5 +1,5 @@
 import { recordSourceError } from '../../db/repo.js';
-import { edinetSeen, findJpReportId, jpStocks, markEdinetSeen, mergeJpActuals } from '../db/jpRepo.js';
+import { type EdinetOutcome, edinetSeen, findJpReportId, jpStocks, markEdinetSeen, mergeJpActuals } from '../db/jpRepo.js';
 import { addDaysJST } from '../domain/jpCalendar.js';
 import { codeFromSec, type EdinetDoc, isResultsFiling } from '../sources/edinet.js';
 import { type EdinetFigures, parseEdinetXbrl } from '../sources/edinetXbrl.js';
@@ -32,7 +32,7 @@ export function jpEdinetDates(today: string, mode: 'today' | 'backfill'): string
  * EDINET results (Ruling 13): 有価証券報告書 / 半期報告書 of active codes, read from the XBRL instance and merged as
  * year-to-date actuals (source `edinet`) into the row with the document's period end. Never creates rows and never
  * sets `releasedAt`. Each docID is handled once; a failed download is recorded as an `error` and retried with
- * backoff (bounded) on later runs. Without an EDINET client it does nothing. Returns the changed report ids.
+ * backoff on later runs while its date is polled; a parser exception is final (`parse-error`). Without an EDINET client it does nothing. Returns the changed report ids.
  */
 export async function refreshJpEdinet(ctx: JpJobContext, dates: string[]): Promise<number[]> {
   const { db } = ctx;
@@ -65,7 +65,7 @@ async function handle(ctx: JpJobContext, doc: EdinetDoc): Promise<number | null 
   const { db } = ctx;
   const code = codeFromSec(doc.secCode)!;
   const docType = doc.docTypeCode as '120' | '160';
-  const mark = (outcome: 'merged' | 'no-row' | 'blank' | 'error') =>
+  const mark = (outcome: EdinetOutcome) =>
     markEdinetSeen(db, doc.docID, code, docType, doc.periodEnd, outcome, ctx.now());
 
   if (!doc.periodEnd) {
@@ -75,10 +75,10 @@ async function handle(ctx: JpJobContext, doc: EdinetDoc): Promise<number | null 
   const periodEnd = doc.periodEnd;
 
   let failed: string | null = null;
-  const fail = (why: string) => {
-    // Recorded as an error and retried with backoff; the text is scrubbed before it is logged.
+  const fail = (outcome: 'error' | 'parse-error', why: string) => {
+    // The text is scrubbed before it is logged.
     console.error(`[edinet] ${doc.docID}: ${redactKey(why)}`);
-    mark('error');
+    mark(outcome);
   };
   const got = await guardedIn(ctx, {
     name: 'edinet',
@@ -93,7 +93,7 @@ async function handle(ctx: JpJobContext, doc: EdinetDoc): Promise<number | null 
   });
   if (!got) {
     if (failed == null) return 'blocked'; // backing off: not attempted, nothing recorded
-    fail(failed);
+    fail('error', failed); // a download error: retried with backoff
     return null;
   }
 
@@ -101,7 +101,8 @@ async function handle(ctx: JpJobContext, doc: EdinetDoc): Promise<number | null 
   try {
     f = parseEdinetXbrl(got.value, { docTypeCode: docType, periodEnd });
   } catch (err) {
-    fail(`parse: ${err instanceof Error ? err.message : String(err)}`);
+    // Deterministic for the same document: final, never retried.
+    fail('parse-error', `parse: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
   if (f.revenue == null && f.epsBasic == null && f.epsDiluted == null) {
@@ -122,6 +123,7 @@ async function handle(ctx: JpJobContext, doc: EdinetDoc): Promise<number | null 
     source: 'edinet',
     edinetDocId: doc.docID,
   }, ctx.now());
-  mark('merged');
+  // Nothing written: SEC (or an earlier EDINET document) already holds every field.
+  mark(changed ? 'merged' : 'superseded');
   return changed ? id : null;
 }
