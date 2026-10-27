@@ -1,11 +1,13 @@
 /**
- * Reads EPS and revenue from a US earnings press release (8-K EX-99.1, HTML).
+ * Reads EPS and revenue from an earnings press release (HTML): US 8-K EX-99.1
+ * (profile 'us', `readUsRelease`) or a foreign issuer's 6-K (profile 'hk':
+ * RMB / US$ / HK$ columns, per-ADS rows, half-year and full-year columns).
  *
  * Rule of thumb: uncertain means blank. A value is returned only when its row
- * label, its column header (the quarter ending `quarterEnd`, never year-to-date)
- * and — for revenue — the table's stated unit all check out, and every
- * candidate found in the document agrees. This reads document text only; block
- * detection (looksBlocked) is the fetcher's job.
+ * label, its column header (the period ending `periodEnd` with the expected span,
+ * never year-to-date) and — for revenue — the table's stated unit all check out,
+ * and every candidate found in the document agrees. This reads document text
+ * only; block detection (looksBlocked) is the fetcher's job.
  */
 
 export interface ReleaseValues {
@@ -18,8 +20,8 @@ export interface ReleaseValues {
 
 // ---------------------------------------------------------------- HTML → tables
 
-interface Cell { text: string; start: number; span: number }
-interface Table { rows: Cell[][]; before: string }
+export interface Cell { text: string; start: number; span: number }
+export interface Table { rows: Cell[][]; before: string }
 
 const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: "'", lsquo: "'", ldquo: '"', rdquo: '"', ndash: '–', mdash: '—', minus: '−' };
 
@@ -36,7 +38,7 @@ function decode(s: string): string {
     .trim();
 }
 
-function parseTables(html: string): Table[] {
+export function parseTables(html: string): Table[] {
   const out: Table[] = [];
   let prevEnd = 0;
   for (const t of html.matchAll(/<table\b[\s\S]*?<\/table>/gi)) {
@@ -121,13 +123,23 @@ function daysApart(y: number, m: number, d: number, qe: Date): number {
   return Math.abs(Date.UTC(y, m - 1, d) - qe.getTime()) / 86_400_000;
 }
 
-/** Does this column header name the quarter ending `qe`? */
-function isQuarterColumn(h: string, qe: Date): boolean {
-  if (!h || NOT_QUARTER.test(h)) return false;
+/** Dates named in a header, as [year, month, day]. `hk` also reads "30 Jun 2026" and "2026-06-30". */
+function headDates(h: string, hk: boolean): Array<[number, number, number]> {
   const dates: Array<[number, number, number]> = [];
   for (const m of h.matchAll(new RegExp(`\\b${MONTH_RE}\\.?\\s+(\\d{1,2})\\s*,?\\s*(\\d{4})\\b`, 'gi'))) dates.push([Number(m[3]), month(m[1]!), Number(m[2])]);
   for (const m of h.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/g)) dates.push([fullYear(m[3]!), Number(m[1]), Number(m[2])]);
   for (const m of h.matchAll(new RegExp(`\\b(\\d{1,2})-${MONTH_RE}-(\\d{4}|\\d{2})\\b`, 'gi'))) dates.push([fullYear(m[3]!), month(m[2]!), Number(m[1])]);
+  if (hk) {
+    for (const m of h.matchAll(new RegExp(`\\b(\\d{1,2})\\s+${MONTH_RE}\\.?,?\\s+(\\d{4})\\b`, 'gi'))) dates.push([Number(m[3]), month(m[2]!), Number(m[1])]);
+    for (const m of h.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) dates.push([Number(m[1]), Number(m[2]), Number(m[3])]);
+  }
+  return dates;
+}
+
+/** Does this column header name the quarter ending `qe`? */
+function isQuarterColumn(h: string, qe: Date, hk = false): boolean {
+  if (!h || NOT_QUARTER.test(h)) return false;
+  const dates = headDates(h, hk);
   if (dates.length) return dates.every(([y, m, d]) => m > 0 && daysApart(y, m, d, qe) <= 15);
 
   // "Q3 2026", "3Q26", "3Q'26", "Third Quarter 2026": calendar quarters only.
@@ -169,7 +181,7 @@ const REVENUE_LABELS = new Set([
   'total net revenue', 'total net revenues', 'net sales', 'total net sales',
 ]);
 
-type Field = 'epsAdjusted' | 'epsGaap' | 'revenue';
+type Field = 'epsAdjusted' | 'epsGaap' | 'epsAds' | 'revenue';
 
 function epsField(label: string): Field | null {
   if (EXCLUDE.test(label) || /discontinued/.test(label)) return null;
@@ -189,7 +201,14 @@ const UNIT_RE = /\bin\s+(thousands|millions|billions)\b|\(\s*(?:\$|us\$|usd|u\.s
  * "$ in millions", "$000s", "(000s)". Prose such as "tens of millions of customers" does not count.
  */
 const CAPTION_RE = /\(\s*(?:\$|us\$|usd|u\.s\. dollars|dollars|amounts)?\s*in\s+(thousands|millions|billions)\b|\([^()]{0,60}?\bin\s+(thousands|millions|billions)\b|\$\s*(?:in\s+)?(thousands|millions|billions)\b|\$\s?(000)'?s\b|\(\s*(000)'?s\s*\)/gi;
-const MULT: Record<string, number> = { thousands: 1e3, '000': 1e3, millions: 1e6, billions: 1e9 };
+/**
+ * Foreign-issuer unit forms (profile 'hk'): "RMB'000", "US$m", "$m", "$bn", "RMB in millions",
+ * "in millions of RMB / Renminbi / US dollars / HK dollars".
+ */
+const HK_UNIT_RE = /(?:rmb|renminbi|us\$|hk\$|\$)\s*'\s*(000)\b|(?:rmb|us\$|hk\$|\$)\s?(m|mn|bn)\b|\b(?:rmb|renminbi|usd|hkd)\s+(?:in\s+)?(thousands|millions|billions)\b|(?:us\$|hk\$)\s*(?:in\s+)?(thousands|millions|billions)\b|\bin\s+(thousands|millions|billions)\s+of\s+(?:rmb|renminbi|u\.?\s?s\.?\s*dollars|us\$|hk\$|hk dollars|hong kong dollars)/gi;
+/** A "$m" / "US$bn" unit: the HSBC-style tables whose revenue lines are read without a per-share row. */
+const DOLLAR_M = /\$\s?(m|mn|bn)\b/i;
+const MULT: Record<string, number> = { thousands: 1e3, '000': 1e3, millions: 1e6, billions: 1e9, m: 1e6, mn: 1e6, bn: 1e9 };
 
 function units(text: string, re: RegExp = UNIT_RE): Set<number> {
   const out = new Set<number>();
@@ -200,25 +219,156 @@ function units(text: string, re: RegExp = UNIT_RE): Set<number> {
   return out;
 }
 
+// ---------------------------------------------------------------- currencies (profile 'hk')
+
+export type Currency = 'CNY' | 'USD' | 'HKD';
+
+const CNY_RE = /\brmb\b|renminbi/i;
+const HKD_RE = /hk\$|\bhkd\b|\bhk dollars?\b|hong kong dollars?/i;
+const USD_RE = /us\$|\busd\b|\bu\.\s?s\.\s?dollars?\b|\bus dollars?\b/i;
+
+/** Currencies named in a text. '$' is a plain dollar sign, whose currency depends on the document. */
+export function currenciesIn(text: string): Set<Currency | '$'> {
+  const out = new Set<Currency | '$'>();
+  if (CNY_RE.test(text)) out.add('CNY');
+  if (HKD_RE.test(text)) out.add('HKD');
+  if (USD_RE.test(text)) out.add('USD');
+  if (/\$/.test(text.replace(/(?:hk|us|[a-z])\$/gi, ' '))) out.add('$');
+  return out;
+}
+
+/** The one currency a text names, '$' for a plain dollar sign only, null for none or several. */
+function oneCurrency(text: string, dollarIsUsd: boolean): Currency | null | undefined {
+  const s = currenciesIn(text);
+  const named = [...s].filter((c): c is Currency => c !== '$');
+  if (named.length > 1) return null;
+  if (named.length === 1) return named[0]!;
+  if (s.has('$')) return dollarIsUsd ? 'USD' : null;
+  return undefined; // nothing stated here: look further out
+}
+
+// ---------------------------------------------------------------- period spans (profile 'hk')
+
+const HALF_PHRASE = /\b(six|6)[\s-]*months?\b|half[\s-]*year|\b(first|second) half\b|\b[12]h\b|\bh[12]\b|\binterim\b|\b(24|26|28)[\s-]*weeks?\b/gi;
+const NINE_PHRASE = /\b(nine|9)[\s-]*months?\b|\b(36|39|40)[\s-]*weeks?\b/i;
+const YEAR_PHRASE = /\b(twelve|12)[\s-]*months?\b|\byears?\b|\bfy\b|full[\s-]*year|\bannual\b|\b(52|53)[\s-]*weeks?\b/i;
+/** Header words that rule a column out whatever its span. */
+const NOT_PERIOD = /\bchange\b|%|\bvs\b|versus|compared|growth|guidance|outlook|prior|constant currency|\bas (of|at)\b|\bat\s+\d|increase|decrease|trailing|average|annuali[sz]ed|pro forma/i;
+
+type Span = ReaderOptions['span'];
+
+function spanKinds(text: string): Set<Span | 'nine'> {
+  const out = new Set<Span | 'nine'>();
+  if (text.match(HALF_PHRASE)) out.add('half');
+  const rest = text.replace(HALF_PHRASE, ' ');
+  if (NINE_PHRASE.test(rest)) out.add('nine');
+  if (QUARTER_PHRASE.test(rest)) out.add('quarter');
+  if (YEAR_PHRASE.test(rest)) out.add('year');
+  return out;
+}
+
+/**
+ * Does this column name the half / year ending `pe`? Its own header must name that span and nothing else, or
+ * name no span while the whole header block names only that span. A dated column must be within 15 days of
+ * `pe`; an undated half needs "1H" / "interim" with the period-end year.
+ */
+function isSpanColumn(over: string, block: string, labelCol: string, pe: Date, span: 'half' | 'year'): boolean {
+  if (!over || NOT_PERIOD.test(over) || ADJUSTMENT_COL.test(over)) return false;
+  const own = spanKinds(over);
+  const kinds = own.size ? own : spanKinds(block);
+  if (kinds.size !== 1 || !kinds.has(span)) return false;
+  const dates = headDates(over, true);
+  if (!dates.length) dates.push(...headDates(labelCol, true));
+  if (dates.length) return dates.every(([y, m, d]) => m > 0 && daysApart(y, m, d, pe) <= 15);
+  if (span !== 'half' || /\bf(y|q)|fiscal/i.test(over)) return false;
+  const years = new Set([...over.matchAll(/\b(19|20)(\d{2})\b|\b[12]h\s*'?(\d{2})\b/gi)].map((m) => (m[3] ? 2000 + Number(m[3]) : Number(m[1]! + m[2]!))));
+  return /\b(1h|h1|interim|first half)/i.test(over) && years.size === 1 && years.has(pe.getUTCFullYear());
+}
+
+// ---------------------------------------------------------------- labels (profile 'hk')
+
+const HK_EXCLUDE = /asset value|cash flow|distribution|book value|dividend/i;
+/** "($)", "(RMB)", "(US$m)", "(HK$'000)" after a label. */
+const LABEL_CURRENCY = /\(\s*(?:in\s+)?(?:rmb|renminbi|us\$|hk\$|\$|usd|hkd)\s*(?:'?000|m|mn|bn|millions?|thousands?)?\s*\)/gi;
+/** Sections whose figures are not the reported ones. */
+const SKIP_SECTION = /constant currency|adjusted|non[\s-]?gaap|notable|excluding|underlying|pro forma/i;
+
+function hkLabel(label: string): string {
+  return label.replace(LABEL_CURRENCY, ' ').replace(/(\s+\d{1,2}(\s*,\s*\d{1,2})+)\s*$/, '').replace(/\s+/g, ' ').replace(/[\s:,.]+$/, '').trim();
+}
+
+/** Diluted EPS per (ordinary / Class A) share → epsGaap, per ADS → epsAds; adjusted rows → epsAdjusted (then dropped). */
+function hkEpsField(label: string): Field | null {
+  if (EXCLUDE.test(label) || HK_EXCLUDE.test(label) || /discontinued/.test(label)) return null;
+  if (!/dilut/.test(label)) return null;
+  if (/\bshares?\s*(\/|or|and)\s*ads\b|\bads\s*(\/|or|and)\s*(ordinary )?shares?\b/.test(label)) return null;
+  const ads = /\bper\s+(ads|american depositary shares?)\b/.test(label);
+  const share = /\bper\s+(class [a-z] )?(ordinary )?share\b|\beps\b/.test(label);
+  if (ads === share) return null;
+  if (ADJ_WORDS.test(label) || /non[\s-]?gaap/.test(label)) return 'epsAdjusted';
+  return ads ? 'epsAds' : 'epsGaap';
+}
+
+/** A row of only currency / unit marks ("$ | $", "RMB | US$") inside a table. */
+const UNIT_ROW_CELL = /^\(?\s*(?:rmb|renminbi|us\$|hk\$|\$|usd|hkd)?\s*(?:'?000|m|mn|bn|millions?|thousands?)?\s*\)?$/i;
+
 // ---------------------------------------------------------------- reader
+
+export interface ReaderOptions {
+  periodEnd: string;
+  span: 'quarter' | 'half' | 'year';
+  profile: 'us' | 'hk';
+  /** Profile 'hk': only columns in this currency are read. */
+  currency?: Currency;
+}
+
+export interface ReaderResult {
+  /** Diluted GAAP EPS per share (US: per common share; HK: per ordinary share). Same as `epsGaap`. */
+  epsShare: number | null;
+  /** Diluted GAAP EPS per ADS (profile 'hk' only). */
+  epsAds: number | null;
+  /** Adjusted / non-GAAP EPS (profile 'us' only; never read for 'hk'). */
+  epsAdjusted: number | null;
+  epsGaap: number | null;
+  revenue: number | null;
+  unit: number | null; /* multiplier applied to revenue */
+  notes: string[];
+}
 
 interface Candidate { value: number; unit: number | null }
 
 export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
-  const notes: string[] = [];
-  const qe = new Date(`${quarterEnd}T00:00:00Z`);
-  const found: Record<Field, Candidate[]> = { epsAdjusted: [], epsGaap: [], revenue: [] };
-  if (Number.isNaN(qe.getTime())) return { epsAdjusted: null, epsGaap: null, revenue: null, unit: null, notes: ['bad quarterEnd'] };
+  const r = readRelease(html, { periodEnd: quarterEnd, span: 'quarter', profile: 'us' });
+  return { epsAdjusted: r.epsAdjusted, epsGaap: r.epsGaap, revenue: r.revenue, unit: r.unit, notes: r.notes };
+}
 
-  for (const table of parseTables(html)) {
+export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
+  const notes: string[] = [];
+  const hk = opts.profile === 'hk';
+  const qe = new Date(`${opts.periodEnd}T00:00:00Z`);
+  const found: Record<Field, Candidate[]> = { epsAdjusted: [], epsGaap: [], epsAds: [], revenue: [] };
+  if (Number.isNaN(qe.getTime())) {
+    return { epsShare: null, epsAds: null, epsAdjusted: null, epsGaap: null, revenue: null, unit: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
+  }
+
+  const tables = parseTables(html);
+  // A plain "$" is US$ when no table names another currency (or the caption says US dollars).
+  const docCurrencies = hk ? currenciesIn(tables.flatMap((t) => t.rows.flat().map((c) => c.text)).join(' ')) : new Set();
+  const dollarIsUsdInDoc = !docCurrencies.has('CNY') && !docCurrencies.has('HKD');
+
+  const epsRow = hk
+    ? /per (diluted |common |basic )?share|\beps\b|earnings per|per (class [a-z] )?ordinary share|per ads\b|per american depositary/i
+    : /per (diluted |common |basic )?share|\beps\b|earnings per/i;
+
+  for (const table of tables) {
     // Table unit: stated in its non-data rows, else just above the table.
     const nonData: string[] = [];
-    const hasEpsRow = table.rows.some((r) => /per (diluted |common |basic )?share|\beps\b|earnings per/i.test(r.find((c) => c.text)?.text ?? ''));
+    const hasEpsRow = table.rows.some((r) => epsRow.test(r.find((c) => c.text)?.text ?? ''));
     let headers: Cell[][] = [];
     let lastWasData = false;
     let section = '';
     let titles: Cell[][] = []; // label-only rows since the last data row
-    const rowsOut: Array<{ field: Field; nums: Num[]; headers: Cell[][]; label: string; section: string }> = [];
+    const rowsOut: Array<{ field: Field; nums: Num[]; headers: Cell[][]; label: string; rawLabel: string; section: string }> = [];
 
     for (const cells of table.rows) {
       const li = cells.findIndex((c) => c.text);
@@ -232,10 +382,13 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
         lastWasData = true;
         titles = [];
         let label = normLabel(first.text);
+        if (hk) label = hkLabel(label);
         if (/^(diluted|basic|assuming dilution)$/.test(label) && section) label = `${section} ${label}`;
-        const field = REVENUE_LABELS.has(label) ? 'revenue' : epsField(label);
+        // "Per ordinary share" | "Diluted earnings": the section names the per-share basis.
+        else if (hk && /\bper\b/.test(section) && !/\bper\b/.test(label) && /\b(diluted|basic)\b/.test(label)) label = `${label} ${section}`;
+        const field = REVENUE_LABELS.has(label) ? 'revenue' : hk ? hkEpsField(label) : epsField(label);
         const vals = nums.filter((n) => !n.pct);
-        if (field && vals.length) rowsOut.push({ field, nums: vals, headers, label, section });
+        if (field && vals.length && !(hk && SKIP_SECTION.test(section))) rowsOut.push({ field, nums: vals, headers, label, rawLabel: first.text, section });
         // "As Adjusted(2): | Institutional: | $ 17" — a heading that shares its row with a side panel.
         if (/:\s*$/.test(first.text)) section = normLabel(first.text);
         continue;
@@ -249,6 +402,12 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
         else headers = [...headers, cells];
         continue;
       }
+      // A "$ | $" row between data rows restates the unit of the columns below; it does not start a new block.
+      if (hk && lastWasData && cells.every((c) => !c.text || UNIT_ROW_CELL.test(c.text))) {
+        headers = [...headers, cells];
+        section = '';
+        continue;
+      }
       if (lastWasData) headers = titles; // a new header block, with the titles just above it
       headers = [...headers, cells];
       lastWasData = false;
@@ -256,42 +415,67 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
     }
     if (!rowsOut.length) continue;
 
-    const inTable = units(nonData.join(' '));
+    const nonDataText = nonData.join(' ');
+    const inTable = units(nonDataText);
     // Caption: the last sentence above the table ("… Reconciliation of Non-GAAP Measures (in millions)").
     const caption = table.before.split(/[.!?;]\s+(?=[A-Z0-9(])/).pop() ?? '';
     const near = units(caption, CAPTION_RE);
+    if (hk) {
+      for (const u of units(nonDataText, HK_UNIT_RE)) inTable.add(u);
+      for (const u of units(caption, HK_UNIT_RE)) near.add(u);
+    }
     let unit: number | null = null;
     if (inTable.size === 1) unit = [...inTable][0]!;
     else if (inTable.size === 0 && near.size === 1) unit = [...near][0]!;
+    const dollarM = hk && DOLLAR_M.test(nonDataText);
+    const capCur = currenciesIn(caption);
+    const dollarIsUsd = dollarIsUsdInDoc || (capCur.has('USD') && !capCur.has('CNY') && !capCur.has('HKD'));
 
-    for (const { field, nums, headers: hs, label, section: sec } of rowsOut) {
+    for (const { field, nums, headers: hs, label, rawLabel, section: sec } of rowsOut) {
       const picked: Num[] = [];
       const blockText = hs.flat().map((c) => c.text).join(' ');
       const scope = blockScope(blockText);
       // Under a caption, header block or section that says non-GAAP / adjusted / reconciliation, a plain
       // "Diluted EPS" row may be the adjusted figure: GAAP only from rows or columns that say GAAP / reported.
       const adjContext = ADJ_CONTEXT.test(`${caption} ${blockText} ${sec}`);
-      if (scope === 'ytd') continue;
+      if (scope === 'ytd' && opts.span === 'quarter') continue;
       const labelCol = hs.map((row) => row.filter((c) => c.text && c.start === 0 && c.span === 1).map((c) => c.text).join(' ')).join(' ');
       for (const n of nums) {
         const over = hs.map((row) => row.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start).map((c) => c.text).join(' ')).join(' ').trim();
-        // A block that only speaks of the quarter may name it once, in the label column ("Q3", "Three Months Ended June 30, 2026").
-        const head = scope === 'quarter' ? `${labelCol} ${over}`.trim() : over;
-        if (!isQuarterColumn(head, qe) || ADJUSTMENT_COL.test(head)) continue;
-        if (scope === 'mixed' && !QUARTER_PHRASE.test(head)) continue;
+        let head: string;
+        if (opts.span === 'quarter') {
+          // A block that only speaks of the quarter may name it once, in the label column ("Q3", "Three Months Ended June 30, 2026").
+          head = scope === 'quarter' ? `${labelCol} ${over}`.trim() : over;
+          if (!isQuarterColumn(head, qe, hk) || ADJUSTMENT_COL.test(head)) continue;
+          if (scope === 'mixed' && !QUARTER_PHRASE.test(head)) continue;
+        } else {
+          head = over;
+          if (!isSpanColumn(over, `${labelCol} ${blockText}`, labelCol, qe, opts.span)) continue;
+        }
+        if (hk && opts.currency) {
+          // The column's currency: its own header, else the row label, else the table's titles and caption.
+          let cur: Currency | null | undefined;
+          for (const t of [over, rawLabel, `${nonDataText} ${caption}`]) if ((cur = oneCurrency(t, dollarIsUsd)) !== undefined) break;
+          if (cur === undefined && n.dollar && dollarIsUsd) cur = 'USD';
+          if (cur !== opts.currency) continue;
+        }
         let f: Field = field;
         const adjCol = /\b(adjusted|non[\s-]?gaap|core)\b/i.test(head);
         if (adjCol && f === 'epsGaap') f = 'epsAdjusted';
+        if (hk && adjCol && f === 'epsAds') continue;
         if (!adjCol && f === 'epsAdjusted' && /\bgaap\b|as reported/i.test(head)) continue;
         if (f !== 'revenue' && (n.decimals < 2 || n.decimals > 3 || Math.abs(n.value) >= 1000)) continue;
         if (f === 'revenue' && (n.value <= 0 || n.decimals > 2)) continue;
-        if (f === 'epsGaap' && adjContext && !EXPLICIT_GAAP.test(`${label} ${head}`)) continue;
+        if ((f === 'epsGaap' || f === 'epsAds') && adjContext && !EXPLICIT_GAAP.test(`${label} ${head}`)) continue;
+        if (hk && f === 'epsAdjusted') continue; // adjusted / non-GAAP is never read for foreign issuers
         if (f !== field) { found[f].push({ value: n.value, unit: null }); continue; }
         picked.push(n);
       }
       if (!picked.length) continue;
       if (field === 'revenue') {
-        if (!hasEpsRow) continue; // segment / KPI tables: no per-share line, not the income statement
+        // Segment / KPI tables have no per-share line and are not the income statement. A "$m" table
+        // (HSBC's highlights) states revenue without one.
+        if (!hasEpsRow && !dollarM) continue;
         if (unit === null) { notes.push('revenue: no unit stated for table'); continue; }
         for (const n of picked) found.revenue.push({ value: n.value * unit, unit });
       } else {
@@ -316,7 +500,10 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
   const adj = settle('epsAdjusted');
   const gaap = settle('epsGaap');
   const rev = settle('revenue');
+  const ads = settle('epsAds');
   return {
+    epsShare: gaap?.value ?? null,
+    epsAds: ads?.value ?? null,
     epsAdjusted: adj?.value ?? null,
     epsGaap: gaap?.value ?? null,
     revenue: rev ? Math.round(rev.value) : null,
