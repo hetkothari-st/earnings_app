@@ -30,6 +30,9 @@ export const config = {
    * US corpus (48 releases): adjusted EPS 8/11 = 72.7% vs Nasdaq (company non-GAAP often
    * differs from Nasdaq's), GAAP EPS 31/31 = 100%, revenue 24/24 = 100%.
    * Quick US EPS is shown GAAP-labelled, without colour. India reader not built yet.
+   * HK (Ruling 10, exact match on all five fields; npm run reader-corpus -w server -- --hk): 24 hand-checked
+   * 6-K/8-K releases, 11 exact, 0 wrong, 13 blank (no currency found in the statement headers, a combined
+   * per share/ADS row, or no unit stated) => gate closed, hkEps / hkRevenue stay off.
    */
   fastFields: { usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false, hkEps: false, hkRevenue: false } as {
     usEpsAdjusted: boolean; usEpsGaap: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean; hkEps?: boolean; hkRevenue?: boolean;
