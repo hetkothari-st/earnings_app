@@ -6,7 +6,7 @@
  *   client. Every listed code (with a fiscal year end) once a day; near-term codes (an unreleased report within
  *   14 days, or no date seen in the last 7 days) every 6 h. Each run takes at most `perRun` codes, longest overdue
  *   first; scheduled every 10 min with the default 30 that is about one request per 20 s. Progress is kept per code
- *   in `jp_date_sweep`, so a restart resumes the cycle, and codes never checked go first, those with no stored
+ *   in `jp_date_sweep` (schema in db/schema.ts), so a restart resumes the cycle, and codes never checked go first, those with no stored
  *   date ahead of the rest.
  * - `refreshJpBulkCalendar`: the bulk calendar, kept as a supplement only. It creates rows for periods that have
  *   none and supplies TAS timing; it never moves a stored date.
@@ -49,24 +49,22 @@ const PAST_DAYS = 140;
 
 // ---------- Sweep progress ----------
 
-function ensureSweepTable(db: DatabaseSync): void {
-  db.exec(`CREATE TABLE IF NOT EXISTS jp_date_sweep (
-    code TEXT PRIMARY KEY,
-    checked_at TEXT NOT NULL,   -- last calendarEvents fetch (or attempt)
-    date_seen_at TEXT           -- last fetch that showed a single date today or later
-  )`);
+// The jp_date_sweep table is created by ensureJpSchema (db/schema.ts).
+
+interface SweepState { checkedAt: string; dateSeenAt: string | null; announcedDate: string | null }
+
+function sweepState(db: DatabaseSync): Map<string, SweepState> {
+  const rows = db.prepare('SELECT code, checked_at, date_seen_at, announced_date FROM jp_date_sweep').all() as
+    { code: string; checked_at: string; date_seen_at: string | null; announced_date: string | null }[];
+  return new Map(rows.map((r) => [r.code, { checkedAt: r.checked_at, dateSeenAt: r.date_seen_at, announcedDate: r.announced_date }]));
 }
 
-function sweepState(db: DatabaseSync): Map<string, { checkedAt: string; dateSeenAt: string | null }> {
-  const rows = db.prepare('SELECT code, checked_at, date_seen_at FROM jp_date_sweep').all() as
-    { code: string; checked_at: string; date_seen_at: string | null }[];
-  return new Map(rows.map((r) => [r.code, { checkedAt: r.checked_at, dateSeenAt: r.date_seen_at }]));
-}
-
-function markChecked(db: DatabaseSync, code: string, now: string, dateSeen: boolean): void {
-  db.prepare(`INSERT INTO jp_date_sweep (code, checked_at, date_seen_at) VALUES (?, ?, ?)
-    ON CONFLICT (code) DO UPDATE SET checked_at = excluded.checked_at, date_seen_at = COALESCE(excluded.date_seen_at, date_seen_at)`)
-    .run(code, now, dateSeen ? now : null);
+/** `announced`: a date today or later that Yahoo marked as announced by the company. */
+function markChecked(db: DatabaseSync, code: string, now: string, dateSeen: boolean, announced: string | null = null): void {
+  db.prepare(`INSERT INTO jp_date_sweep (code, checked_at, date_seen_at, announced_date) VALUES (?, ?, ?, ?)
+    ON CONFLICT (code) DO UPDATE SET checked_at = excluded.checked_at, date_seen_at = COALESCE(excluded.date_seen_at, date_seen_at),
+      announced_date = COALESCE(excluded.announced_date, announced_date)`)
+    .run(code, now, dateSeen ? now : null, announced);
 }
 
 // ---------- Date planning (shared) ----------
@@ -161,15 +159,16 @@ function dueCodes(ctx: JpJobContext, stocks: JpStock[]): JpStock[] {
 /**
  * One run of the rolling date sweep (see the file comment). For each due code: a single next date today or later
  * is planned and written; a stale (past) date never creates a row, but is kept as a past date (for previous moves)
- * when it lies within 140 days and Yahoo's earningsHistory already has an actual for the period it closes; a range
- * gives nothing. The same summary also feeds estimates and sector / industry. A failed request records a
+ * only when Yahoo marks it announced (`isEarningsDateEstimate` false), it lies within 140 days and earningsHistory
+ * already has an actual for the period it closes; a range gives nothing. A date Yahoo marks as its own projection
+ * never moves a row standing on the code's last announced date. The same summary also feeds estimates and sector / industry. A failed request records a
  * `yahoo-jp-calendar` error and ends the run: rows written so far stay, nothing is deleted, and the failed code
  * waits for its next turn so one bad symbol cannot stall the sweep.
  */
 export async function refreshJpCalendar(ctx: JpJobContext, opts: { perRun?: number } = {}): Promise<void> {
-  ensureSweepTable(ctx.db);
   const today = ctx.todayJST();
   const stocks = jpStocks(ctx.db).filter((s) => s.active && s.fyEndMonth != null);
+  const state = sweepState(ctx.db);
   for (const stock of dueCodes(ctx, stocks).slice(0, Math.max(0, opts.perRun ?? JP_DATE_SWEEP.perRun))) {
     const y = await trackIn(ctx, 'yahoo-jp-calendar', () => ctx.yahooSummary(stock.yahooSymbol, JP_DATE_SWEEP.maxAgeMs));
     if (y === undefined) {
@@ -178,10 +177,20 @@ export async function refreshJpCalendar(ctx: JpJobContext, opts: { perRun?: numb
     }
     const next = y?.nextDate ?? null;
     const seen = next != null && next >= today;
-    for (const p of planDates(ctx, stock, seen ? [{ date: next, timing: 'UNKNOWN', tas: false }] : [])) writePlanned(ctx, stock, p);
-    if (y && next != null && !seen) keepPastDate(ctx, stock, next, y.epsHistory);
+    const projected = y?.nextDateEstimated === true;
+    const announcedBefore = state.get(stock.code)?.announcedDate ?? null;
+    for (const p of planDates(ctx, stock, seen ? [{ date: next, timing: 'UNKNOWN', tas: false }] : [])) {
+      // Announced beats projected: Yahoo's projection never moves a row standing on the last announced date.
+      if (projected && announcedBefore != null && announcedBefore !== p.date) {
+        const stored = findJpReportId(ctx.db, stock.code, p.period.periodEnd);
+        if (stored != null && getJpReport(ctx.db, stored)?.reportDate === announcedBefore) continue;
+      }
+      writePlanned(ctx, stock, p);
+    }
+    // Only a date Yahoo marks as announced can be a past date: a projection that passed may have missed by days.
+    if (y && next != null && !seen && y.nextDateEstimated === false) keepPastDate(ctx, stock, next, y.epsHistory);
     if (y) applyJpSummary(ctx, stock.code, jpEstimateRows(ctx, stock.code), y);
-    markChecked(ctx.db, stock.code, ctx.now(), seen);
+    markChecked(ctx.db, stock.code, ctx.now(), seen, seen && y?.nextDateEstimated === false ? next : null);
   }
 }
 
