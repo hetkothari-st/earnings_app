@@ -938,6 +938,11 @@ function jpTokenPeriod(label: string, defs: Map<string, string | null>): string 
 /** The first cell of a note row inside a table: "Note:", "Notes:", a bare "1." / "2)", or "(a) …". */
 const JP_NOTE_ROW = /^(?:notes?\s*:?|\d{1,2}\s*[.)]|\([a-z]\)\s.*)$/i;
 
+/** A dangling label fragment: one or two words ending in a dash ("Basic-", "Diluted –"). */
+const JP_LABEL_FRAGMENT = /^[a-z]+(?:\s[a-z]+)?\s*[-–—]$/i;
+/** A change-column head restated next to the units ("% Change", "Change (%)"). */
+const JP_CHANGE_CELL = /^(?:%\s*change|change\s*\(\s*%\s*\))$/i;
+
 /** A "¥" sign on a figure ("¥ 131.62", or a "¥" cell just before it): the figure is in yen. */
 const JP_YEN_FIGURE = /^¥\s*(?=[(\-–−]?\d)/;
 
@@ -998,6 +1003,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
     let sectionRaw = '';
     let perShare = false;
     let hasEps = false;
+    let pendingFragment = '';
     const rowsOut: JpRow[] = [];
 
     for (const rawCells of table.rows) {
@@ -1010,10 +1016,13 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
       const yearRow = nums.length > 0 && nums.every((n) => isYear(n) && !n.dollar && !n.pct);
       const otherText = cells.slice(li + 1).some((c) => c.text);
 
+      const fragment = pendingFragment;
+      pendingFragment = '';
       if (hasLabel && nums.length && !yearRow) {
         lastWasData = true;
         titles = [];
-        let label = jpLabel(first.text);
+        // A dangling fragment on the row just above ("Basic-") is the start of this row's label.
+        let label = jpLabel(fragment ? `${fragment} ${first.text}` : first.text);
         // "Basic" / "Diluted" under "Earnings per share attributable to …" takes the parent's label.
         if (/^(basic|diluted|basic and diluted|diluted and basic)$/.test(label) && section) label = `${section} ${label}`;
         const field = jpField(label, perShare);
@@ -1043,6 +1052,8 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
       }
       if (cells.some((c) => c.text && isEpsField(jpField(jpLabel(c.text), false)))) hasEps = true;
       if (!otherText) {
+        // A label fragment ending in a dash ("Basic-", "Diluted–"): joined to the next row only when that row has figures.
+        if (JP_LABEL_FRAGMENT.test(first.text)) { pendingFragment = first.text; continue; }
         // Label-only row: a section ("Earnings per share attributable to …", "For the three months ended") or a title.
         section = jpLabel(first.text);
         sectionRaw = first.text;
@@ -1051,9 +1062,11 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
         else headers = [...headers, cells];
         continue;
       }
-      // A "Yen | Yen | U.S. dollars" row between data rows restates the columns' units: it does not start a new block.
-      if (lastWasData && cells.every((c) => jpUnitCell(c.text))) {
-        headers = [...headers.filter((r) => !r.every((c) => jpUnitCell(c.text))), cells];
+      // A "Yen | Yen | U.S. dollars" (or "Yen | % Change") row between data rows restates the columns' units: it
+      // does not start a new block.
+      const restates = (r: Cell[]) => r.every((c) => jpUnitCell(c.text) || JP_CHANGE_CELL.test(c.text));
+      if (lastWasData && restates(cells)) {
+        headers = [...headers.filter((r) => !restates(r)), cells];
         continue;
       }
       if (lastWasData) headers = titles;

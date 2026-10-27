@@ -511,6 +511,39 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
   });
 });
 
+describe('Task 12b: split row labels ("Basic-" / "Net income … per share")', () => {
+  const head = span2('', 'Millions of yen', '% Change') + span2('', 'For the three months ended') + tr('', 'December 31, 2025', 'March 31, 2026');
+  const Q4 = { periodEnd: '2026-03-31', fiscalQuarter: 4 as const };
+
+  it('L1: a dangling "Basic-" / "Diluted-" fragment joins the label row below it', () => {
+    const html = table('Consolidated Statements of Income – Quarterly Comparatives',
+      head +
+      tr('Net revenue', '551,755', '577,181', '4.6') +
+      tr('Net income attributable to NHI shareholders', '91,553', '73,933', '(19.2)') +
+      span2('', 'Yen', '% Change') +
+      tr('Per share of common stock:') +
+      tr('Basic-') +
+      tr('Net income attributable to NHI shareholders per share', '31.21', '25.29', '(19.0)') +
+      tr('Diluted-') +
+      tr('Net income attributable to NHI shareholders per share', '30.19', '24.34', '(19.4)'));
+    expect(readJpRelease(html, Q4)).toMatchObject({ revenue: 577_181_000_000, eps: 25.29, epsDiluted: 24.34, span: 'quarter' });
+  });
+
+  it('L2: a fragment is joined only to the row right below it, and only when that row has figures', () => {
+    const html = table('(Millions of yen)',
+      tr('', 'Three months ended March 31, 2026') +
+      tr('Diluted-') +
+      tr('Per share of common stock:') +
+      tr('Net income attributable to shareholders per share', '25.29'));
+    // "Diluted-" is followed by another label-only row: it is not carried down, so the row stays basic.
+    expect(readJpRelease(html, Q4)).toMatchObject({ eps: 25.29, epsDiluted: null });
+  });
+
+  it('Nomura FY2025 release: the quarterly comparatives\' standalone quarter', () => {
+    expect(six('NMR_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 577_181_000_000, eps: 25.29, epsDiluted: 24.34, currency: 'JPY', span: 'quarter', ytdMonths: null });
+  });
+});
+
 describe("readRelease profile 'jp'", () => {
   it('yen is detected only under jp: the hk profile reads nothing from a yen table', () => {
     const html = table('(Millions of yen, except per share amounts)',
