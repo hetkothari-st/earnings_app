@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDb, upsertCalendarRow } from '../../src/db/repo.js';
 import {
-  getHkReport, HK_ID_BASE, hkReportsBetween, hkStocks, mergeHkActuals, recordHkRelease, saveHkExpectedMove, setHkEstimates,
+  getHkReport, HK_ID_BASE, hkReportsBetween, hkStocks, listHkRange, mergeHkActuals, recordHkRelease, saveHkExpectedMove, setHkEstimates,
   setHkProfile, setHkTiming, syncHkUniverse, upsertHkCalendarRow, usAdrRows,
 } from '../../src/hk/db/hkRepo.js';
 import { HK_UNIVERSE, type HkUniverseEntry } from '../../src/hk/universe.js';
@@ -21,6 +21,16 @@ function setup() {
 const base = { code: '9988', name: 'Alibaba', periodEnd: '2026-09-30', periodKind: 'Q' as const, periodLabel: 'Q3 26' };
 
 describe('hk repo', () => {
+  it('search matches the served name (Yahoo profile name) as well as the universe name', () => {
+    const db = setup();
+    const id = upsertHkCalendarRow(db, { ...base, reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    setHkProfile(db, '9988', { name: 'Alibaba Group Holding Limited', sector: null, industry: null, marketCap: null, asOf: null }, NOW);
+    const find = (q: string) => listHkRange(db, { from: '2026-11-01', to: '2026-11-30', q }).map((r) => r.id);
+    expect(find('Group Holding')).toEqual([id]);
+    expect(find('Alibaba')).toEqual([id]);
+    expect(find('Tencent')).toEqual([]);
+  });
+
   it('ids start at 2_000_000_001', () => {
     const db = setup();
     const a = upsertHkCalendarRow(db, { ...base, reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
@@ -144,6 +154,12 @@ describe('hk repo', () => {
     setHkEstimates(db, id, { eps: 1.2, epsAnalysts: 7, revenue: 5e10, revenueAnalysts: 6, currency: 'CNY' }, NOW);
     setHkEstimates(db, id, { eps: null, epsAnalysts: null, revenue: null, revenueAnalysts: null, currency: null }, NOW);
     expect(getHkReport(db, id)).toMatchObject({ epsEstimate: 1.2, revenueEstimate: 5e10, estimateCurrency: 'CNY' });
+    // A new currency replaces EPS and revenue together: the old CNY revenue never sits beside a HKD EPS.
+    setHkEstimates(db, id, { eps: 1.5, epsAnalysts: 3, revenue: null, revenueAnalysts: null, currency: 'HKD' }, NOW);
+    expect(getHkReport(db, id)).toMatchObject({ epsEstimate: 1.5, epsAnalysts: 3, revenueEstimate: null, revenueAnalysts: null, estimateCurrency: 'HKD' });
+    // Same currency again: a missing figure still never blanks a stored one.
+    setHkEstimates(db, id, { eps: null, epsAnalysts: null, revenue: 6e10, revenueAnalysts: 2, currency: 'HKD' }, NOW);
+    expect(getHkReport(db, id)).toMatchObject({ epsEstimate: 1.5, revenueEstimate: 6e10, estimateCurrency: 'HKD' });
   });
 
   it('usAdrRows reads the US reports table', () => {

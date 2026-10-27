@@ -234,6 +234,66 @@ describe('handleHkFiling gates', () => {
   });
 });
 
+describe('handleHkFiling: final review', () => {
+  const filing = { cik: BABA_CIK, accession: BABA_ACC, indexUrl: BABA_INDEX, acceptedAt: '2026-08-28T10:30:00.000Z', form: '6-K' };
+  const confirmed = (db: ReturnType<typeof openDb>, reportDate: string) =>
+    upsertHkCalendarRow(db, { code: '9988', name: '9988', periodEnd: '2026-06-30', periodKind: 'Q', periodLabel: 'Q2 26', reportDate,
+      dateStatus: 'confirmed', timing: 'AMC', timingSource: 'sec-notice' }, NOW);
+
+  it('a late 6-K never moves a confirmed row later, and keeps its stated timing', async () => {
+    const { db, ctx } = setup();
+    const id = confirmed(db, '2026-08-27'); // accepted 18:30 HKT on 08-28: a day after the confirmed date
+    await handleHkFiling(ctx, filing, GATES_CLOSED);
+    expect(getHkReport(db, id)).toMatchObject({ reportDate: '2026-08-27', dateStatus: 'confirmed', timing: 'AMC', timingSource: 'sec-notice', releasedAt: '2026-08-28T10:30:00.000Z', rescheduledFrom: null });
+  });
+
+  it('an early 6-K moves a confirmed row earlier without resetting its stated timing', async () => {
+    const { db, ctx } = setup();
+    const id = confirmed(db, '2026-08-29');
+    await handleHkFiling(ctx, filing, GATES_CLOSED);
+    expect(getHkReport(db, id)).toMatchObject({ reportDate: '2026-08-28', rescheduledFrom: '2026-08-29', timing: 'AMC', timingSource: 'sec-notice' });
+  });
+
+  it('a later results 6-K for an already-released period does not re-read actuals or replace sec_doc_url', async () => {
+    const LATER_INDEX = `${BABA_DIR}/0001104659-26-099999-index.htm`;
+    const LATER_DOC = `${BABA_DIR}/later_ex99.htm`;
+    const laterIndex = fx('sec_index_baba_results.htm').replaceAll('tm2623667d1_ex99-1.htm', 'later_ex99.htm');
+    // Same release, but every revenue figure changed: re-reading would overwrite the stored actuals.
+    const laterDoc = fx('baba_results_ex99.htm').replaceAll('268,953', '999,999');
+    const { db, ctx } = setup({ docs: { [LATER_INDEX]: laterIndex, [LATER_DOC]: laterDoc } });
+    const id = row(db, '9988', '2026-06-30', '2026-08-28');
+    await handleHkFiling(ctx, filing, GATES_OPEN);
+    const before = getHkReport(db, id)!;
+    expect(before).toMatchObject({ revenueActual: 268_953_000_000, secDocUrl: BABA_EX99 });
+    const r = await handleHkFiling(ctx, { ...filing, accession: '0001104659-26-099999', indexUrl: LATER_INDEX, acceptedAt: '2026-08-29T10:30:00.000Z' }, GATES_OPEN);
+    expect(r.released).toEqual([]);
+    expect(getHkReport(db, id)).toMatchObject({ revenueActual: 268_953_000_000, secDocUrl: BABA_EX99, releasedAt: '2026-08-28T10:30:00.000Z' });
+    expect(secSeen(db, '0001104659-26-099999')).toBe(true);
+  });
+
+  it('a results 6-K arriving before its row exists creates the row (estimated, HKT date) and records the release', async () => {
+    const { db, ctx } = setup();
+    const r = await handleHkFiling(ctx, filing, GATES_CLOSED);
+    const id = db.prepare("SELECT id FROM hk_reports WHERE code = '9988' AND period_end = '2026-06-30'").get() as { id: number } | undefined;
+    expect(id).toBeDefined();
+    expect(r.released).toEqual([id!.id]);
+    expect(getHkReport(db, id!.id)).toMatchObject({
+      periodKind: 'Q', periodLabel: 'Q2 26', reportDate: '2026-08-28', dateStatus: 'estimated', releasedAt: '2026-08-28T10:30:00.000Z',
+    });
+    expect(secSeen(db, BABA_ACC)).toBe(true);
+  });
+
+  it('a date notice whose date is before the filing date is ignored', async () => {
+    // TME notice names 2026-11-17; accepted 2026-11-18 HKT.
+    const { db, ctx } = setup({ today: '2026-11-18' });
+    const id = row(db, '1698', '2026-09-30', '2026-11-20', 'Q3 26');
+    const r = await handleHkFiling(ctx, { cik: TME_CIK, accession: TME_ACC, indexUrl: TME_INDEX, acceptedAt: '2026-11-18T02:00:00.000Z', form: '6-K' }, GATES_CLOSED);
+    expect(r.dated).toEqual([]);
+    expect(getHkReport(db, id)).toMatchObject({ reportDate: '2026-11-20', dateStatus: 'estimated', timing: 'UNKNOWN' });
+    expect(secSeen(db, TME_ACC)).toBe(true);
+  });
+});
+
 describe('sweepHkSec', () => {
   const submissions = (rows: { acc: string; date: string; form: string; items?: string; doc: string }[]) => JSON.stringify({
     filings: { recent: {
@@ -246,7 +306,7 @@ describe('sweepHkSec', () => {
     const SEEN = '0001104659-26-099000';
     const OLD = '0001104659-26-050000';
     const { db, ctx, requested } = setup({
-      today: '2026-08-29',
+      today: '2026-08-29', universe: HK_UNIVERSE.filter((e) => e.code === '9988'),
       docs: {
         'https://data.sec.gov/submissions/CIK0001577552.json': submissions([
           { acc: BABA_ACC, date: '2026-08-28', form: '6-K', doc: 'tm2623667d1_6k.htm' },
@@ -261,8 +321,30 @@ describe('sweepHkSec', () => {
     expect(await sweepHkSec(ctx)).toEqual([id]);
     expect(getHkReport(db, id)!.releasedAt).toBe('2026-08-28T10:30:00.000Z');
     expect(requested.filter((u) => u.includes('099000') || u.includes('050000'))).toEqual([]);
-    // Only stocks with a report in [today-5, today+30] are swept.
-    expect(requested.filter((u) => u.includes('submissions'))).toEqual(['https://data.sec.gov/submissions/CIK0001577552.json']);
+  });
+
+  it('every full-level CIK is swept, and a date notice filed up to 45 days ago is still read', async () => {
+    // TME has no row at all; its notice (results on 2026-11-17) was filed 2026-10-20, 26 days before today.
+    const universe = HK_UNIVERSE.filter((e) => e.code === '9988' || e.code === '1698');
+    const { db, ctx, requested } = setup({
+      today: '2026-11-15', universe,
+      docs: {
+        'https://data.sec.gov/submissions/CIK0001577552.json': submissions([]),
+        'https://data.sec.gov/submissions/CIK0001744676.json': submissions([
+          { acc: TME_ACC, date: '2026-10-20', form: '6-K', doc: 'dp254872_6k.htm' },
+          { acc: '0000950103-26-000001', date: '2026-09-25', form: '6-K', doc: 'old_6k.htm' }, // 51 days back: not read
+        ]),
+        [`${TME_DIR}/${TME_ACC}.hdr.sgml`]: '<SEC-HEADER>\n<ACCEPTANCE-DATETIME>20261020060500\n</SEC-HEADER>',
+      },
+    });
+    const ids = await sweepHkSec(ctx);
+    expect(requested.filter((u) => u.includes('submissions')).sort()).toEqual([
+      'https://data.sec.gov/submissions/CIK0001577552.json', 'https://data.sec.gov/submissions/CIK0001744676.json',
+    ]);
+    const tme = db.prepare("SELECT id, report_date, date_status, timing FROM hk_reports WHERE code = '1698'").get() as Record<string, unknown> | undefined;
+    expect(tme).toMatchObject({ report_date: '2026-11-17', date_status: 'confirmed', timing: 'AMC' });
+    expect(ids).toEqual([tme!.id]);
+    expect(requested.some((u) => u.includes('000095010326000001'))).toBe(false);
   });
 });
 

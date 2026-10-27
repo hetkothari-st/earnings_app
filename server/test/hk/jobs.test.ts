@@ -159,6 +159,14 @@ describe('refreshHkEstimates', () => {
     await refreshHkEstimates(ctx);
     expect(getHkReport(db, id)).toMatchObject({ epsEstimate: null, revenueEstimate: 5e10, estimateCurrency: 'CNY' });
   });
+
+  it('an EPS estimate with no currency is skipped; the revenue (with its currency) is still stored', async () => {
+    const { ctx, db } = setup({ summaries: { '0700.HK': summary({ trend: [trend('2026-09-30', { epsCurrency: null, revenueCurrency: 'CNY' })] }) } });
+    const id = upsertHkCalendarRow(db, { code: '0700', name: 'Tencent', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26',
+      reportDate: '2026-11-12', dateStatus: 'estimated' }, NOW);
+    await refreshHkEstimates(ctx);
+    expect(getHkReport(db, id)).toMatchObject({ epsEstimate: null, epsAnalysts: null, revenueEstimate: 5e10, estimateCurrency: 'CNY' });
+  });
 });
 
 describe('refreshHkYahooResults', () => {
@@ -189,6 +197,32 @@ describe('refreshHkYahooResults', () => {
     expect(await refreshHkYahooResults(ctx)).toEqual([]);
     expect(getHkReport(db, id)).toMatchObject({ epsActual: 4, actualSource: 'sec' });
   });
+
+  it('an EPS with no currency, or revenue with no financial currency, is dropped', async () => {
+    const y = summary({
+      epsHistory: [{ periodEnd: '2026-09-30', actual: 4.5, currency: null }], revenueQuarters: [{ label: '3Q2026', revenue: 1.9e11 }],
+      financialCurrency: null,
+    });
+    const { ctx, db } = setup({ summaries: { '0700.HK': y } });
+    const id = upsertHkCalendarRow(db, { code: '0700', name: 'Tencent', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26',
+      reportDate: '2026-10-20', dateStatus: 'confirmed' }, NOW);
+    expect(await refreshHkYahooResults(ctx)).toEqual([]);
+    expect(getHkReport(db, id)).toMatchObject({ epsActual: null, revenueActual: null, actualSource: null });
+  });
+
+  it('revenue is backfilled for a basic quarterly row that already has EPS; the stored EPS is kept', async () => {
+    const mkSetup = (y: YahooHkSummary) => setup({ summaries: { '0700.HK': y } });
+    const first = mkSetup(summary({ epsHistory: [{ periodEnd: '2026-09-30', actual: 4.5, currency: 'CNY' }] }));
+    const id = upsertHkCalendarRow(first.db, { code: '0700', name: 'Tencent', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26',
+      reportDate: '2026-10-20', dateStatus: 'confirmed' }, NOW);
+    expect(await refreshHkYahooResults(first.ctx)).toEqual([id]);
+    first.ctx.yahoo = async () => summary({
+      epsHistory: [{ periodEnd: '2026-09-30', actual: 9, currency: 'CNY' }], revenueQuarters: [{ label: '3Q2026', revenue: 1.9e11 }], financialCurrency: 'CNY',
+    });
+    expect(await refreshHkYahooResults(first.ctx)).toEqual([id]);
+    expect(getHkReport(first.db, id)).toMatchObject({ epsActual: 4.5, revenueActual: 1.9e11, revenueCurrency: 'CNY', actualSource: 'yahoo' });
+    expect(await refreshHkYahooResults(first.ctx)).toEqual([]); // complete: not touched again
+  });
 });
 
 describe('computeHkPrevMoves', () => {
@@ -204,6 +238,35 @@ describe('computeHkPrevMoves', () => {
     await computeHkPrevMoves(ctx);
     expect(getHkReport(db, id)).toMatchObject({ prevMovePct: 4, prevMoveDate: '2026-08-13', prevMoveBasis: 'assumed' });
     expect(closeCalls).toEqual([['0700.HK', '2026-08-08', '2026-08-15']]);
+  });
+
+  it('full level: the prior date is the ADR US report as an HK date; US timing gives HK timing (basis known)', async () => {
+    // US BMO 2026-08-20 (21:30 HKT onward): HK date 08-20, after the HK close -> AMC window 08-20 -> 08-21.
+    const bmo = setup({ closes: new Map([['2026-08-20', 100], ['2026-08-21', 105]]) });
+    usRow(bmo.db, '2026-08-20', 'BMO');
+    const a = upsertHkCalendarRow(bmo.db, { code: '9988', name: 'Alibaba', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26',
+      reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    await computeHkPrevMoves(bmo.ctx);
+    expect(getHkReport(bmo.db, a)).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-08-20', prevMoveBasis: 'known' });
+    expect(bmo.closeCalls[0]?.[0]).toBe('9988.HK');
+
+    // US AMC 2026-08-20: HK date 08-21, before the HK open -> BMO window 08-20 -> 08-21.
+    const amc = setup({ closes: new Map([['2026-08-20', 100], ['2026-08-21', 90]]) });
+    usRow(amc.db, '2026-08-20', 'AMC');
+    const b = upsertHkCalendarRow(amc.db, { code: '9988', name: 'Alibaba', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26',
+      reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    await computeHkPrevMoves(amc.ctx);
+    expect(getHkReport(amc.db, b)).toMatchObject({ prevMovePct: -10, prevMoveDate: '2026-08-21', prevMoveBasis: 'known' });
+  });
+
+  it('full level: a US row with unknown timing gives basis assumed (after the HK close)', async () => {
+    const { ctx, db } = setup({ closes: new Map([['2026-08-20', 100], ['2026-08-21', 102]]) });
+    usRow(db, '2026-08-20', 'BMO');
+    db.prepare("UPDATE reports SET timing = 'UNKNOWN'").run();
+    const id = upsertHkCalendarRow(db, { code: '9988', name: 'Alibaba', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26',
+      reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    await computeHkPrevMoves(ctx);
+    expect(getHkReport(db, id)).toMatchObject({ prevMovePct: 2, prevMoveDate: '2026-08-20', prevMoveBasis: 'assumed' });
   });
 
   it('known prior timing -> basis known', async () => {

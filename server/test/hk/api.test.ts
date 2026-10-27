@@ -39,12 +39,22 @@ describe('GET /api/hk/earnings', () => {
 
     const rows = await rowsOf(buildServer(db));
     const by = (sym: string) => rows.find((r) => r.symbol === sym)!;
-    expect(by('9988').eps).toMatchObject({ result: 'beat', surprisePct: 9.5, estimate: 2.1, actual: 2.3 });
+    // SEC EPS is GAAP diluted; the consensus is adjusted: no EPS colour (as US dto). Revenue keeps its colour.
+    expect(by('9988').eps).toMatchObject({ result: null, surprisePct: null, estimate: 2.1, actual: 2.3 });
     expect(by('9988').revenue).toMatchObject({ result: 'beat', surprisePct: 10 });
     expect(by('9618').eps).toMatchObject({ result: null, surprisePct: null, estimate: 2.1, actual: 2.3, estimateCurrency: 'HKD', actualCurrency: 'CNY' });
     expect(by('9618').revenue).toMatchObject({ result: null, surprisePct: null, estimate: 100, actual: 110 });
     expect(by('0285').eps).toMatchObject({ result: null, surprisePct: null, estimate: 2.1, actual: 2.3 });
     expect(by('0285').revenue.result).toBe('beat');
+  });
+
+  it('a Yahoo per-share EPS in the estimate currency gets colour and surprise', async () => {
+    const { db, c } = setup();
+    setHkEstimates(db, c, { eps: 2.1, epsAnalysts: 5, revenue: 100, revenueAnalysts: 4, currency: 'CNY' }, NOW);
+    mergeHkActuals(db, c, { revenue: 90, revenueCurrency: 'CNY', eps: 2.3, epsCurrency: 'CNY', epsBasis: 'share', source: 'yahoo' }, NOW);
+    const row = (await rowsOf(buildServer(db))).find((r) => r.id === c)!;
+    expect(row.eps).toMatchObject({ result: 'beat', surprisePct: 9.5 });
+    expect(row.revenue).toMatchObject({ result: 'miss', surprisePct: -10 });
   });
 
   it('level, currency, epsBasis, actualSource and period are in the row', async () => {

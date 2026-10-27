@@ -4,7 +4,8 @@ import { guardedIn, type HkJobContext } from './context.js';
 
 /**
  * Consensus for reports in [today-3, today+180]: only the Yahoo trend item whose period end equals the
- * report's. One currency per row: a revenue estimate in another currency than the row's is stored as null.
+ * report's. One currency per row: a revenue estimate in another currency than the EPS's is stored as null, and an
+ * EPS estimate without a currency is skipped.
  */
 export async function refreshHkEstimates(ctx: HkJobContext): Promise<void> {
   const today = ctx.todayHKT();
@@ -17,11 +18,13 @@ export async function refreshHkEstimates(ctx: HkJobContext): Promise<void> {
     for (const r of byCode.get(stock.code)!) {
       const t = y.trend.find((x) => x.periodEnd === r.periodEnd);
       if (!t) continue;
-      const currency = t.eps != null ? t.epsCurrency : t.revenueCurrency;
+      // An EPS estimate with no stated currency is uncertain: left blank.
+      const epsOk = t.eps != null && t.epsCurrency != null;
+      const currency = epsOk ? t.epsCurrency : t.revenueCurrency;
       const revenueOk = t.revenue != null && t.revenueCurrency != null && t.revenueCurrency === currency;
-      if (t.eps == null && !revenueOk) continue;
+      if (!epsOk && !revenueOk) continue;
       setHkEstimates(ctx.db, r.id, {
-        eps: t.eps, epsAnalysts: t.eps != null ? t.epsAnalysts : null,
+        eps: epsOk ? t.eps : null, epsAnalysts: epsOk ? t.epsAnalysts : null,
         revenue: revenueOk ? t.revenue : null, revenueAnalysts: revenueOk ? t.revenueAnalysts : null, currency,
       }, ctx.now());
     }

@@ -42,9 +42,11 @@ export function fullLevelByCik(ctx: HkJobContext): Map<number, HkStock> {
  * One SEC filing (6-K, or a domestic filer's 8-K 2.02) of a full-level HK stock: fetch the index, then the release
  * document, then classify it.
  * - Results: only the row with the release's period end flips (Review Focus 2). An unreleased row dated within
- *   ±3 days of the acceptance's HKT date moves to that date. Acceptance proves BMO at most (Review Focus 3).
- *   Actuals are written only for the fields whose reader gate is open.
- * - Date notice: confirms the date of the period it announces, with the stated timing.
+ *   ±3 days of the acceptance's HKT date moves to that date (a confirmed row only earlier, keeping its timing).
+ *   With no row yet, one is created when the period is the stock's latest cadence period at the HKT date.
+ *   Acceptance proves BMO at most (Review Focus 3). Actuals are written only for the fields whose reader gate is
+ *   open, and only from the earliest filing of the period.
+ * - Date notice: confirms the date of the period it announces, with the stated timing (not a date before filing).
  * Always marks the accession seen. Fetch errors throw (the caller retries).
  */
 export async function handleHkFiling(
@@ -69,16 +71,35 @@ export async function handleHkFiling(
     if (id == null) {
       const near = nearestUnreleasedHk(ctx.db, stock.code, hktDate, MOVE_WINDOW_DAYS);
       if (near && near.periodEnd === ex.periodEnd) id = near.id;
-      else console.log(`[hk-sec] ${stock.code}: ${f.form} ${f.accession} is results for ${ex.periodEnd}, no row with that period end`);
+    }
+    if (id == null) {
+      // The release came before its calendar row: create the row when the release's period is the stock's latest
+      // cadence period at the HKT date (a stale or off-cadence release still updates nothing).
+      const p = hkPeriodFor(hktDate, stock.cadence, stock.fyEndMonth);
+      if (p.periodEnd === ex.periodEnd) {
+        id = upsertHkCalendarRow(ctx.db, {
+          code: stock.code, name: stock.name, periodEnd: p.periodEnd, periodKind: p.kind, periodLabel: hkPeriodLabel(p.periodEnd, p.kind, stock.fyEndMonth),
+          reportDate: hktDate, dateStatus: 'estimated',
+        }, ctx.now());
+      } else {
+        console.log(`[hk-sec] ${stock.code}: ${f.form} ${f.accession} is results for ${ex.periodEnd}, no row with that period end`);
+      }
     }
     if (id != null) {
       const rep = getHkReport(ctx.db, id)!;
       const unreleased = rep.releasedAt == null && rep.epsActual == null;
-      if (unreleased && rep.reportDate !== hktDate && daysApart(rep.reportDate, hktDate) <= MOVE_WINDOW_DAYS) moveHkReportDate(ctx.db, id, hktDate);
+      // A confirmed date only moves earlier (a late filing is not a later release), and keeps its stated timing.
+      const isConfirmed = rep.dateStatus === 'confirmed';
+      const mayMove = isConfirmed ? hktDate < rep.reportDate : rep.reportDate !== hktDate;
+      if (unreleased && mayMove && daysApart(rep.reportDate, hktDate) <= MOVE_WINDOW_DAYS) {
+        moveHkReportDate(ctx.db, id, hktDate, { keepTiming: isConfirmed });
+      }
       const reportDate = getHkReport(ctx.db, id)!.reportDate;
       const source = f.form.startsWith('8-K') ? 'sec-8k' : 'sec-6k';
+      // A later filing for a period already released (an amendment, a re-filing) neither re-reads nor re-sources actuals.
+      const laterFiling = rep.releasedAt != null && Date.parse(rep.releasedAt) < Date.parse(f.acceptedAt);
       let changed = recordHkRelease(ctx.db, id, f.acceptedAt, source, hkTimingFromAcceptance(reportDate, f.acceptedAt));
-      if (gates.hkEps || gates.hkRevenue) {
+      if (!laterFiling && (gates.hkEps || gates.hkRevenue)) {
         const v = readHkRelease(html, { periodEnd: rep.periodEnd, kind: rep.periodKind }, { adrRatio: stock.adrRatio });
         const eps = gates.hkEps ? v.eps : null;
         const revenue = gates.hkRevenue ? v.revenue : null;
@@ -91,7 +112,8 @@ export async function handleHkFiling(
       }
       if (changed) out.released.push(id);
     }
-  } else if (ex.kind === 'date-notice') {
+  } else if (ex.kind === 'date-notice' && ex.date >= hktDate) {
+    // (A notice naming a date before it was filed is about a past release: ignored.)
     const p = hkPeriodFor(ex.date, stock.cadence, stock.fyEndMonth);
     const id = upsertHkCalendarRow(ctx.db, {
       code: stock.code, name: stock.name, periodEnd: p.periodEnd, periodKind: p.kind, periodLabel: hkPeriodLabel(p.periodEnd, p.kind, stock.fyEndMonth),

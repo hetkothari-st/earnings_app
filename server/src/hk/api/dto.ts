@@ -43,8 +43,9 @@ export function toHkDto(r: HkReport): HkReportDto {
     epsBasis: r.epsBasis,
     actualSource: r.actualSource,
     secDocUrl: r.secDocUrl,
-    // Colour only for the same currency, and for EPS only a per-share actual against the per-share estimate.
-    eps: figure(r.epsEstimate, r.epsAnalysts, r.estimateCurrency, r.epsActual, r.epsCurrency, r.epsBasis === 'share'),
+    // Colour only for the same currency, and for EPS only a per-share actual against the per-share estimate. An SEC
+    // EPS is GAAP diluted while the consensus is adjusted: no EPS colour then (as the US dto); revenue keeps it.
+    eps: figure(r.epsEstimate, r.epsAnalysts, r.estimateCurrency, r.epsActual, r.epsCurrency, r.epsBasis === 'share' && r.actualSource !== 'sec'),
     revenue: figure(r.revenueEstimate, r.revenueAnalysts, r.estimateCurrency, r.revenueActual, r.revenueCurrency, true),
     expectedMove: r.expectedMove
       ? {

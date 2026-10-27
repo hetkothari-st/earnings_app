@@ -302,10 +302,17 @@ export function findHkReportId(db: DatabaseSync, code: string, periodEnd: string
   return findReport(db, code, periodEnd)?.id ?? null;
 }
 
-/** The report came out on another day than the calendar said: the old date is kept, timing and move snapshots reset. */
-export function moveHkReportDate(db: DatabaseSync, id: number, newDate: string): void {
-  db.prepare(`UPDATE hk_reports SET rescheduled_from = report_date, report_date = ?, timing = 'UNKNOWN', timing_source = NULL
-      WHERE id = ? AND report_date IS NOT ?`).run(newDate, id, newDate);
+/**
+ * The report came out on another day than the calendar said: the old date is kept, move snapshots reset. Timing
+ * resets too, unless `keepTiming` (a timing stated by a filing notice is never reset).
+ */
+export function moveHkReportDate(db: DatabaseSync, id: number, newDate: string, opts: { keepTiming?: boolean } = {}): void {
+  if (opts.keepTiming) {
+    db.prepare('UPDATE hk_reports SET rescheduled_from = report_date, report_date = ? WHERE id = ? AND report_date IS NOT ?').run(newDate, id, newDate);
+  } else {
+    db.prepare(`UPDATE hk_reports SET rescheduled_from = report_date, report_date = ?, timing = 'UNKNOWN', timing_source = NULL
+        WHERE id = ? AND report_date IS NOT ?`).run(newDate, id, newDate);
+  }
   db.prepare('DELETE FROM hk_expected_moves WHERE report_id = ?').run(id);
   db.prepare('DELETE FROM hk_live_moves WHERE report_id = ?').run(id);
 }
@@ -358,10 +365,21 @@ export function mergeHkActuals(
   return true;
 }
 
+/**
+ * Consensus. A missing figure never blanks a stored one, except when the currency changes: then EPS and revenue
+ * are written together (nulls for the missing ones), so two currencies never sit in one row.
+ */
 export function setHkEstimates(
   db: DatabaseSync, id: number,
   e: { eps: number | null; epsAnalysts: number | null; revenue: number | null; revenueAnalysts: number | null; currency: string | null }, now: string,
 ): void {
+  const stored = db.prepare('SELECT estimate_currency FROM hk_reports WHERE id = ?').get(id) as { estimate_currency: string | null } | undefined;
+  if (e.currency != null && stored?.estimate_currency != null && stored.estimate_currency !== e.currency) {
+    db.prepare(`UPDATE hk_reports SET eps_estimate = ?, eps_analysts = ?, revenue_estimate = ?, revenue_analysts = ?,
+        estimate_currency = ?, estimates_fetched_at = ? WHERE id = ?`)
+      .run(e.eps, e.epsAnalysts, e.revenue, e.revenueAnalysts, e.currency, now, id);
+    return;
+  }
   db.prepare(`UPDATE hk_reports SET eps_estimate = COALESCE(?, eps_estimate), eps_analysts = COALESCE(?, eps_analysts),
       revenue_estimate = COALESCE(?, revenue_estimate), revenue_analysts = COALESCE(?, revenue_analysts),
       estimate_currency = COALESCE(?, estimate_currency), estimates_fetched_at = ? WHERE id = ?`)
@@ -375,8 +393,9 @@ export function listHkRange(db: DatabaseSync, f: { from: string; to: string; q: 
   const params: (string | number)[] = [f.from, f.to];
   const term = f.q?.replace(/[%_]/g, '').trim();
   if (term) {
-    where.push('(r.code LIKE ? OR r.name LIKE ? OR s.adr LIKE ?)');
-    params.push(`${term}%`, `%${term}%`, `${term.toUpperCase()}%`);
+    // The served name (Yahoo profile name) as well as the report's own name.
+    where.push('(r.code LIKE ? OR r.name LIKE ? OR COALESCE(s.profile_name, s.name) LIKE ? OR s.adr LIKE ?)');
+    params.push(`${term}%`, `%${term}%`, `%${term}%`, `${term.toUpperCase()}%`);
   }
   const rows = db.prepare(`${SELECT_ACTIVE} WHERE ${where.join(' AND ')} ORDER BY r.report_date, r.code`)
     .all(...params) as unknown as ReportRow[];
@@ -447,6 +466,8 @@ export interface HkPending {
   adr: string | null;
   cik: number | null;
   hasActual: boolean;
+  hasEps: boolean;
+  hasRevenue: boolean;
   expectedFinal: boolean;
 }
 
@@ -454,12 +475,17 @@ export interface HkPending {
 export function hkReportsBetween(db: DatabaseSync, from: string, to: string): HkPending[] {
   const rows = db.prepare(`SELECT r.id, r.code, r.report_date AS reportDate, r.timing, r.period_end AS periodEnd,
       r.period_kind AS periodKind, r.released_at AS releasedAt, s.level, s.adr, s.cik,
-      (r.eps_actual IS NOT NULL OR r.revenue_actual IS NOT NULL) AS hasActual, COALESCE(m.final, 0) AS expectedFinal
+      (r.eps_actual IS NOT NULL OR r.revenue_actual IS NOT NULL) AS hasActual, r.eps_actual IS NOT NULL AS hasEps,
+      r.revenue_actual IS NOT NULL AS hasRevenue, COALESCE(m.final, 0) AS expectedFinal
     FROM hk_reports r JOIN hk_stocks s ON s.code = r.code AND s.active = 1
     LEFT JOIN hk_expected_moves m ON m.report_id = r.id
     WHERE r.report_date BETWEEN ? AND ? ORDER BY r.report_date, r.code`).all(from, to) as unknown as
-    (Omit<HkPending, 'hasActual' | 'expectedFinal' | 'level'> & { level: string; hasActual: number; expectedFinal: number })[];
-  return rows.map((r) => ({ ...r, level: r.level === 'full' ? 'full' : 'basic', hasActual: r.hasActual === 1, expectedFinal: r.expectedFinal === 1 }));
+    (Omit<HkPending, 'hasActual' | 'hasEps' | 'hasRevenue' | 'expectedFinal' | 'level'>
+      & { level: string; hasActual: number; hasEps: number; hasRevenue: number; expectedFinal: number })[];
+  return rows.map((r) => ({
+    ...r, level: r.level === 'full' ? 'full' : 'basic', hasActual: r.hasActual === 1, hasEps: r.hasEps === 1, hasRevenue: r.hasRevenue === 1,
+    expectedFinal: r.expectedFinal === 1,
+  }));
 }
 
 /** Reports with no previous move yet, not checked since `recheckBefore`. */

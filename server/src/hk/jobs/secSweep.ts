@@ -1,14 +1,18 @@
 import { DateTime } from 'luxon';
 import { ET } from '../../domain/marketCalendar.js';
 import { fetchAcceptance, fetchEarningsFilings } from '../../sources/sec.js';
-import { hkReportsBetween, secSeen } from '../db/hkRepo.js';
+import { secSeen } from '../db/hkRepo.js';
 import { addDaysHKT } from '../domain/hkCalendar.js';
-import { handleHkFiling } from '../live/hkSecWatch.js';
+import { fullLevelByCik, handleHkFiling } from '../live/hkSecWatch.js';
 import { guardedIn, type HkJobContext } from './context.js';
 
+/** Filings this many days back are read: a results-date notice is often filed a month ahead. */
+const LOOK_BACK_DAYS = 45;
+
 /**
- * Per-CIK submissions sweep (Ruling 11), the backstop for the 6-K feed: full-level stocks with a report in
- * [today-5, today+30] (HKT). Their filings dated on or after today-10 and not yet seen get the acceptance time
+ * Per-CIK submissions sweep (Ruling 11), the backstop for the 6-K feed: every full-level stock, with or without a
+ * calendar row. Filings dated on or after today-45 (HKT; a date notice can come weeks before the results) and not
+ * yet seen get the acceptance time
  * (ET wall clock in the SEC header) and go through `handleHkFiling`. Without the SEC client nothing runs.
  * Returns the released and re-dated report ids.
  */
@@ -16,9 +20,8 @@ export async function sweepHkSec(ctx: HkJobContext): Promise<number[]> {
   const http = ctx.secHttp;
   if (!http) return [];
   const today = ctx.todayHKT();
-  const since = addDaysHKT(today, -10);
-  const ciks = [...new Set(hkReportsBetween(ctx.db, addDaysHKT(today, -5), addDaysHKT(today, 30))
-    .filter((r) => r.level === 'full' && r.cik != null).map((r) => r.cik!))];
+  const since = addDaysHKT(today, -LOOK_BACK_DAYS);
+  const ciks = [...fullLevelByCik(ctx).keys()];
   const changed = new Set<number>();
   for (const cik of ciks) {
     const filings = (await guardedIn(ctx, { name: 'sec-submissions', run: () => fetchEarningsFilings(http, cik) }))?.value;
