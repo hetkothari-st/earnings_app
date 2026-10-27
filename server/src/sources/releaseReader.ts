@@ -791,26 +791,33 @@ const JP_HALF_TOKEN = /\b(1h|h1|2h|h2)\b/i;
 const JP_EXPLICIT_SPAN = /\b(three|six|nine|twelve|3|6|9|12)[\s-]*months?\b|\b(first|1st) quarter\b|\bfiscal years? ended\b|\byears? ended\b|\bfirst half\b|\bhalf[\s-]*year\b/i;
 /** The release's fiscal quarter (1–4) and fiscal-year label (the calendar year the fiscal year ends in). */
 interface JpFiscal { quarter?: number; year?: number }
-/** Text naming the parent company alone, not the group ("Summary of Non-consolidated Financial Results", 単体). */
-const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|parent[\s-]only|単体/i;
-/** Text naming the group again ("Consolidated Statements of Income", 連結), never the "consolidated" of "non-consolidated". */
-const JP_CONSOLIDATED = /(?<!non[\s-]?)\bconsolidated\b|連結/gi;
+/** Text naming the parent company alone, not the group ("Summary of Non-consolidated Financial Results", 単体, 非連結, 個別). */
+const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|parent[\s-]only|単体|非連結|個別/i;
+/** A heading naming the group: "Consolidated" (capitalised, not "Non-consolidated") or 連結 (not 非連結). */
+const JP_CONSOLIDATED_HEADING = /(?<![Nn]on[\s-]?)\bConsolidated\b|(?<!非)連結/;
+/** Blocks of the text between two tables: paragraphs, divs, headings, line breaks, rows, list items. */
+const JP_BLOCK_END = /<\/p\s*>|<\/div\s*>|<\/h[1-6]\s*>|<br\s*\/?>|<\/tr\s*>|<\/li\s*>/i;
 
 /**
  * Document sections, in order: for each table, whether it sits in a non-consolidated (parent-only) section. The text
- * between tables is scanned in order; a mention of non-consolidated / parent-only / 単体 opens such a section and a
- * mention of consolidated / 連結 closes it, the last mention before a table deciding. Tables are found with the same
- * pattern as `parseTables`, so the flags line up with its tables.
+ * between tables is split into blocks and read in order:
+ * - ON (fail-safe): any block mentioning non-consolidated / parent-only / 単体 / 非連結 / 個別.
+ * - OFF: only a heading-like block — it names "Consolidated" (capitalised) or 連結, is at most 120 characters, and
+ *   holds no sentence break (". a", 。). Prose ("dividends from consolidated subsidiaries", 連結子会社からの配当金が
+ *   増加しました。) never ends a non-consolidated section.
+ * Tables are found with the same pattern as `parseTables`, so the flags line up with its tables.
  */
 function jpNonConsolidatedSections(html: string): boolean[] {
   const between = html.split(/<table\b[\s\S]*?<\/table>/gi);
   const out: boolean[] = [];
   let state = false;
   for (const seg of between.slice(0, -1)) {
-    const text = decode(seg);
-    let last = -1;
-    for (const m of text.matchAll(new RegExp(JP_NON_CONSOLIDATED.source, 'gi'))) if (m.index >= last) { last = m.index; state = true; }
-    for (const m of text.matchAll(JP_CONSOLIDATED)) if (m.index > last) { last = m.index; state = false; }
+    for (const block of seg.split(JP_BLOCK_END)) {
+      const text = decode(block);
+      if (!text) continue;
+      if (JP_NON_CONSOLIDATED.test(text)) state = true;
+      else if (JP_CONSOLIDATED_HEADING.test(text) && text.length <= 120 && !/\.\s+[a-z]|。/.test(text)) state = false;
+    }
     out.push(state);
   }
   return out;
