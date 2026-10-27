@@ -180,7 +180,7 @@ describe('readJpRelease', () => {
   });
 
   it('a summary table with the period in the rows (Kessan Tanshin layout)', () => {
-    const html = table('',
+    const html = table('1. Consolidated Financial Data for the Three Months ended June 30, 2026',
       tr('', 'Basic earnings per share', 'Diluted earnings per share') +
       tr('', 'yen', 'yen') +
       tr('For the three months ended') +
@@ -250,7 +250,7 @@ describe('review round 1', () => {
     expect(readJpRelease(html, Q1)).toMatchObject({ revenue: null, eps: null, span: null });
   });
 
-  const cons = table('',
+  const cons = table('1. Consolidated Financial Results',
     tr('', 'Net sales', '', 'Basic earnings per share') + tr('', 'Million yen', '%', 'Yen') +
     tr('Fiscal year ended March 31, 2026', '48,000,000', '4.1', '250.00'));
   const nonc = table('(Reference) Summary of Non-consolidated Financial Results',
@@ -460,42 +460,78 @@ describe('Task 12b: unit headers "Yen (millions)", "JPY (millions)", "Million JP
 describe('Task 12b: summaries with periods in rows (banks)', () => {
   const Q3 = { periodEnd: '2025-12-31', fiscalQuarter: 3 as const };
   const Q1 = { periodEnd: '2026-06-30', fiscalQuarter: 1 as const };
+  const Q4 = { periodEnd: '2026-03-31', fiscalQuarter: 4 as const };
   const eps = (rows: string) => `<table>${tr('', 'Earnings per Share of Common Stock', 'Diluted Earnings per Share of Common Stock')}${tr('', '&yen;', '&yen;')}${rows}</table>`;
+  const group = '<p>(1) Consolidated Results of Operations</p>';
+  const def9 = '<p>1. Financial Highlights for the Third Quarter of Fiscal 2025 (for the nine months ended December 31, 2025)</p>';
+  const yenRows = (head: [string, string]) =>
+    `<table>${tr('', ...head)}${tr('Three months ended June 30, 2026', '&yen; 131.62', '&yen; 131.59')}${tr('Three months ended June 30, 2025', '97.46', '97.44')}</table>`;
+  const smfg = yenRows(['Earnings per share', 'Earnings per share (Diluted)']);
 
-  it('S1: a "&yen; 131.62" figure cell is read, and its ¥ sign states the currency', () => {
-    const html = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 131.62', '&yen; 131.59')}${tr('Three months ended June 30, 2025', '97.46', '97.44')}</table>`;
-    expect(readJpRelease(html, Q1)).toMatchObject({ eps: 131.62, epsDiluted: 131.59, span: 'quarter', currency: 'JPY' });
+  it('S1: a "&yen; 131.62" figure cell is read, and its ¥ sign states the currency, under a group heading', () => {
+    expect(readJpRelease(group + smfg, Q1)).toMatchObject({ eps: 131.62, epsDiluted: 131.59, span: 'quarter', currency: 'JPY' });
     // A statement / note layout still needs its header or caption to name the currency (unchanged rule).
     const note = `<p>(Per Share Information)</p><table>${tr('', 'For the three months ended June 30, 2026')}${tr('Basic earnings per common share', '&yen;', '131.62')}</table>`;
     expect(readJpRelease(note, Q1)).toMatchObject({ eps: null });
   });
 
-  it('S2: a "3Q F2025" row is dated only through the document\'s own definition of that label', () => {
-    const def = '<p>1. Financial Highlights for the Third Quarter of Fiscal 2025 (for the nine months ended December 31, 2025)</p>';
+  it('S1 (b1–b4): subsidiary summaries, US$ heads / captions against a ¥ sign, and dividend columns are never EPS', () => {
+    // b1: no group heading, and a subsidiary's own title.
+    expect(readJpRelease(smfg, Q1)).toMatchObject({ eps: null, epsDiluted: null });
+    expect(readJpRelease(`<p>Summary of SMBC Nikko Securities</p>${smfg}`, Q1)).toMatchObject({ eps: null, epsDiluted: null });
+    expect(readJpRelease(`<p>Consolidated results of SMBC Nikko Securities Co., Ltd.</p>${smfg}`, Q1)).toMatchObject({ eps: null, epsDiluted: null });
+    // b2: the column heads name US$.
+    expect(readJpRelease(group + yenRows(['Earnings per share (US$)', 'Diluted EPS (US$)']), Q1)).toMatchObject({ eps: null, epsDiluted: null });
+    // b3: a ¥-signed dividends column is not EPS.
+    expect(readJpRelease(group + yenRows(['Dividends per share', 'Earnings per share']), Q1)).toMatchObject({ eps: 131.59, epsDiluted: null });
+    // b4: a US$ caption against the ¥ sign: conflicting evidence.
+    expect(readJpRelease(`${group}<p>(U.S. dollars)</p>${smfg}`, Q1)).toMatchObject({ eps: null, epsDiluted: null });
+  });
+
+  it('S2: a "3Q F2025" row is dated only by the definition in its own table\'s heading block', () => {
     const rows = tr('3Q F2025', '409.21', '409.21') + tr('3Q F2024', '337.64', '337.64');
-    expect(readJpRelease(def + eps(rows), Q3)).toMatchObject({ eps: 409.21, epsDiluted: 409.21, span: 'ytd', ytdMonths: 9, currency: 'JPY' });
+    expect(readJpRelease(def9 + group + eps(rows), Q3)).toMatchObject({ eps: 409.21, epsDiluted: 409.21, span: 'ytd', ytdMonths: 9, currency: 'JPY' });
     // No definition: the token row stays undated → blank.
-    expect(readJpRelease(eps(rows), Q3)).toMatchObject({ eps: null, epsDiluted: null, span: null });
-    // A definition of another label ("Fiscal 2025") does not date "3Q F2025".
-    const other = '<p>Financial Highlights for Fiscal 2025 (for the fiscal year ended March 31, 2026)</p>';
-    expect(readJpRelease(other + eps(rows), Q3)).toMatchObject({ eps: null, span: null });
+    expect(readJpRelease(group + eps(rows), Q3)).toMatchObject({ eps: null, epsDiluted: null, span: null });
+    // A definition of another label ("Fiscal 2025", or the prior fiscal year) does not date "3Q F2025" (a2).
+    expect(readJpRelease('<p>Financial Highlights for Fiscal 2025 (for the fiscal year ended March 31, 2026)</p>' + group + eps(rows), Q3)).toMatchObject({ eps: null, span: null });
+    expect(readJpRelease('<p>Third Quarter of Fiscal 2024 (for the nine months ended December 31, 2024)</p>' + group + eps(rows), Q3)).toMatchObject({ eps: null, span: null });
+    // a3: the prior-year row with its own definition is not the period.
+    expect(readJpRelease('<p>Third Quarter of Fiscal 2024 (for the nine months ended December 31, 2024)</p>' + group + eps(tr('3Q F2024', '337.64', '337.64')), Q3)).toMatchObject({ eps: null, span: null });
+    // a4: the definition stands in another section's heading block, not this table's.
+    expect(readJpRelease(def9 + '<table><tr><td>Ordinary income</td><td>1</td></tr></table><p>Consolidated Financial Results</p>' + eps(tr('3Q F2025', '409.21', '409.21')), Q3)).toMatchObject({ eps: null, span: null });
+  });
+
+  it('S2 (a1, a1b, a5, a8): another span in the heading, the column head or the title, forecasts and subsidiaries → blank', () => {
+    const trend = tr('1Q F2025', '120.00', '120.00') + tr('2Q F2025', '140.00', '140.00') + tr('3Q F2025', '149.21', '149.21');
+    expect(readJpRelease(def9 + group + '<p>Quarterly trend of earnings per share</p>' + eps(trend), Q3)).toMatchObject({ eps: null, epsDiluted: null });
+    expect(readJpRelease(`${def9}${group}<table>${tr('', 'EPS (three months)', 'Diluted EPS (three months)')}${tr('', '&yen;', '&yen;')}${tr('3Q F2025', '149.21', '149.21')}</table>`, Q3)).toMatchObject({ eps: null, epsDiluted: null });
+    expect(readJpRelease(`${def9}${group}<p>(Oct-Dec)</p>${eps(tr('3Q F2025', '149.21', '149.21'))}`, Q3)).toMatchObject({ eps: null, epsDiluted: null });
+    const fy = '<p>Financial Highlights for Fiscal 2025 (for the fiscal year ended March 31, 2026)</p>';
+    expect(readJpRelease(fy + '<p>Consolidated earnings estimates for Fiscal 2026</p>' + eps(tr('Fiscal 2025', '502.92', '502.92')), Q4)).toMatchObject({ eps: null });
+    expect(readJpRelease(def9 + '<p>Summary of results of Mizuho Securities Co., Ltd.</p>' + eps(tr('3Q F2025', '55.55', '55.55')), Q3)).toMatchObject({ eps: null });
+  });
+
+  it('S2 (a6, a7, a9): controls — a defined label in its own group heading block is read', () => {
+    expect(readJpRelease('<p>Consolidated Financial Highlights for FY2025 (for the fiscal year ended March 31, 2026)</p>' + eps(tr('FY2025', '502.92', '502.92') + tr('FY2024', '400.00', '400.00')), Q4)).toMatchObject({ eps: 502.92, span: 'ytd', ytdMonths: 12 });
+    expect(readJpRelease('<p>Consolidated Highlights for Fiscal 2026 (for the fiscal year ended March 31, 2026)</p>' + eps(tr('Fiscal 2026', '502.92', '502.92') + tr('Fiscal 2025', '400.00', '400.00')), Q4)).toMatchObject({ eps: 502.92, span: 'ytd' });
+    expect(readJpRelease('<p>Consolidated results, First Quarter of Fiscal 2026 (for the three months ended June 30, 2026)</p>' + eps(tr('1Q F2026', '173.53', '173.53')), Q1)).toMatchObject({ eps: 173.53, span: 'quarter' });
   });
 
   it('S3: conflicting definitions of one label → blank; a "3Q" defined as nine months is never the quarter', () => {
     const rows = tr('3Q F2025', '409.21', '409.21');
     const two = '<p>Third Quarter of Fiscal 2025 (for the nine months ended December 31, 2025)</p><p>Third Quarter of Fiscal 2025 (for the three months ended December 31, 2025)</p>';
-    expect(readJpRelease(two + eps(rows), Q3)).toMatchObject({ eps: null, span: null });
-    const nine = '<p>Third Quarter of Fiscal 2025 (for the nine months ended December 31, 2025)</p>';
-    expect(readRelease(nine + eps(rows), { periodEnd: '2025-12-31', span: 'quarter', profile: 'jp', fiscalQuarter: 3, fiscalYear: 2026 })).toMatchObject({ epsBasic: null, epsGaap: null });
+    expect(readJpRelease(two + group + eps(rows), Q3)).toMatchObject({ eps: null, span: null });
+    expect(readRelease(def9 + group + eps(rows), { periodEnd: '2025-12-31', span: 'quarter', profile: 'jp', fiscalQuarter: 3, fiscalYear: 2026 })).toMatchObject({ epsBasic: null, epsGaap: null });
   });
 
   it('S4: a forecast definition ("fiscal year ending") dates nothing; a row with more than the label is not a token row', () => {
     const rows = tr('Fiscal 2025', '502.92', '502.92');
     const ending = '<p>Forecast for Fiscal 2025 (for the fiscal year ending March 31, 2026)</p>';
-    expect(readJpRelease(ending + eps(rows), { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ eps: null, span: null });
+    expect(readJpRelease(ending + group + eps(rows), Q4)).toMatchObject({ eps: null, span: null });
     const def = '<p>Financial Highlights for Fiscal 2025 (for the fiscal year ended March 31, 2026)</p>';
-    expect(readJpRelease(def + eps(rows), { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ eps: 502.92, span: 'ytd', ytdMonths: 12 });
-    expect(readJpRelease(def + eps(tr('Fiscal 2025 (estimate)', '502.92', '502.92')), { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ eps: null });
+    expect(readJpRelease(def + group + eps(rows), Q4)).toMatchObject({ eps: 502.92, span: 'ytd', ytdMonths: 12 });
+    expect(readJpRelease(def + group + eps(tr('Fiscal 2025 (estimate)', '502.92', '502.92')), Q4)).toMatchObject({ eps: null });
   });
 
   it('Mizuho: "1Q F2026" / "3Q F2025" / "Fiscal 2025" summary rows', () => {
@@ -514,6 +550,7 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
 describe('Task 12b: split row labels ("Basic-" / "Net income … per share")', () => {
   const head = span2('', 'Millions of yen', '% Change') + span2('', 'For the three months ended') + tr('', 'December 31, 2025', 'March 31, 2026');
   const Q4 = { periodEnd: '2026-03-31', fiscalQuarter: 4 as const };
+  const hd = tr('', 'Three months ended March 31, 2026') + tr('', 'Yen');
 
   it('L1: a dangling "Basic-" / "Diluted-" fragment joins the label row below it', () => {
     const html = table('Consolidated Statements of Income – Quarterly Comparatives',
@@ -539,6 +576,18 @@ describe('Task 12b: split row labels ("Basic-" / "Net income … per share")', (
     expect(readJpRelease(html, Q4)).toMatchObject({ eps: 25.29, epsDiluted: null });
   });
 
+  it('L3 (c1, c3, c5): "Basic-" / "Diluted-" never join a row that names basic / diluted itself, or no per-share words', () => {
+    expect(readJpRelease(`<p>(Millions of yen)</p><table>${hd}${tr('Basic-')}${tr('Diluted net income per share', '24.34')}</table>`, Q4)).toMatchObject({ eps: null, epsDiluted: 24.34 });
+    expect(readJpRelease(`<p>(Millions of yen)</p><table>${hd}${tr('Per share of common stock:')}${tr('Basic-')}${tr('Net income attributable to NHI shareholders per share', '25.29')}${tr('Diluted-')}${tr('Return on equity', '8.20')}</table>`, Q4)).toMatchObject({ eps: 25.29, epsDiluted: null });
+    expect(readJpRelease(`<p>(Millions of yen)</p><table>${hd}${tr('Per share of common stock:')}${tr('Diluted-')}${tr('Basic net income per share', '25.29')}</table>`, Q4)).toMatchObject({ eps: 25.29, epsDiluted: null });
+  });
+
+  it('L4 (c2, c4): equity per share stays excluded after "Basic-"; a "Non-" fragment makes "non-recurring" and excludes the row', () => {
+    expect(readJpRelease(`<p>(Millions of yen)</p><table>${hd}${tr('Per share of common stock:')}${tr('Basic-')}${tr('Shareholders equity per share', '1,024.34')}${tr('Net income per share', '25.29')}</table>`, Q4)).toMatchObject({ eps: 25.29, epsDiluted: null });
+    expect(readJpRelease(`<p>(Millions of yen)</p><table>${hd}${tr('Non-')}${tr('recurring net income per share', '5.29')}</table>`, Q4)).toMatchObject({ eps: null, epsDiluted: null });
+    expect(readJpRelease(`<p>(Millions of yen)</p><table>${hd}${tr('One-time items per share', '5.29')}${tr('Net income per share excluding one-off items', '6.29')}</table>`, Q4)).toMatchObject({ eps: null });
+  });
+
   it('Nomura FY2025 release: the quarterly comparatives\' standalone quarter', () => {
     expect(six('NMR_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 577_181_000_000, eps: 25.29, epsDiluted: 24.34, currency: 'JPY', span: 'quarter', ytdMonths: null });
   });
@@ -553,47 +602,77 @@ describe('Task 12b: financial appendix ("Billion JPY, except EPS", "FY2024 Q4 (J
     tr('Revenue', rev[0], rev[1], '2.5', '7,027') +
     tr('Basic EPS (JPY or USD)', eps[0], eps[1], '(13.81)', '(0.44)') + '</table>';
   const reported = appendix('FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)', ['1,050.9', '1,053.4'], ['(51.44)', '(65.25)']);
+  /** The document's own dated fiscal-year naming: FY2024 is the year ending March 31, 2025 (start-year naming). */
+  const startYear = '<p>The full year consolidated forecast for the fiscal year ending March 31, 2025 (FY2024) is unchanged.</p>';
+  const read = { revenue: 1_053_400_000_000, eps: -65.25, epsDiluted: null, currency: 'JPY', span: 'quarter' };
+  const none = { revenue: null, eps: null };
 
-  it('F1: a yearless month-range column is the quarter when its table pairs it with the prior fiscal year', () => {
-    expect(readJpRelease(heading('FY2024 Q4 (Jan-Mar) Reported Results with CER % Change') + reported, Q4)).toMatchObject({
-      revenue: 1_053_400_000_000, eps: -65.25, epsDiluted: null, currency: 'JPY', span: 'quarter',
-    });
+  it('F1: a yearless month-range column is read only with a dated fiscal-year mapping in the same document', () => {
+    expect(readJpRelease(startYear + heading('FY2024 Q4 (Jan-Mar) Reported Results with CER % Change') + reported, Q4)).toMatchObject(read);
+    expect(readJpRelease('<p>FY2024 (April 1, 2024 through March 31, 2025)</p>' + heading('Reported Results') + reported, Q4)).toMatchObject(read);
+    // No mapping (d1, d2, d5, d6): never read, whichever naming the labels would fit.
+    expect(readJpRelease(heading('FY2024 Q4 (Jan-Mar) Reported Results with CER % Change') + reported, Q4)).toMatchObject(none);
+    // An end-year mapping ("FY2025 (April 1, 2024 – March 31, 2025)") makes FY2024 last year: not read.
+    expect(readJpRelease('<p>FY2025 (April 1, 2024 – March 31, 2025)</p>' + heading('Reported Results') + reported, Q4)).toMatchObject(none);
+    // Mappings that disagree: none.
+    expect(readJpRelease(startYear + '<p>FY2025 (April 1, 2024 – March 31, 2025)</p>' + heading('Reported Results') + reported, Q4)).toMatchObject(none);
   });
 
-  it('F2: a Core / non-IFRS / adjusted table is never read, whether its title is a caption or a heading table above it', () => {
+  it('F1b: only under a title that names the reported (IFRS) figures', () => {
+    expect(readJpRelease(startYear + heading('Results with CER % Change') + reported, Q4)).toMatchObject(none);
+    expect(readJpRelease(startYear + heading('Revenue by region') + `<table>${tr('(Billion JPY)', 'FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)')}${tr('Revenue', '100.0', '120.0')}</table>`, Q4)).toMatchObject(none);
+  });
+
+  it('F2 (f0–f7): Core / non-IFRS / adjusted / "excluding" titles, label heads and header rows are never read', () => {
     const core = appendix('FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)', ['1,050.9', '1,051.7'], ['(51.44)', '49.00']);
-    for (const title of ['FY2024 Q4 (Jan-Mar) Core Results with CER % Change', 'Non-IFRS Results', 'Adjusted Results']) {
-      expect(readJpRelease(heading(title) + core, Q4), title).toMatchObject({ revenue: null, eps: null });
-      expect(readJpRelease(`<p>${title}</p>${core}`, Q4), title).toMatchObject({ revenue: null, eps: null });
+    // Control: the same table under a Reported title is read.
+    expect(readJpRelease(startYear + heading('Reported Results') + core, Q4)).toMatchObject({ revenue: 1_051_700_000_000, eps: 49 });
+    const titles = ['FY2024 Q4 (Jan-Mar) Reported vs Core Results', 'Non-IFRS Reported Results', 'Adjusted Reported Results', 'Reported Results excluding one-time items', 'Reported Results (non-recurring items excluded)'];
+    for (const t of titles) {
+      expect(readJpRelease(startYear + heading(t) + core, Q4), t).toMatchObject(none);
+      expect(readJpRelease(`${startYear}<p>${t}</p>${core}`, Q4), t).toMatchObject(none);
       // Next to the reported table, the Core table adds no candidate.
-      expect(readJpRelease(heading('Reported Results') + reported + heading(title) + core, Q4), title).toMatchObject({ revenue: 1_053_400_000_000, eps: -65.25 });
+      expect(readJpRelease(startYear + heading('Reported Results') + reported + heading(t) + core, Q4), t).toMatchObject(read);
     }
+    // f1: a spacer paragraph between the heading table and the table.
+    expect(readJpRelease(startYear + heading('Reported Core Results') + '<p>&nbsp;</p>' + core, Q4)).toMatchObject(none);
+    // f2: the title, then sentences.
+    expect(readJpRelease(`${startYear}<p>Reported Core Results.</p><p>Figures are unaudited. Amounts are rounded.</p>${core}`, Q4)).toMatchObject(none);
+    // f3: Core in the label column's head; f4: a Core header row spanning the columns.
+    const coreHead = `<table>${tr('Core (Billion JPY, except EPS)', 'FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)')}${tr('Revenue', '900.0', '950.0')}${tr('Basic EPS', '10.00', '33.00')}</table>`;
+    expect(readJpRelease(startYear + heading('Reported Results') + coreHead, Q4)).toMatchObject(none);
+    const coreRow = `<table>${tr('(Billion JPY, except EPS)', 'Core Results', '')}${tr('', 'FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)')}${tr('Revenue', '900.0', '950.0')}${tr('Basic EPS', '10.00', '33.00')}</table>`;
+    expect(readJpRelease(startYear + heading('Reported Results') + coreRow, Q4)).toMatchObject(none);
+    // f5: a heading table with a page number; f6: a heading table over four rows.
+    expect(readJpRelease(`${startYear}<table><tr><td>Reported Core Results</td><td>12</td></tr></table>${core}`, Q4)).toMatchObject(none);
+    expect(readJpRelease(`${startYear}<table><tr><td>Reported Core Results</td></tr><tr><td>FY2024 Q4</td></tr><tr><td>(Jan-Mar)</td></tr><tr><td>with CER</td></tr></table>${core}`, Q4)).toMatchObject(none);
     // A "CORE" column is never read either.
     const cols = `<table>${tr('(Billion JPY)', 'FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar) CORE')}${tr('Revenue', '1,050.9', '1,051.7')}${tr('Basic EPS', '1.00', '2.00')}</table>`;
-    expect(readJpRelease(cols, Q4)).toMatchObject({ revenue: null, eps: null });
+    expect(readJpRelease(startYear + heading('Reported Results') + cols, Q4)).toMatchObject(none);
   });
 
-  it('F3: without the prior-year column, or with a later fiscal-year column beside it, nothing is read', () => {
+  it('F3: the prior-year pair is required; no later label, no duplicate head (d3), no extra words in the head (d4)', () => {
     const alone = `<table>${tr('(Billion JPY, except EPS)', 'FY2024 Q4 (Jan-Mar)')}${tr('Revenue', '1,053.4')}${tr('Basic EPS', '(65.25)')}</table>`;
-    expect(readJpRelease(alone, Q4)).toMatchObject({ revenue: null, eps: null });
+    expect(readJpRelease(startYear + heading('Reported Results') + alone, Q4)).toMatchObject(none);
     const later = appendix('FY2024 Q4 (Jan-Mar)', 'FY2025 Q4 (Jan-Mar)', ['1,053.4', '1,100.0'], ['(65.25)', '10.00']);
-    // FY2025 is the period's own label under end-year naming: the later column is read, never FY2024 beside it.
-    expect(readJpRelease(later, Q4)).toMatchObject({ revenue: 1_100_000_000_000, eps: 10 });
-    const older = appendix('FY2022 Q4 (Jan-Mar)', 'FY2023 Q4 (Jan-Mar)', ['1,000.0', '1,050.9'], ['1.00', '(51.44)']);
-    expect(readJpRelease(older, Q4)).toMatchObject({ revenue: null, eps: null });
+    expect(readJpRelease(startYear + heading('Reported Results') + later, Q4)).toMatchObject(none);
+    const dup = `<table>${tr('(Billion JPY, except EPS)', 'FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)')}${tr('Revenue', '900.0', '950.0', '6.3')}${tr('Basic EPS', '10.00', '20.00', '0.13')}</table>`;
+    expect(readJpRelease(startYear + heading('Reported Results') + dup, Q4)).toMatchObject(none);
+    const conv = `<table>${tr('(Billion JPY, except EPS)', 'FY2023 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar)', 'FY2024 Q4 (Jan-Mar) Convenience translation')}${tr('Revenue', '900.0', '950.0', '6.3')}${tr('Basic EPS', '10.00', '20.00', '0.13')}</table>`;
+    expect(readJpRelease(startYear + heading('Reported Results') + conv, Q4)).toMatchObject({ revenue: 950_000_000_000, eps: 20 });
   });
 
   it('F4: the range must be the requested span ending on the period end; a quarter token must match', () => {
     const ytd = appendix('FY2023 Q4 (Apr-Mar)', 'FY2024 Q4 (Apr-Mar)', ['4,263.8', '4,581.6'], ['91.16', '68.36']);
-    expect(readRelease(ytd, { periodEnd: '2025-03-31', span: 'quarter', profile: 'jp', fiscalQuarter: 4, fiscalYear: 2025 })).toMatchObject({ revenue: null, epsBasic: null });
+    expect(readRelease(startYear + heading('Reported Results') + ytd, { periodEnd: '2025-03-31', span: 'quarter', profile: 'jp', fiscalQuarter: 4, fiscalYear: 2025 })).toMatchObject({ revenue: null, epsBasic: null });
     const q3 = appendix('FY2023 Q3 (Jan-Mar)', 'FY2024 Q3 (Jan-Mar)', ['1,050.9', '1,053.4'], ['(51.44)', '(65.25)']);
-    expect(readJpRelease(q3, Q4)).toMatchObject({ revenue: null, eps: null });
-    expect(readJpRelease(reported, { periodEnd: '2024-12-31', fiscalQuarter: 3 })).toMatchObject({ revenue: null, eps: null });
+    expect(readJpRelease(startYear + heading('Reported Results') + q3, Q4)).toMatchObject(none);
+    expect(readJpRelease(startYear + heading('Reported Results') + reported, { periodEnd: '2024-12-31', fiscalQuarter: 3 })).toMatchObject(none);
   });
 
-  it('Takeda Financial Appendix: Q3 (Oct-Dec) and Q4 (Jan-Mar) reported results, Core tables not read', () => {
-    expect(six('TAK_2024-12-31.htm', '2024-12-31', 3)).toEqual({ revenue: 1_144_100_000_000, eps: 15.01, epsDiluted: null, currency: 'JPY', span: 'quarter', ytdMonths: null });
-    expect(six('TAK_2025-03-31.htm', '2025-03-31', 4)).toEqual({ revenue: 1_053_400_000_000, eps: -65.25, epsDiluted: null, currency: 'JPY', span: 'quarter', ytdMonths: null });
+  it('Takeda Kessan Tanshin (main 6-K document): Q3 nine months and FY2024, Core and unconsolidated figures not read', () => {
+    expect(six('TAK_2024-12-31.htm', '2024-12-31', 3)).toEqual({ revenue: 3_528_152_000_000, eps: 133.71, epsDiluted: 131.69, currency: 'JPY', span: 'ytd', ytdMonths: 9 });
+    expect(six('TAK_2025-03-31.htm', '2025-03-31', 4)).toEqual({ revenue: 4_581_551_000_000, eps: 68.36, epsDiluted: 67.23, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
   });
 
   it('Takeda Tanshin: the "(Reference) Summary of Unconsolidated Results" is not read', () => {
@@ -606,8 +685,8 @@ describe('Task 12b: financial appendix ("Billion JPY, except EPS", "FY2024 Q4 (J
     const section = html.slice(html.lastIndexOf('<table', at), end);
     expect(section).toContain('125.29');
     expect(readJpRelease(section, { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ revenue: null, eps: null, epsDiluted: null });
-    // Without its "Unconsolidated" titles the same tables would be read: the exclusion is what blanks them.
-    expect(readJpRelease(section.replace(/Unconsolidated/g, 'Group'), { periodEnd: '2026-03-31', fiscalQuarter: 4 }).eps).toBe(125.29);
+    // Titled "Consolidated" instead, the same tables would be read: the exclusion is what blanks them.
+    expect(readJpRelease(section.replace(/Unconsolidated/g, 'Consolidated'), { periodEnd: '2026-03-31', fiscalQuarter: 4 }).eps).toBe(125.29);
     expect(six('TAK_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 4_505_720_000_000, eps: 121.75, epsDiluted: 119.64, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
   });
 });
@@ -627,6 +706,16 @@ describe('Task 12b: "Unaudited Consolidated Statement of …" headings end a non
     for (const h of ['Unaudited Consolidated subsidiaries', 'Unaudited Non-consolidated Statement of Income', 'Unaudited Consolidated Statement of Income compared with the parent', 'Preliminary Consolidated Statement of Income']) {
       expect(readJpRelease(`${nc}<p>${h}</p>${statement}`, Q4), h).toMatchObject({ revenue: null, eps: null });
     }
+  });
+
+  it('H3 (e1): "(Parent Company)" / an entity in parentheses keeps the section closed; "Parent Company" opens one', () => {
+    for (const h of ['Unaudited Consolidated Statement of Income (Parent Company)', 'Condensed Consolidated Statements of Income (Toyota Motor Corporation)', 'Consolidated Statement of Income (Parent Company)', 'Interim Consolidated Statement of Income [Toyota Financial Services]']) {
+      expect(readJpRelease(`${nc}<p>${h}</p>${statement}`, Q4), h).toMatchObject({ revenue: null, eps: null });
+    }
+    // Group statements first, then a "Parent Company" heading: the tables after it are the parent's.
+    const parent = `<p>Consolidated Statement of Income</p>${statement}<p>Statement of Income (Parent Company)</p>` +
+      `<table>${tr('', 'Yen in millions')}${tr('', 'For the year ended March 31, 2026')}${tr('Total sales revenues', '15,684,952')}${tr('Basic earnings per share', '195.25')}</table>`;
+    expect(readJpRelease(parent, Q4)).toMatchObject({ revenue: 50_684_952_000_000, eps: 295.25 });
   });
 
   it('Toyota FY2026: statements after the unconsolidated summary are read', () => {

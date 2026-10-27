@@ -320,14 +320,14 @@
     "accession": "0001395064-25-000048",
     "periodEnd": "2025-03-31",
     "fiscalQuarter": 4,
-    "revenue": 1053400000000,
-    "eps": -65.25,
-    "epsDiluted": null,
+    "revenue": 4581551000000,
+    "eps": 68.36,
+    "epsDiluted": 67.23,
     "currency": "JPY",
-    "span": "quarter",
-    "ytdMonths": null,
+    "span": "ytd",
+    "ytdMonths": 12,
     "checked": true,
-    "note": "Financial Appendix (EX-99.1). Standalone quarter column: \"FY2024 Q4 (Jan-Mar) Reported Results\" table (Billion JPY, except EPS): \"Revenue\" 1,053.4 (billion) and \"Basic EPS (JPY or USD)\" (65.25). No diluted EPS in the document. The Core results table (revenue 1,051.7, \"Basic EPS\" 49) is non-IFRS and not used."
+    "note": "Main 6-K document (Kessan Tanshin, form6k-1_050825.htm) of the same filing; replaces the Financial Appendix (EX-99.1), whose \"FY2024 Q4 (Jan-Mar)\" columns carry no dated fiscal-year mapping. No three-month column in the Tanshin. Consolidated Statements of Profit or Loss, column \"For the year ended March 31,\" 2025 (JPY (millions)): \"Revenue\" 4,581,551; \"Basic earnings per share\" 68.36, \"Diluted earnings per share\" 67.23. Summary \"(1) Consolidated Operating Results\" row \"For the Fiscal Year Ended March 31, 2025\" agrees (4,581,551; 68.36 / 67.23). The \"(Reference) Summary of Unconsolidated Results\" and the Core figures are not used."
   },
   "TAK_2024-12-31.htm": {
     "adr": "TAK",
@@ -335,14 +335,14 @@
     "accession": "0001395064-25-000002",
     "periodEnd": "2024-12-31",
     "fiscalQuarter": 3,
-    "revenue": 1144100000000,
-    "eps": 15.01,
-    "epsDiluted": null,
+    "revenue": 3528152000000,
+    "eps": 133.71,
+    "epsDiluted": 131.69,
     "currency": "JPY",
-    "span": "quarter",
-    "ytdMonths": null,
+    "span": "ytd",
+    "ytdMonths": 9,
     "checked": true,
-    "note": "Financial Appendix (EX-99.1). Standalone quarter column: \"FY2024 Q3 (Oct-Dec) Reported Results\" (Billion JPY, except EPS): \"Revenue\" 1,144.1, \"Basic EPS (JPY or USD)\" 15.01. No diluted EPS. The Core table (\"Basic EPS\" 132) is non-IFRS and not used."
+    "note": "Main 6-K document (Kessan Tanshin, form6k-1_013025.htm) of the same filing; replaces the Financial Appendix (EX-99.1), whose \"FY2024 Q3 (Oct-Dec)\" columns carry no dated fiscal-year mapping. No three-month column in the Tanshin. Condensed Interim Consolidated Statements of Profit or Loss, column \"Nine-month Period Ended December 31,\" 2024 (JPY (millions, except per share data)): \"Revenue\" 3,528,152; \"Basic earnings per share\" 133.71, \"Diluted earnings per share\" 131.69. Summary \"(1) Consolidated Operating Results (year to date)\" row \"Nine-month Period Ended December 31, 2024\" agrees (3,528,152; 133.71 / 131.69)."
   },
   "MUFG_2026-06-30.htm": {
     "adr": "MUFG",
