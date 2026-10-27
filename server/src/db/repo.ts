@@ -7,6 +7,7 @@ import { ET, sessionClose } from '../domain/marketCalendar.js';
 import { normalizeTicker } from '../domain/ticker.js';
 import { ensureInSchema } from '../india/db/inRepo.js';
 import { ensureHkSchema } from '../hk/db/hkRepo.js';
+import { ensureJpSchema } from '../jp/db/jpRepo.js';
 import { confirmPrelim } from './prelim.js';
 import type {
   CalendarRow, ExpectedMove, InvestingRow, LiveMove, PrevMoveBasis, ReportRecord, RevenueRow, SecCheck, Timing, TimingSource,
@@ -122,6 +123,7 @@ export function openDb(path: string): Db {
   addMissingColumns(db);
   ensureInSchema(db);
   ensureHkSchema(db);
+  ensureJpSchema(db);
   return db;
 }
 
