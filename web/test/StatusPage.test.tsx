@@ -55,3 +55,13 @@ test('status page shows coverage per field with its minimum and flags the ones b
   expect(eps.className).not.toContain('below');
   expect(screen.getByText('timing').closest('tr')!.className).toContain('below');
 });
+
+test('a disabled source shows "not configured" (EDINET without a key)', async () => {
+  const withEdinet = { ...body, sources: [...body.sources, { source: 'edinet', lastSuccessAt: null, lastError: null, lastErrorAt: null, state: 'disabled', blockedUntil: null }] };
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(withEdinet), { status: 200 })));
+  render(<StatusPage />);
+  expect(await screen.findByText('EDINET: not configured')).toBeTruthy();
+  const row = screen.getByText('edinet').closest('tr')!;
+  expect(row.textContent).toContain('not configured');
+  expect(row.textContent).not.toContain('disabled');
+});

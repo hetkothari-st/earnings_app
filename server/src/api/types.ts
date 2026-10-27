@@ -66,7 +66,8 @@ export interface SourceStatusDto {
   lastSuccessAt: string | null;
   lastError: string | null;
   lastErrorAt: string | null;
-  state: 'ok' | 'failing' | 'blocked' | 'backup' | null;
+  /** `disabled`: switched off by configuration (e.g. EDINET without a key). */
+  state: 'ok' | 'failing' | 'blocked' | 'backup' | 'disabled' | null;
   blockedUntil: string | null;
 }
 

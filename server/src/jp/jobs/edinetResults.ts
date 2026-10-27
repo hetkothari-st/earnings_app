@@ -1,4 +1,4 @@
-import { recordSourceError } from '../../db/repo.js';
+import { recordSourceDisabled } from '../../db/repo.js';
 import { type EdinetOutcome, edinetSeen, findJpReportId, jpStocks, markEdinetSeen, mergeJpActuals } from '../db/jpRepo.js';
 import { addDaysJST } from '../domain/jpCalendar.js';
 import { codeFromSec, type EdinetDoc, isResultsFiling } from '../sources/edinet.js';
@@ -32,13 +32,16 @@ export function jpEdinetDates(today: string, mode: 'today' | 'backfill'): string
  * EDINET results (Ruling 13): 有価証券報告書 / 半期報告書 of active codes, read from the XBRL instance and merged as
  * year-to-date actuals (source `edinet`) into the row with the document's period end. Never creates rows and never
  * sets `releasedAt`. Each docID is handled once; a failed download is recorded as an `error` and retried with
- * backoff on later runs while its date is polled; a parser exception is final (`parse-error`). Without an EDINET client it does nothing. Returns the changed report ids.
+ * backoff on later runs while its date is polled; a parser exception is final (`parse-error`). Without an EDINET client it does nothing but record the source as `disabled` (once). Returns the changed report ids.
  */
 export async function refreshJpEdinet(ctx: JpJobContext, dates: string[]): Promise<number[]> {
   const { db } = ctx;
   const edinet = ctx.edinet;
   if (!edinet) {
-    recordSourceError(db, 'edinet', 'EDINET_API_KEY not set', ctx.now());
+    // Not configured (no EDINET_API_KEY): a status, not an error every run.
+    if ((db.prepare(`SELECT state FROM source_status WHERE source = 'edinet'`).get() as { state: string | null } | undefined)?.state !== 'disabled') {
+      recordSourceDisabled(db, 'edinet');
+    }
     return [];
   }
   const active = new Set(jpStocks(db).filter((s) => s.active).map((s) => s.code));

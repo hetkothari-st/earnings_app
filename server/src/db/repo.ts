@@ -533,6 +533,16 @@ export function recordSourceError(db: Db, source: string, message: string, now: 
     .run(source, message.slice(0, 500), now);
 }
 
+/**
+ * A source switched off by configuration (e.g. EDINET without a key): state `disabled`, no error. Written once: a
+ * source already disabled is left alone. A later run of the source (failover) sets its state again.
+ */
+export function recordSourceDisabled(db: Db, source: string): void {
+  db.prepare(`INSERT INTO source_status (source, state) VALUES (?, 'disabled')
+      ON CONFLICT (source) DO UPDATE SET state = 'disabled', last_error = NULL, last_error_at = NULL
+      WHERE source_status.state IS NOT 'disabled'`).run(source);
+}
+
 export function listSourceStatus(db: Db): SourceStatusDto[] {
   return db.prepare(`SELECT source, last_success_at AS lastSuccessAt, last_error AS lastError, last_error_at AS lastErrorAt,
       state, blocked_until AS blockedUntil

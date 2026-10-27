@@ -21,6 +21,9 @@ function CoverageTable({ market, rows }: { market: string; rows: CoverageRow[] }
   );
 }
 
+/** Display names for sources switched off by configuration. */
+const SOURCE_LABELS: Record<string, string> = { edinet: 'EDINET' };
+
 export function StatusPage() {
   const [data, setData] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +34,9 @@ export function StatusPage() {
     <main className="page">
       <h1>Data source status</h1>
       <p>{data.counts.reports} reports · {data.counts.withExpectedMove} with expected move · {data.counts.secVerified} timing-checked against SEC</p>
+      {data.sources.filter((s) => s.state === 'disabled').map((s) => (
+        <p key={`disabled-${s.source}`} className="muted">{SOURCE_LABELS[s.source] ?? s.source}: not configured</p>
+      ))}
       <table className="status">
         <thead><tr><th>Source</th><th>State</th><th>Last success</th><th>Last error</th><th>Error at</th></tr></thead>
         <tbody>
@@ -38,7 +44,7 @@ export function StatusPage() {
             <tr key={s.source}>
               <td>{s.source}</td>
               <td className={`state-${s.state ?? 'none'}`}>
-                {s.state ?? '—'}
+                {s.state === 'disabled' ? 'not configured' : s.state ?? '—'}
                 {s.state === 'blocked' && s.blockedUntil && <span className="muted"> until {new Date(s.blockedUntil).toLocaleString()}</span>}
               </td>
               <td>{s.lastSuccessAt ? new Date(s.lastSuccessAt).toLocaleString() : '—'}</td>

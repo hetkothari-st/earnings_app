@@ -219,11 +219,20 @@ describe('refreshJpEdinet', () => {
     expect(getJpReport(s.db, id)).toMatchObject({ revenueSource: 'sec', epsSource: 'sec', edinetDocId: 'S100OTHER' });
   });
 
-  it('no client → no-op with "not configured" status', async () => {
+  it('no client → no-op with a "disabled" status recorded once, never an error', async () => {
     const s = setup([docOf(TAKEDA_HANKI, '45020')], { client: false });
     s.row('4502', '2025-09-30', 2, '2026-03-31');
+    // An error left by an older build is cleared.
+    s.db.prepare(`INSERT INTO source_status (source, last_error, last_error_at) VALUES ('edinet', 'EDINET_API_KEY not set', ?)`).run(NOW);
     expect(await refreshJpEdinet(s.ctx, [DATE])).toEqual([]);
-    expect(s.status()!.e).toBe('EDINET_API_KEY not set');
+    const row = () => s.db.prepare(`SELECT state, last_error AS e, last_error_at AS at FROM source_status WHERE source = 'edinet'`).get();
+    expect(row()).toEqual({ state: 'disabled', e: null, at: null });
+    // Later runs write nothing new.
+    const writes = vi.spyOn(s.db, 'prepare');
+    s.clock.now = '2026-10-27T01:00:00.000Z';
+    expect(await refreshJpEdinet(s.ctx, [DATE])).toEqual([]);
+    expect(writes.mock.calls.filter(([sql]) => /^\s*(INSERT|UPDATE)/i.test(sql))).toEqual([]);
+    expect(row()).toEqual({ state: 'disabled', e: null, at: null });
     expect(s.downloads).toEqual([]);
     expect(s.db.prepare('SELECT COUNT(*) AS n FROM jp_edinet_seen').get()).toEqual({ n: 0 });
   });
