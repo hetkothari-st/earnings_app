@@ -3,7 +3,7 @@ import { openDb, upsertCalendarRow } from '../../src/db/repo.js';
 import { usAdrRows } from '../../src/hk/db/hkRepo.js';
 import {
   edinetSeen, getJpReport, JP_ID_BASE, jpPastDates, jpPastDatesCount, jpReportsBetween, jpStocks, lastEdinetSeenAt, listJpRange,
-  markEdinetSeen, mergeJpActuals, recordJpRelease, saveJpExpectedMove, setJpEstimates, setJpProfile, setJpTiming, syncJpUniverse,
+  markEdinetSeen, mergeJpActuals, nearestUnreleasedJp, recordJpRelease, saveJpExpectedMove, setJpEstimates, setJpProfile, setJpTiming, syncJpUniverse,
   upsertJpCalendarRow, upsertJpPastDates,
 } from '../../src/jp/db/jpRepo.js';
 import type { JpUniverseEntry } from '../../src/jp/universe.js';
@@ -113,6 +113,40 @@ describe('jp repo', () => {
     expect(jpReportsBetween(db, '2026-11-12', '2026-11-12')[0]).toMatchObject({ id: other, hasEps: true, hasRevenue: false, fiscalQuarter: 2 });
   });
 
+  it('a diluted-only row counts as released: no Yahoo timing, no date move, not "nearest unreleased"', () => {
+    const db = setup();
+    const id = upsertJpCalendarRow(db, { ...base, reportDate: '2026-11-05', dateStatus: 'estimated' }, NOW);
+    expect(mergeJpActuals(db, id, { eps: eq(null, 49), source: 'edinet' }, NOW)).toBe(true);
+    expect(setJpTiming(db, id, 'AMC', 'yahoo')).toBe(false);
+    upsertJpCalendarRow(db, { ...base, reportDate: '2026-11-12', dateStatus: 'confirmed', timing: 'BMO', timingSource: 'sec-notice' }, NOW);
+    expect(getJpReport(db, id)).toMatchObject({ reportDate: '2026-11-05', dateStatus: 'estimated', timing: 'UNKNOWN', rescheduledFrom: null });
+    expect(nearestUnreleasedJp(db, '7203', '2026-11-05')).toBeNull();
+  });
+
+  it('an incoming basic fills a diluted-only group; a lower source keeps the stored diluted; never across spans', () => {
+    const db = setup();
+    // Same source fills the missing basic.
+    const a = upsertJpCalendarRow(db, { ...base, reportDate: '2026-11-05', dateStatus: 'estimated' }, NOW);
+    expect(mergeJpActuals(db, a, { eps: eq(null, 49), source: 'sec' }, NOW)).toBe(true);
+    expect(mergeJpActuals(db, a, { eps: eq(50, 48), source: 'sec' }, NOW)).toBe(true);
+    expect(getJpReport(db, a)).toMatchObject({ epsActual: 50, epsDilutedActual: 49, epsSource: 'sec', epsSpan: 'quarter' });
+    // A lower source fills the basic only; the stored (higher) diluted stays.
+    const b = upsertJpCalendarRow(db, { ...base, code: '285A', name: 'KIOXIA', reportDate: '2026-11-12', dateStatus: 'estimated' }, NOW);
+    expect(mergeJpActuals(db, b, { eps: eq(null, 49), source: 'sec' }, NOW)).toBe(true);
+    expect(mergeJpActuals(db, b, { eps: eq(51, 47), source: 'yahoo' }, NOW)).toBe(true);
+    expect(getJpReport(db, b)).toMatchObject({ epsActual: 51, epsDilutedActual: 49, epsSpan: 'quarter' });
+    // Once the basic is stored, the same lower source never touches the group again.
+    expect(mergeJpActuals(db, b, { eps: eq(52, 46), source: 'yahoo' }, NOW)).toBe(false);
+    expect(getJpReport(db, b)).toMatchObject({ epsActual: 51, epsDilutedActual: 49 });
+    // A lower-source basic of another span (or currency) never joins a stored diluted.
+    const db2 = setup();
+    const c = upsertJpCalendarRow(db2, { ...base, reportDate: '2026-11-05', dateStatus: 'estimated' }, NOW);
+    expect(mergeJpActuals(db2, c, { eps: { basic: null, diluted: 89, currency: 'JPY', span: 'ytd', ytdMonths: 6 }, source: 'edinet' }, NOW)).toBe(true);
+    expect(mergeJpActuals(db2, c, { eps: eq(50), source: 'yahoo' }, NOW)).toBe(false);
+    expect(mergeJpActuals(db2, c, { eps: { basic: 90, diluted: null, currency: 'USD', span: 'ytd', ytdMonths: 6 }, source: 'yahoo' }, NOW)).toBe(false);
+    expect(getJpReport(db2, c)).toMatchObject({ epsActual: null, epsDilutedActual: 89, epsSource: 'edinet', epsSpan: 'ytd', epsYtdMonths: 6 });
+  });
+
   it('revenue and EPS groups keep their own source and span', () => {
     const db = setup();
     const id = upsertJpCalendarRow(db, { ...base, reportDate: '2026-11-05', dateStatus: 'estimated' }, NOW);
@@ -136,6 +170,17 @@ describe('jp repo', () => {
     expect(getJpReport(db, id)).toMatchObject({ epsEstimate: 60, epsAnalysts: 10, revenueEstimate: 1.1e13, revenueAnalysts: 8, estimateSpan: 'quarter' });
     setJpEstimates(db, id, { eps: 250, epsAnalysts: 15, revenue: null, revenueAnalysts: null, currency: 'JPY', span: 'year' }, NOW);
     expect(getJpReport(db, id)).toMatchObject({ epsEstimate: 250, epsAnalysts: 15, revenueEstimate: null, revenueAnalysts: null, estimateSpan: 'year', estimateCurrency: 'JPY' });
+  });
+
+  it('estimates without a currency are skipped (uncertain means blank); stored values stay', () => {
+    const db = setup();
+    const id = upsertJpCalendarRow(db, { ...base, reportDate: '2026-11-05', dateStatus: 'estimated' }, NOW);
+    setJpEstimates(db, id, { eps: 60, epsAnalysts: 10, revenue: 1e13, revenueAnalysts: 9, currency: 'JPY', span: 'quarter' }, NOW);
+    setJpEstimates(db, id, { eps: 0.5, epsAnalysts: 3, revenue: 7e10, revenueAnalysts: 2, currency: null, span: 'year' }, NOW);
+    expect(getJpReport(db, id)).toMatchObject({ epsEstimate: 60, epsAnalysts: 10, revenueEstimate: 1e13, revenueAnalysts: 9, estimateCurrency: 'JPY', estimateSpan: 'quarter' });
+    const other = upsertJpCalendarRow(db, { ...base, code: '285A', name: 'KIOXIA', reportDate: '2026-11-12', dateStatus: 'estimated' }, NOW);
+    setJpEstimates(db, other, { eps: 0.5, epsAnalysts: 3, revenue: null, revenueAnalysts: null, currency: null, span: 'quarter' }, NOW);
+    expect(getJpReport(db, other)).toMatchObject({ epsEstimate: null, epsAnalysts: null, estimateCurrency: null, estimateSpan: null });
   });
 
   it('search matches code, English name and Japanese name; profile never blanks', () => {

@@ -280,8 +280,8 @@ const findReport = (db: DatabaseSync, code: string, periodEnd: string) =>
 
 const properName = (name: string, code: string) => (name.trim() && name.trim() !== code ? name.trim() : null);
 
-/** Results are out: SEC acceptance recorded, or an EPS figure stored. */
-const RELEASED_SQL = '(released_at IS NOT NULL OR eps_actual IS NOT NULL)';
+/** Results are out: SEC acceptance recorded, or an EPS figure (basic or diluted) stored. */
+const RELEASED_SQL = '(released_at IS NOT NULL OR eps_actual IS NOT NULL OR eps_diluted_actual IS NOT NULL)';
 
 /**
  * A report date for a period. Confirmed dates (from a 6-K date notice) never give way to estimated ones.
@@ -309,7 +309,7 @@ export function upsertJpCalendarRow(
   }
 
   const name = properName(row.name, row.code) ?? existing.name;
-  const released = existing.released_at != null || existing.eps_actual != null;
+  const released = existing.released_at != null || existing.eps_actual != null || existing.eps_diluted_actual != null;
   const weaker = row.dateStatus === 'estimated' && existing.date_status === 'confirmed';
   if (released || weaker || existing.report_date === row.reportDate) {
     // A confirmed notice for the date that was estimated confirms it.
@@ -393,6 +393,10 @@ const finite = (n: number | null | undefined): n is number => typeof n === 'numb
  * higher than the stored one. An equal or lower source is never written (the first of a source wins). A group
  * without a value never blanks a stored one. An EPS group with only a diluted figure is stored only when the row
  * has no EPS at all. When a group is written, all its columns come from the incoming source (one source per group).
+ * One exception: a stored diluted-only group takes an incoming basic of the same currency, span and YTD months from
+ * a source that does not outrank it (a higher one replaces the whole group): the basic fills, the stored diluted
+ * stays, and the group's source becomes the incoming one when that ranks lower (the weakest contributor, so any
+ * better source may later replace the whole group).
  * `docUrl` / `edinetDocId` are written when none is stored, or with a group their source wrote.
  * Returns true if anything changed.
  */
@@ -405,10 +409,12 @@ export function mergeJpActuals(
   },
   _now: string,
 ): boolean {
-  const r = db.prepare(`SELECT revenue_actual, revenue_source, eps_actual, eps_diluted_actual, eps_source, sec_doc_url, edinet_doc_id
+  const r = db.prepare(`SELECT revenue_actual, revenue_source, eps_actual, eps_diluted_actual, eps_source, eps_currency, eps_span,
+      eps_ytd_months, sec_doc_url, edinet_doc_id
     FROM jp_reports WHERE id = ?`).get(id) as
     { revenue_actual: number | null; revenue_source: string | null; eps_actual: number | null; eps_diluted_actual: number | null;
-      eps_source: string | null; sec_doc_url: string | null; edinet_doc_id: string | null } | undefined;
+      eps_source: string | null; eps_currency: string | null; eps_span: string | null; eps_ytd_months: number | null;
+      sec_doc_url: string | null; edinet_doc_id: string | null } | undefined;
   if (!r) return false;
   const rank = RANK[a.source];
   let changed = false;
@@ -427,9 +433,16 @@ export function mergeJpActuals(
     const diluted = finite(eps.diluted) ? eps.diluted : null;
     const stored = r.eps_actual != null || r.eps_diluted_actual != null;
     const ok = basic != null ? !stored || rank > rankOf(r.eps_source) : diluted != null && !stored;
+    const months = eps.span === 'ytd' ? eps.ytdMonths : null;
+    const fillsBasic = !ok && basic != null && r.eps_actual == null && r.eps_diluted_actual != null
+      && (eps.currency || null) === r.eps_currency && eps.span === r.eps_span && months === r.eps_ytd_months;
     if (ok) {
       db.prepare(`UPDATE jp_reports SET eps_actual = ?, eps_diluted_actual = ?, eps_currency = ?, eps_source = ?, eps_span = ?, eps_ytd_months = ?
-          WHERE id = ?`).run(basic, diluted, eps.currency || null, a.source, eps.span, eps.span === 'ytd' ? eps.ytdMonths : null, id);
+          WHERE id = ?`).run(basic, diluted, eps.currency || null, a.source, eps.span, months, id);
+      changed = wrote = true;
+    } else if (fillsBasic) {
+      const source = rank < rankOf(r.eps_source) ? a.source : r.eps_source;
+      db.prepare('UPDATE jp_reports SET eps_actual = ?, eps_source = ? WHERE id = ?').run(basic, source, id);
       changed = wrote = true;
     }
   }
@@ -448,7 +461,7 @@ export function mergeJpActuals(
 /**
  * Consensus. A missing figure never blanks a stored one, except when the span (quarter / year) or the currency
  * changes: then all four values are written together (nulls for the missing ones), so a quarter figure never sits
- * beside a year figure and two currencies never sit in one row.
+ * beside a year figure and two currencies never sit in one row. Figures without a currency are not written.
  */
 export function setJpEstimates(
   db: DatabaseSync, id: number,
@@ -460,7 +473,8 @@ export function setJpEstimates(
 ): void {
   const stored = db.prepare('SELECT estimate_currency, estimate_span FROM jp_reports WHERE id = ?').get(id) as
     { estimate_currency: string | null; estimate_span: string | null } | undefined;
-  if (!stored) return;
+  // JP: a figure whose currency is unknown is skipped (uncertain means blank); it never takes a stored currency.
+  if (!stored || e.currency == null) return;
   const newSpan = stored.estimate_span != null && stored.estimate_span !== e.span;
   const newCurrency = e.currency != null && stored.estimate_currency != null && stored.estimate_currency !== e.currency;
   if (newSpan || newCurrency) {
