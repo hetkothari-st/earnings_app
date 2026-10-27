@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readHkRelease } from '../../src/hk/sources/releaseHk.js';
+import { HK_UNIVERSE } from '../../src/hk/universe.js';
 import { readRelease, readUsRelease } from '../../src/sources/releaseReader.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/hk/${n}`, import.meta.url), 'utf8');
@@ -222,6 +223,119 @@ describe('readHkRelease', () => {
       expect(readHkRelease(fx(f), Q3), f).toMatchObject({ revenue: null, eps: null });
     }
   });
+});
+
+describe('readHkRelease: currency, unit and basis stated outside a plain currency row', () => {
+  const Q2 = { periodEnd: '2026-06-30', kind: 'Q' as const };
+
+  it('currency inside a multi-line date header cell ("June 30, 2026 / RMB (million)"), with a row-spanning label cell', () => {
+    // Trip.com layout: the label cell spans the header rows (rowspan), so the date cells start one column left.
+    const head = (h: string) => `<td colspan="2">${h}</td><td></td><td></td>`;
+    const data = (label: string, ...v: string[]) => `<tr><td>${label}</td><td></td>${v.map((x) => `<td></td><td>${x}</td><td></td><td></td>`).join('')}</tr>`;
+    const html = `<p>Statements of Income (In millions, except share and per share data)</p>
+    <table>
+      <tr><td rowspan="3">&nbsp;</td><td></td><td colspan="12">Three Months Ended</td><td colspan="4">Six Months Ended</td></tr>
+      <tr><td></td>${head('June 30, 2025<br>RMB (million)')}${head('June 30, 2026<br>RMB (million)')}${head('June 30, 2026<br>USD (million)')}${head('June 30, 2026<br>RMB (million)')}</tr>
+      <tr><td>&nbsp;</td></tr>
+      ${data('Total net revenues', '14,000', '15,663', '2,300', '31,871')}
+      ${data('Earnings per ordinary share - Diluted', '2.00', '(3.89)', '(0.57)', '(0.22)')}
+    </table>`;
+    expect(readHkRelease(html, Q2)).toMatchObject({ revenue: 15_663_000_000, revenueCurrency: 'CNY', eps: -3.89, epsCurrency: 'CNY', epsBasis: 'share' });
+  });
+
+  it('a currency row with footnote marks ("US$ (2)") still names the currencies', () => {
+    const html = `<p>(In millions except for per share (or ADS) information, unaudited)</p>
+    <table>
+      <tr><td></td><td colspan="6">Three Months Ended</td></tr>
+      <tr><td></td><td colspan="2">June 30, 2025</td><td colspan="2">June 30, 2026</td><td colspan="2">June 30, 2026</td></tr>
+      <tr><td></td><td colspan="2">RMB</td><td colspan="2">RMB</td><td colspan="2">US$ (2)</td></tr>
+      ${row('Revenue', '32,713', '31,325', '4,617')}
+      ${row('Diluted earnings per share', '0.80', '0.72', '0.11')}
+    </table>`;
+    expect(readHkRelease(html, Q2)).toMatchObject({ revenue: 31_325_000_000, revenueCurrency: 'CNY', eps: 0.72, epsCurrency: 'CNY' });
+  });
+
+  it('currency and unit stated only in the caption ("Amounts in thousands of U.S. dollars")', () => {
+    const html = `<p>Condensed Consolidated Statements of Operations (Amounts in thousands of U.S. dollars, except for share and per share amounts)</p>
+    <table>
+      <tr><td></td><td colspan="4">Three Months Ended June 30,</td></tr>
+      <tr><td></td><td colspan="2">2026</td><td colspan="2">2025</td></tr>
+      ${row('Total revenues', '1,705,071', '1,315,485')}
+      ${row('Earnings per share - Diluted', '0.16', '0.07')}
+    </table>`;
+    expect(readHkRelease(html, Q2)).toMatchObject({ revenue: 1_705_071_000, revenueCurrency: 'USD', eps: 0.16, epsCurrency: 'USD', epsBasis: 'share' });
+  });
+
+  it('"(in US$ million, except per share data)" caption and "Diluted Earnings Per Common Share"', () => {
+    const html = `<p>Condensed Consolidated Statements of Income (in US$ million, except per share data) (unaudited)</p>
+    <table>
+      <tr><td></td><td colspan="4">Quarter Ended</td></tr>
+      <tr><td></td><td colspan="2">6/30/2026</td><td colspan="2">6/30/2025</td></tr>
+      <tr><td>Total revenues</td><td>$</td><td>3,271</td><td>$</td><td>2,981</td></tr>
+      <tr><td>Diluted Earnings Per Common Share</td><td>$</td><td>0.87</td><td>$</td><td>0.77</td></tr>
+    </table>`;
+    expect(readHkRelease(html, Q2)).toMatchObject({ revenue: 3_271_000_000, revenueCurrency: 'USD', eps: 0.87, epsCurrency: 'USD', epsBasis: 'share' });
+  });
+
+  it('a caption that names two currencies leaves an unmarked column blank', () => {
+    const html = `<p>Statements of Operations (in thousands of RMB and US$, except per share data)</p>
+    <table>
+      <tr><td></td><td colspan="2">Three Months Ended June 30, 2026</td></tr>
+      ${row('Total revenues', '1,705,071')}
+      ${row('Diluted earnings per share', '0.16')}
+    </table>`;
+    expect(readHkRelease(html, Q2)).toMatchObject({ revenue: null, eps: null, revenueCurrency: null, epsCurrency: null });
+  });
+
+  it('combined "per share/ADS" row: per share only when one ADS is one share', () => {
+    const html = rmbUsd(row('Net loss per share/ADS attributable to ordinary shareholders - Basic and diluted', '(0.40)', '(0.29)', '(0.04)'));
+    expect(readHkRelease(html, Q3, { adrRatio: 1 })).toMatchObject({ eps: -0.29, epsBasis: 'share', epsCurrency: 'CNY' });
+    expect(readHkRelease(html, Q3, { adrRatio: 2 })).toMatchObject({ eps: null, epsBasis: null, epsCurrency: null });
+    expect(readHkRelease(html, Q3, { adrRatio: null })).toMatchObject({ eps: null, epsBasis: null });
+    expect(readHkRelease(html, Q3)).toMatchObject({ eps: null, epsBasis: null });
+    const ordinary = rmbUsd(row('Net (loss)/profit per ordinary share/ADS - Diluted', '(0.40)', '(0.20)', '(0.03)'));
+    expect(readHkRelease(ordinary, Q3, { adrRatio: 1 })).toMatchObject({ eps: -0.2, epsBasis: 'share' });
+  });
+
+  it('a row label naming another currency than its column header is never read (NIO reconciliation rows)', () => {
+    const html = `<p>Reconciliation of GAAP and Non-GAAP Results (All amounts in thousands, except for per share/ADS data)</p>
+    <table>
+      <tr><td></td><td colspan="2">Three Months Ended September 30, 2026</td></tr>
+      <tr><td></td><td colspan="2">GAAP Result</td></tr>
+      <tr><td></td><td colspan="2">RMB</td></tr>
+      ${row('Net loss per share/ADS attributable to ordinary shareholders, basic and diluted (RMB)', '(0.20)')}
+      ${row('Net loss per share/ADS attributable to ordinary shareholders, basic and diluted (USD)', '(0.03)')}
+    </table>`;
+    expect(readHkRelease(html, Q3, { adrRatio: 1 })).toMatchObject({ eps: -0.2, epsBasis: 'share', epsCurrency: 'CNY' });
+  });
+
+  it('revenue from an income statement whose per-share lines continue in the next table', () => {
+    const head = `<tr><td></td><td colspan="4">Three Months Ended</td></tr>
+      <tr><td></td><td colspan="2">June 30, 2026</td><td colspan="2">June 30, 2026</td></tr>
+      <tr><td></td><td colspan="2">RMB</td><td colspan="2">US$</td></tr>`;
+    const html = `<p>XYZ INC. UNAUDITED CONDENSED CONSOLIDATED STATEMENTS OF COMPREHENSIVE LOSS (All amounts in thousands, except for per share data)</p>
+    <table>${head}${row('Total revenues', '19,743,593', '2,756,123')}${row('Net loss', '(1,300,000)', '(180,000)')}</table>
+    <p>XYZ INC. UNAUDITED CONDENSED CONSOLIDATED STATEMENTS OF COMPREHENSIVE LOSS (CONTINUED) (All amounts in thousands, except for per share data)</p>
+    <table>${head}${row('Net loss per ordinary share - Diluted', '(0.70)', '(0.10)')}</table>`;
+    expect(readHkRelease(html, Q2)).toMatchObject({ revenue: 19_743_593_000, revenueCurrency: 'CNY', eps: -0.7 });
+    // A key-figures table (no statement caption, no per-share line) is still never read for revenue.
+    const kpi = `<p>Key Financial Results (in RMB billions)</p><table>${head}${row('Total revenues', '19.74', '2.76')}</table>`;
+    expect(readHkRelease(kpi, Q2)).toMatchObject({ revenue: null });
+  });
+});
+
+describe('6-K corpus (test/fixtures/hk/releases): every hand-checked release is read exactly', () => {
+  const dir = new URL('../fixtures/hk/releases/', import.meta.url);
+  const expected: Record<string, { adr: string; periodEnd: string; kind: 'Q' | 'H' | 'FY'; checked: boolean } & Record<string, unknown>> =
+    JSON.parse(readFileSync(new URL('expected.json', dir), 'utf8'));
+  for (const [file, e] of Object.entries(expected).filter(([, x]) => x.checked)) {
+    it(file, () => {
+      const adrRatio = HK_UNIVERSE.find((u) => u.adr === e.adr)?.adrRatio ?? null;
+      const got = readHkRelease(readFileSync(new URL(file, dir), 'utf8'), { periodEnd: e.periodEnd, kind: e.kind }, { adrRatio });
+      const pick = (o: Record<string, unknown>) => ({ eps: o.eps, epsBasis: o.epsBasis, epsCurrency: o.epsCurrency, revenue: o.revenue, revenueCurrency: o.revenueCurrency });
+      expect(pick(got as unknown as Record<string, unknown>)).toEqual(pick(e));
+    });
+  }
 });
 
 describe('readRelease', () => {

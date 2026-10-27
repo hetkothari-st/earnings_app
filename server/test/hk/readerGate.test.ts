@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { config } from '../../src/config.js';
 import type { HkPeriodKind } from '../../src/hk/domain/period.js';
 import { readHkRelease, type HkReleaseValues } from '../../src/hk/sources/releaseHk.js';
+import { HK_UNIVERSE } from '../../src/hk/universe.js';
 
 /**
  * Reader gate (Ruling 10): hand-checked past 6-K releases in test/fixtures/hk/releases/. A release is exact when
@@ -21,7 +22,9 @@ const expected: Record<string, HkExpected> = existsSync(new URL('expected.json',
   : {};
 const checked = Object.entries(expected).filter(([, e]) => e.checked);
 const read = (file: string, e: HkExpected): HkReleaseValues =>
-  readHkRelease(readFileSync(new URL(file, dir), 'utf8'), { periodEnd: e.periodEnd, kind: e.kind });
+  readHkRelease(readFileSync(new URL(file, dir), 'utf8'), { periodEnd: e.periodEnd, kind: e.kind }, {
+    adrRatio: HK_UNIVERSE.find((u) => u.adr === e.adr)?.adrRatio ?? null,
+  });
 
 const results = checked.map(([file, e]) => {
   const got = read(file, e);

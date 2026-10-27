@@ -1,15 +1,16 @@
 /**
  * Reads revenue and diluted GAAP EPS from an HK issuer's results release (6-K EX-99.1 or the 6-K itself).
  *
- * - Currency (Ruling 9): the income-statement headers are scanned; RMB is taken when present (Chinese ADR
- *   issuers print a US$ "convenience translation" column beside it), else HK$, else US$. Only that currency's
- *   columns are read and the figures are never converted.
+ * - Currency (Ruling 9): the income-statement headers and captions are scanned; RMB is taken when present
+ *   (Chinese ADR issuers print a US$ "convenience translation" column beside it), else HK$, else US$. Only that
+ *   currency's columns are read and the figures are never converted.
  * - EPS (Ruling 8): diluted GAAP per ordinary share when stated, else per ADS (`epsBasis: 'ads'`). Never
- *   converted with the ADR ratio; non-GAAP never read.
+ *   converted with the ADR ratio; non-GAAP never read. A combined "per share/ADS" row counts as per share only
+ *   when the issuer's ADR ratio is 1 (one ADS is one share, so it is the same number).
  * - Uncertain means blank: no currency stated, no unit, or disagreeing candidates → null.
  */
 import type { HkPeriodKind } from '../domain/period.js';
-import { currenciesIn, parseTables, readRelease, type Currency, type ReaderOptions } from '../../sources/releaseReader.js';
+import { currenciesIn, parseTables, readRelease, tableCaption, type Currency, type ReaderOptions } from '../../sources/releaseReader.js';
 
 export interface HkReleaseValues {
   revenue: number | null;
@@ -24,19 +25,24 @@ const SPAN: Record<HkPeriodKind, ReaderOptions['span']> = { Q: 'quarter', H: 'ha
 
 /** First cell of an income-statement line: a per-share / per-ADS or revenue row. */
 const STATEMENT_ROW = /per (diluted |common |basic )?share|per (class [a-z] )?ordinary share|per ads\b|per american depositary|earnings per|\beps\b|^\s*(total )?(net )?revenues?\b/i;
-const NUMBER = /\d/;
+/** A figure cell: "1,234", "(0.29)", "$ 0.87", "12%". Header cells ("June 30, 2026 RMB (million)", "US$ (2)") are not. */
+const AMOUNT = /^\(?\s*[-–−]?\s*(\d{1,3}(,\d{3})+|\d+)(\.\d+)?\s*\)?\s*%?\s*\)?$/;
+const isAmount = (text: string) => AMOUNT.test(text.replace(/\$/g, '').trim());
 
 /**
- * Currencies named in the headers of the tables that carry an income-statement line: their non-numeric rows,
- * plus currency marks on those lines' labels ("Diluted earnings per share ($)").
+ * Currencies named in the tables that carry an income-statement line: their header rows (rows without figures,
+ * even when a header cell holds a date or a footnote mark), their captions, plus currency marks on those lines'
+ * labels ("Diluted earnings per share ($)").
  */
 export function statementCurrencies(html: string): Set<Currency | '$'> {
   const text: string[] = [];
-  for (const t of parseTables(html)) {
+  for (const t of parseTables(html, { rowspan: true })) {
     const label = (r: (typeof t.rows)[number]) => r.find((c) => c.text)?.text ?? '';
-    const lines = t.rows.filter((r) => STATEMENT_ROW.test(label(r)) && r.slice(r.findIndex((c) => c.text) + 1).some((c) => NUMBER.test(c.text)));
+    const figures = (r: (typeof t.rows)[number]) => r.slice(r.findIndex((c) => c.text) + 1).some((c) => isAmount(c.text));
+    const lines = t.rows.filter((r) => STATEMENT_ROW.test(label(r)) && figures(r));
     if (!lines.length) continue;
-    for (const r of t.rows) if (!r.slice(1).some((c) => NUMBER.test(c.text))) text.push(r.map((c) => c.text).join(' '));
+    text.push(tableCaption(t));
+    for (const r of t.rows) if (!figures(r)) text.push(r.map((c) => c.text).join(' '));
     for (const r of lines) text.push(label(r));
   }
   return currenciesIn(text.join(' '));
@@ -50,10 +56,16 @@ export function pickCurrency(found: Set<Currency | '$'>): Currency | null {
   return null;
 }
 
-export function readHkRelease(html: string, period: { periodEnd: string; kind: HkPeriodKind }): HkReleaseValues {
+/**
+ * `issuer.adrRatio`: HK shares per ADS from the universe (`HkUniverseEntry.adrRatio`); only 1 lets a combined
+ * "per share/ADS" row be read as per share.
+ */
+export function readHkRelease(
+  html: string, period: { periodEnd: string; kind: HkPeriodKind }, issuer: { adrRatio?: number | null } = {},
+): HkReleaseValues {
   const currency = pickCurrency(statementCurrencies(html));
   if (!currency) return { revenue: null, revenueCurrency: null, eps: null, epsCurrency: null, epsBasis: null, notes: ['no currency stated in the income-statement headers'] };
-  const r = readRelease(html, { periodEnd: period.periodEnd, span: SPAN[period.kind], profile: 'hk', currency });
+  const r = readRelease(html, { periodEnd: period.periodEnd, span: SPAN[period.kind], profile: 'hk', currency, shareIsAds: issuer.adrRatio === 1 });
   // Ruling 8: per share whenever per-share rows were stated (even if they disagreed → blank); per ADS only when none were.
   const basis: 'share' | 'ads' | null = r.epsShareStated ? (r.epsShare !== null ? 'share' : null) : r.epsAds !== null ? 'ads' : null;
   const eps = basis === 'share' ? r.epsShare : basis === 'ads' ? r.epsAds : null;

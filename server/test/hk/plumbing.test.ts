@@ -152,7 +152,7 @@ describe('market HK plumbing', () => {
     const r = await app.inject({ url: '/api/admin/hk', headers: as('ADM') });
     expect(r.statusCode).toBe(200);
     const fullN = HK_UNIVERSE.filter((e) => e.cik != null && e.adr != null).length;
-    expect(r.json()).toEqual({ full: fullN, basic: HK_UNIVERSE.length - fullN, secConfigured: !!config.secUserAgent, readerOn: false, lastSixKAt: '2026-10-26T10:00:00.000Z' });
+    expect(r.json()).toEqual({ full: fullN, basic: HK_UNIVERSE.length - fullN, secConfigured: !!config.secUserAgent, readerOn: true, lastSixKAt: '2026-10-26T10:00:00.000Z' });
   });
 
   test('visible accepts HK codes', async () => {

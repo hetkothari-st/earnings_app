@@ -203,6 +203,23 @@ describe('handleHkFiling gates', () => {
     await handleHkFiling(ctx, filing, { ...GATES_CLOSED, hkEps: true });
     expect(getHkReport(db, id)).toMatchObject({ epsActual: 0.46, epsCurrency: 'CNY', revenueActual: null, revenueCurrency: null });
   });
+
+  it("the stock's ADR ratio reaches the reader: NIO's combined per share/ADS row is per share only at ratio 1", async () => {
+    // NIO Q2 2026 EX-99.1 (corpus fixture, 0001104659-26-104110): the only EPS row is "Net loss per share/ADS".
+    // Served behind the BABA index page, whose EX-99.1 link is replaced by the NIO release.
+    const NIO_CIK = 1736541;
+    const nio = { ...filing, cik: NIO_CIK };
+    const docs = { [BABA_EX99]: readFileSync(new URL('../fixtures/hk/releases/NIO_2026-06-30.htm', import.meta.url), 'utf8') };
+    const run = async (adrRatio: number) => {
+      const universe = HK_UNIVERSE.map((e) => (e.cik === NIO_CIK ? { ...e, adrRatio } : e));
+      const { db, ctx } = setup({ docs, universe });
+      const id = row(db, '9866', '2026-06-30', '2026-08-28');
+      await handleHkFiling(ctx, nio, GATES_OPEN);
+      return getHkReport(db, id)!;
+    };
+    expect(await run(1)).toMatchObject({ epsActual: -0.29, epsCurrency: 'CNY', epsBasis: 'share', revenueActual: 32_136_861_000 });
+    expect(await run(2)).toMatchObject({ epsActual: null, epsBasis: null, revenueActual: 32_136_861_000 });
+  });
 });
 
 describe('sweepHkSec', () => {

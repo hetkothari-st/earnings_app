@@ -38,20 +38,35 @@ function decode(s: string): string {
     .trim();
 }
 
-export function parseTables(html: string): Table[] {
+/**
+ * Tables of a document, each cell placed at its grid column. With `rowspan` (profile 'hk'), a cell spanning
+ * several rows keeps its columns occupied in the rows below, so their cells start after it (as a browser lays
+ * them out); without it, every row starts at column 0 (the US reader's long-standing behaviour).
+ */
+export function parseTables(html: string, opts: { rowspan?: boolean } = {}): Table[] {
   const out: Table[] = [];
   let prevEnd = 0;
   for (const t of html.matchAll(/<table\b[\s\S]*?<\/table>/gi)) {
     const before = decode(html.slice(Math.max(prevEnd, t.index - 4000), t.index)).slice(-400);
     prevEnd = t.index + t[0].length;
     const rows: Cell[][] = [];
+    let held: number[] = []; // column → rows still covered by a rowspan cell from above
     for (const tr of t[0].matchAll(/<tr\b[\s\S]*?<\/tr>/gi)) {
       const cells: Cell[] = [];
+      const next: number[] = [];
       let col = 0;
+      const skipHeld = () => { while ((held[col] ?? 0) > 0) { next[col] = held[col]! - 1; col++; } };
       for (const td of tr[0].matchAll(/<t[dh]\b([^>]*)>([\s\S]*?)<\/t[dh]>/gi)) {
         const span = Math.max(1, Number(td[1]!.match(/colspan\s*=\s*["']?(\d+)/i)?.[1] ?? 1));
+        if (opts.rowspan) skipHeld();
         cells.push({ text: decode(td[2]!), start: col, span });
+        const down = opts.rowspan ? Math.max(1, Number(td[1]!.match(/rowspan\s*=\s*["']?(\d+)/i)?.[1] ?? 1)) : 1;
+        for (let c = col; c < col + span; c++) if (down > 1) next[c] = down - 1;
         col += span;
+      }
+      if (opts.rowspan) {
+        for (let c = col; c < held.length; c++) if ((held[c] ?? 0) > 0) next[c] = held[c]! - 1;
+        held = next;
       }
       if (cells.some((c) => c.text)) rows.push(cells);
     }
@@ -203,12 +218,21 @@ const UNIT_RE = /\bin\s+(thousands|millions|billions)\b|\(\s*(?:\$|us\$|usd|u\.s
 const CAPTION_RE = /\(\s*(?:\$|us\$|usd|u\.s\. dollars|dollars|amounts)?\s*in\s+(thousands|millions|billions)\b|\([^()]{0,60}?\bin\s+(thousands|millions|billions)\b|\$\s*(?:in\s+)?(thousands|millions|billions)\b|\$\s?(000)'?s\b|\(\s*(000)'?s\s*\)/gi;
 /**
  * Foreign-issuer unit forms (profile 'hk'): "RMB'000", "US$m", "$m", "$bn", "RMB in millions",
- * "in millions of RMB / Renminbi / US dollars / HK dollars".
+ * "in millions of RMB / Renminbi / US dollars / HK dollars", "in US$ million", "RMB (million)".
  */
-const HK_UNIT_RE = /(?:rmb|renminbi|us\$|hk\$|\$)\s*'\s*(000)\b|(?:rmb|us\$|hk\$|\$)\s?(m|mn|bn)\b|\b(?:rmb|renminbi|usd|hkd)\s+(?:in\s+)?(thousands|millions|billions)\b|(?:us\$|hk\$)\s*(?:in\s+)?(thousands|millions|billions)\b|\bin\s+(thousands|millions|billions)\s+of\s+(?:rmb|renminbi|u\.?\s?s\.?\s*dollars|us\$|hk\$|hk dollars|hong kong dollars)/gi;
+const HK_UNIT_RE = /(?:rmb|renminbi|us\$|hk\$|\$)\s*'\s*(000)\b|(?:rmb|us\$|hk\$|\$)\s?(m|mn|bn)\b|\b(?:rmb|renminbi|usd|hkd)\s+(?:in\s+)?(thousands|millions|billions)\b|(?:us\$|hk\$)\s*(?:in\s+)?(thousands|millions|billions)\b|\bin\s+(thousands|millions|billions)\s+of\s+(?:rmb|renminbi|u\.?\s?s\.?\s*dollars|us\$|hk\$|hk dollars|hong kong dollars)|\bin\s+(?:rmb|renminbi|us\$|hk\$|usd|hkd)\s*(thousand|million|billion)s?\b|(?:\brmb|renminbi|us\$|hk\$|\busd|\bhkd)\s*\(\s*(thousand|million|billion)s?\s*\)/gi;
 /** A "$m" / "US$bn" unit: the HSBC-style tables whose revenue lines are read without a per-share row. */
 const DOLLAR_M = /\$\s?(m|mn|bn)\b/i;
-const MULT: Record<string, number> = { thousands: 1e3, '000': 1e3, millions: 1e6, billions: 1e9, m: 1e6, mn: 1e6, bn: 1e9 };
+const MULT: Record<string, number> = {
+  thousands: 1e3, '000': 1e3, millions: 1e6, billions: 1e9, m: 1e6, mn: 1e6, bn: 1e9, thousand: 1e3, million: 1e6, billion: 1e9,
+};
+/** Profile 'hk': a caption naming the income statement, whose per-share lines may continue in the next table. */
+const INCOME_STATEMENT_CAPTION = /\bstatements?\s+of\s+(?:comprehensive\s+)?(?:income|operations|earnings|profit|loss|\(loss\))|\bincome\s+statements?\b/i;
+
+/** The caption of a table: the last sentence above it ("… Statements of Income (in millions)"). */
+export function tableCaption(table: Table): string {
+  return table.before.split(/[.!?;]\s+(?=[A-Z0-9(])/).pop() ?? '';
+}
 
 function units(text: string, re: RegExp = UNIT_RE): Set<number> {
   const out = new Set<number>();
@@ -297,13 +321,20 @@ function hkLabel(label: string): string {
   return label.replace(LABEL_CURRENCY, ' ').replace(/(\s+\d{1,2}(\s*,\s*\d{1,2})+)\s*$/, '').replace(/\s+/g, ' ').replace(/[\s:,.]+$/, '').trim();
 }
 
-/** Diluted EPS per (ordinary / Class A) share → epsGaap, per ADS → epsAds; adjusted rows → epsAdjusted (then dropped). */
-function hkEpsField(label: string): Field | null {
+/**
+ * Diluted EPS per (ordinary / Class A / common) share → epsGaap, per ADS → epsAds; adjusted rows → epsAdjusted
+ * (then dropped). A combined "per share/ADS" row is read as per share only when `shareIsAds` (one ADS is one
+ * share, so both figures are the same number); otherwise it is ambiguous and skipped.
+ */
+function hkEpsField(label: string, shareIsAds: boolean): Field | null {
   if (EXCLUDE.test(label) || HK_EXCLUDE.test(label) || /discontinued/.test(label)) return null;
   if (!/dilut/.test(label)) return null;
-  if (/\bshares?\s*(\/|or|and)\s*ads\b|\bads\s*(\/|or|and)\s*(ordinary )?shares?\b/.test(label)) return null;
+  if (/\bshares?\s*(\/|or|and)\s*ads\b|\bads\s*(\/|or|and)\s*(ordinary )?shares?\b/.test(label)) {
+    if (!shareIsAds || !/\bper\s+((ordinary )?shares?\s*(\/|or|and)\s*ads|ads\s*(\/|or|and)\s*(ordinary )?shares?)\b/.test(label)) return null;
+    return ADJ_WORDS.test(label) || /non[\s-]?gaap/.test(label) ? 'epsAdjusted' : 'epsGaap';
+  }
   const ads = /\bper\s+(ads|american depositary shares?)\b/.test(label);
-  const share = /\bper\s+(class [a-z] )?(ordinary )?share\b|\beps\b/.test(label);
+  const share = /\bper\s+(class [a-z] )?(ordinary |common )?share\b|\beps\b/.test(label);
   if (ads === share) return null;
   if (ADJ_WORDS.test(label) || /non[\s-]?gaap/.test(label)) return 'epsAdjusted';
   return ads ? 'epsAds' : 'epsGaap';
@@ -320,6 +351,8 @@ export interface ReaderOptions {
   profile: 'us' | 'hk';
   /** Profile 'hk': only columns in this currency are read. */
   currency?: Currency;
+  /** Profile 'hk': one ADS is one share (ADR ratio 1), so a combined "per share/ADS" row is per share. */
+  shareIsAds?: boolean;
 }
 
 export interface ReaderResult {
@@ -353,7 +386,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, revenue: null, unit: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
   }
 
-  const tables = parseTables(html);
+  const tables = parseTables(html, { rowspan: hk });
   // A plain "$" is US$ when no table names another currency (or the caption says US dollars).
   const docCurrencies = hk ? currenciesIn(tables.flatMap((t) => t.rows.flat().map((c) => c.text)).join(' ')) : new Set();
   const dollarIsUsdInDoc = !docCurrencies.has('CNY') && !docCurrencies.has('HKD');
@@ -388,7 +421,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
         if (/^(diluted|basic|assuming dilution)$/.test(label) && section) label = `${section} ${label}`;
         // "Per ordinary share" | "Diluted earnings": the section names the per-share basis.
         else if (hk && /\bper\b/.test(section) && !/\bper\b/.test(label) && /\b(diluted|basic)\b/.test(label)) label = `${label} ${section}`;
-        const field = REVENUE_LABELS.has(label) ? 'revenue' : hk ? hkEpsField(label) : epsField(label);
+        const field = REVENUE_LABELS.has(label) ? 'revenue' : hk ? hkEpsField(label, opts.shareIsAds === true) : epsField(label);
         const vals = nums.filter((n) => !n.pct);
         if (field && vals.length && !(hk && SKIP_SECTION.test(section))) rowsOut.push({ field, nums: vals, headers, label, rawLabel: first.text, section });
         // "As Adjusted(2): | Institutional: | $ 17" — a heading that shares its row with a side panel.
@@ -420,7 +453,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     const nonDataText = nonData.join(' ');
     const inTable = units(nonDataText);
     // Caption: the last sentence above the table ("… Reconciliation of Non-GAAP Measures (in millions)").
-    const caption = table.before.split(/[.!?;]\s+(?=[A-Z0-9(])/).pop() ?? '';
+    const caption = tableCaption(table);
     const near = units(caption, CAPTION_RE);
     if (hk) {
       for (const u of units(nonDataText, HK_UNIT_RE)) inTable.add(u);
@@ -456,8 +489,11 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
         }
         if (hk && opts.currency) {
           // The column's currency: its own header, else the row label, else the table's titles and caption.
+          // A header and a row label naming different currencies ("RMB" column, "… (USD)" row) is ambiguous.
           let cur: Currency | null | undefined;
           for (const t of [over, rawLabel, `${nonDataText} ${caption}`]) if ((cur = oneCurrency(t, dollarIsUsd)) !== undefined) break;
+          const rowCur = oneCurrency(rawLabel, dollarIsUsd);
+          if (cur !== undefined && rowCur !== undefined && rowCur !== cur) cur = null;
           if (cur === undefined && n.dollar && dollarIsUsd) cur = 'USD';
           if (cur !== opts.currency) continue;
         }
@@ -476,8 +512,9 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
       if (!picked.length) continue;
       if (field === 'revenue') {
         // Segment / KPI tables have no per-share line and are not the income statement. A "$m" table
-        // (HSBC's highlights) states revenue without one.
-        if (!hasEpsRow && !dollarM) continue;
+        // (HSBC's highlights) states revenue without one; so does an income statement whose caption names it
+        // and whose per-share lines continue in the next table (XPeng).
+        if (!hasEpsRow && !dollarM && !(hk && INCOME_STATEMENT_CAPTION.test(caption))) continue;
         if (unit === null) { notes.push('revenue: no unit stated for table'); continue; }
         for (const n of picked) found.revenue.push({ value: n.value * unit, unit });
       } else {

@@ -79,7 +79,7 @@ export async function handleHkFiling(
       const source = f.form.startsWith('8-K') ? 'sec-8k' : 'sec-6k';
       let changed = recordHkRelease(ctx.db, id, f.acceptedAt, source, hkTimingFromAcceptance(reportDate, f.acceptedAt));
       if (gates.hkEps || gates.hkRevenue) {
-        const v = readHkRelease(html, { periodEnd: rep.periodEnd, kind: rep.periodKind });
+        const v = readHkRelease(html, { periodEnd: rep.periodEnd, kind: rep.periodKind }, { adrRatio: stock.adrRatio });
         const eps = gates.hkEps ? v.eps : null;
         const revenue = gates.hkRevenue ? v.revenue : null;
         if (eps != null || revenue != null) {

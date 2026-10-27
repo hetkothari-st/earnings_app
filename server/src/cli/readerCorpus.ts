@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
 import type { HkPeriodKind } from '../hk/domain/period.js';
 import { readHkRelease } from '../hk/sources/releaseHk.js';
+import { HK_UNIVERSE } from '../hk/universe.js';
 import { readInResultsPdf } from '../india/sources/resultsPdf.js';
 import { readUsRelease } from '../sources/releaseReader.js';
 
@@ -50,7 +51,8 @@ function runHk(): void {
   for (const [file, e] of Object.entries(expected).sort(([a], [b]) => a.localeCompare(b))) {
     if (!e.checked) { unchecked++; continue; }
     checked++;
-    const got = readHkRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, kind: e.kind });
+    const adrRatio = HK_UNIVERSE.find((u) => u.adr === e.adr)?.adrRatio ?? null;
+    const got = readHkRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, kind: e.kind }, { adrRatio });
     const marks = FIELDS.map((f) => (got[f] === e[f] ? 'exact' : got[f] === null ? 'blank' : 'wrong'));
     const verdict = marks.includes('wrong') ? 'wrong' : marks.includes('blank') ? 'blank' : 'exact';
     if (verdict === 'exact') exact++;

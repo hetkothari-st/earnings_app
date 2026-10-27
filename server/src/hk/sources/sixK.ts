@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { parseTables, type Cell } from '../../sources/releaseReader.js';
 import type { FilingDoc } from '../../sources/secFeed.js';
 import type { HkTiming } from '../domain/hkCalendar.js';
 
@@ -162,6 +163,41 @@ function periodMentions(text: string): { end: string; span: HkSpan }[] {
   return out;
 }
 
+/** A data row: a text label followed by at least one figure. */
+const FIGURE = /^\(?\s*[-–−]?\s*\$?\s*(\d{1,3}(,\d{3})+|\d+)(\.\d+)?\s*\)?\s*%?$/;
+
+/**
+ * Period ends named by table column headers whose words are split across cells, e.g. "Three Months Ended" over
+ * "June 30, 2026 / RMB (million)" (Trip.com, NetEase, BeOne). Each header cell's text is joined with the text of
+ * the header cells above and below it that share its columns, and that column text is read like prose.
+ */
+function tableHeaderMentions(html: string): { end: string; span: HkSpan }[] {
+  const out: { end: string; span: HkSpan }[] = [];
+  for (const t of parseTables(html, { rowspan: true })) {
+    let block: Cell[][] = [];
+    const flush = () => {
+      for (const row of block) {
+        for (const cell of row) {
+          if (!cell.text) continue;
+          const column = block
+            .map((r) => r.filter((c) => c.text && c.start < cell.start + cell.span && c.start + c.span > cell.start).map((c) => c.text).join(' '))
+            .join(' ');
+          out.push(...periodMentions(column));
+        }
+      }
+      block = [];
+    };
+    for (const row of t.rows) {
+      const li = row.findIndex((c) => c.text);
+      const isData = /[a-z]/i.test(row[li]?.text ?? '') && row.slice(li + 1).some((c) => FIGURE.test(c.text));
+      if (isData) flush();
+      else block.push(row);
+    }
+    flush();
+  }
+  return out;
+}
+
 const RESULTS_PHRASE = new RegExp(
   `\\b(?:announces?|reports?)\\b[^.]{0,120}?\\bresults\\b|\\binterim results\\b|\\bannual results\\b|\\b${MONTH_RE}\\s+quarter\\s+\\d{4}\\s+results\\b`,
   'i',
@@ -180,7 +216,7 @@ export function classifyHkExhibit(html: string): HkExhibit {
   const text = htmlToText(html);
 
   if (RESULTS_PHRASE.test(text.slice(0, 5000))) {
-    const periods = periodMentions(text);
+    const periods = [...periodMentions(text), ...tableHeaderMentions(html)];
     if (periods.length > 0 && hasResultsTable(html)) {
       // The latest period end is this release's; at that end the most specific span wins.
       const latest = periods.reduce((a, b) => (b.end > a ? b.end : a), '');

@@ -5,6 +5,41 @@ import { parseFilingDocs } from '../../src/sources/secFeed.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/hk/${n}`, import.meta.url), 'utf8');
 
+describe('classifyHkExhibit: period from table headers split across cells', () => {
+  const corpus = (n: string) => readFileSync(new URL(`../fixtures/hk/releases/${n}`, import.meta.url), 'utf8');
+
+  it('Trip.com Q2 2026 (0001193125-26-392473): "Three Months Ended" over "June 30, 2026 RMB (million)" → 2026-06-30 quarter', () => {
+    expect(classifyHkExhibit(corpus('TCOM_2026-06-30.htm'))).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
+  });
+
+  it('NetEase and BeOne Q2 2026 releases carry a three-month column → quarter, not half', () => {
+    expect(classifyHkExhibit(corpus('NTES_2026-06-30.htm'))).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
+    expect(classifyHkExhibit(corpus('ONC_2026-06-30.htm'))).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
+  });
+
+  it('every corpus release classifies to its hand-checked period end and span', () => {
+    const dir = new URL('../fixtures/hk/releases/', import.meta.url);
+    const expected: Record<string, { periodEnd: string; kind: 'Q' | 'H' | 'FY' }> = JSON.parse(readFileSync(new URL('expected.json', dir), 'utf8'));
+    const SPAN = { Q: 'quarter', H: 'half', FY: 'year' } as const;
+    for (const [file, e] of Object.entries(expected)) {
+      expect(classifyHkExhibit(corpus(file)), file).toEqual({ kind: 'results', periodEnd: e.periodEnd, span: SPAN[e.kind] });
+    }
+  });
+
+  it('a split header names the period: "Three Months Ended" | "Six Months Ended" over dated cells', () => {
+    const html = `<p>Acme Announces Second Quarter 2026 Results</p>
+    <table>
+      <tr><td></td><td colspan="4">Three Months Ended</td><td colspan="2">Six Months Ended</td></tr>
+      <tr><td></td><td colspan="2">June 30, 2025</td><td colspan="2">June 30, 2026</td><td colspan="2">June 30, 2026</td></tr>
+      <tr><td>Revenue</td><td></td><td>1</td><td></td><td>2</td><td></td><td>3</td></tr>
+    </table>`;
+    expect(classifyHkExhibit(html)).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
+    // Only a six-month column for the latest end → half.
+    const half = html.replace('<td colspan="2">June 30, 2026</td><td colspan="2">June 30, 2026</td>', '<td colspan="2">March 31, 2026</td><td colspan="2">June 30, 2026</td>');
+    expect(classifyHkExhibit(half)).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'half' });
+  });
+});
+
 describe('classifyHkExhibit', () => {
   it('BABA EX-99.1 is results for the quarter ended 2026-06-30', () => {
     expect(classifyHkExhibit(fx('baba_results_ex99.htm'))).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
