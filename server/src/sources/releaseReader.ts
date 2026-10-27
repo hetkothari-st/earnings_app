@@ -786,6 +786,9 @@ const JP_AMBIGUOUS_QUARTER = /\b(second|third|fourth|2nd|3rd|4th) quarter\b(?!\s
 const JP_YEAR = /\b(twelve|12)[\s-]*months?\b|\bfiscal years?\b|\byears? ended\b|\bfull[\s-]*year\b|\bannual\b/i;
 const JP_FY = /\bfy\s?'?(\d{4}|\d{2})\b/gi;
 const JP_QUARTER_TOKENS = /\bq([1-4])\b|\b([1-4])q\b/gi;
+const JP_HALF_TOKEN = /\b(1h|h1|2h|h2)\b/i;
+/** Span words that name a period by themselves (not tokens). */
+const JP_EXPLICIT_SPAN = /\b(three|six|nine|twelve|3|6|9|12)[\s-]*months?\b|\b(first|1st) quarter\b|\bfiscal years? ended\b|\byears? ended\b|\bfirst half\b|\bhalf[\s-]*year\b/i;
 /** The release's fiscal quarter (1–4) and fiscal-year label (the calendar year the fiscal year ends in). */
 interface JpFiscal { quarter?: number; year?: number }
 /** Tables of the parent company alone, not the group. */
@@ -814,11 +817,18 @@ function jpDates(text: string): Array<[number, number, number]> {
  * Does a column (its own header `own`; the label column and the whole header block as fallbacks for the span)
  * name `span` ending `pe`? A dated column must be within 15 days of `pe`.
  *
- * Quarter tokens ("2Q", "Q2") and fiscal-year tokens ("FY2027", "FY27": named by the calendar year the fiscal year
- * ends in) in the column's own header must equal `fiscal.quarter` / `fiscal.year`, dated or not; unknown → the column
- * is not read. An undated token column ("2Q FY2027" quarter, "FY2027" year) counts only inside a block dated `pe`.
+ * The column must be dated (its own header, else the label column); an undated column is never read.
+ *
+ * Quarter / half / fiscal-year tokens ("2Q", "Q2", "1H", "FY2027", "FY27") only ever narrow: issuers name fiscal years
+ * differently (Toyota by the year it ends in, Sony by the year it starts in), so a token never selects a column.
+ * - A token that disagrees with `fiscal.quarter` / `fiscal.year` (the year it ends in) rules the column out; unknown
+ *   fiscal values rule out every token column.
+ * - A token column is read only when its `exclusive` header cells (the cells over this column alone, not shared
+ *   with another figure column) state an explicit date, or an explicit span word ("three months", "year ended")
+ *   inside a dated block. A date shared by several columns ("Year ended March 31, 2026" over "FY2025 | FY2026") is
+ *   not the column's own.
  */
-function jpColumn(own: string, labelCol: string, block: string, pe: Date, span: JpSpan, fiscal: JpFiscal): boolean {
+function jpColumn(own: string, labelCol: string, block: string, pe: Date, span: JpSpan, fiscal: JpFiscal, exclusive: string): boolean {
   if (!own && !labelCol) return false;
   if (NOT_PERIOD.test(own) || ADJUSTMENT_COL.test(own) || JP_FORECAST.test(`${labelCol} ${own}`)) return false;
   let kinds = jpKinds(own);
@@ -832,9 +842,11 @@ function jpColumn(own: string, labelCol: string, block: string, pe: Date, span: 
   const near = ([y, m, d]: [number, number, number]) => m > 0 && daysApart(y, m, d, pe) <= 15;
   let dates = jpDates(own);
   if (!dates.length) dates = jpDates(labelCol);
-  if (dates.length) return dates.every(near);
-  const token = span === 'quarter' ? qTokens.length > 0 : span === 'year' && fyTokens.length > 0;
-  return token && jpDates(block).some(near);
+  if (!dates.length || !dates.every(near)) return false;
+  if (!qTokens.length && !fyTokens.length && !JP_HALF_TOKEN.test(own)) return true;
+  const exDates = jpDates(exclusive);
+  if (exDates.length) return exDates.every(near);
+  return JP_EXPLICIT_SPAN.test(exclusive);
 }
 
 interface JpRow {
@@ -934,6 +946,8 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
     // (Sony prints its per-share lines in the next table). Segment / KPI tables are neither.
     const statement = hasEps || jpStatementCaption(caption);
 
+    // Figure columns of the table: a header cell over more than one of them is shared, not a column's own.
+    const figureCols = new Set(rowsOut.flatMap((r) => r.nums.map((n) => n.start)));
     for (const row of rowsOut) {
       const blockText = row.headers.flat().map((c) => c.text).join(' ');
       const labelCol = row.headers.map((r) => r.filter((c) => c.text && c.start === 0 && c.span === 1).map((c) => c.text).join(' ')).join(' ').trim();
@@ -941,9 +955,10 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
         if (n.dollar) continue; // "$7": a dollar figure, never yen
         const overCells = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && !(c.start === 0 && c.span === 1)));
         const over = overCells.map((c) => c.text).join(' ').trim();
+        const exclusive = overCells.filter((c) => ![...figureCols].some((s) => s !== n.start && s >= c.start && s < c.start + c.span)).map((c) => c.text).join(' ');
         let field = row.field;
         if (row.kind === 'row') {
-          if (!jpColumn(over, labelCol, blockText, pe, span, fiscal)) continue;
+          if (!jpColumn(over, labelCol, blockText, pe, span, fiscal, exclusive)) continue;
         } else {
           // Summary layout: the column header names the field ("Basic earnings per share | yen"), the row the period
           // ("For the three months ended" | "June 30, 2026").
@@ -954,7 +969,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
           // Its dates come from the row (section title + label) only, never from the label-column header alone;
           // an undated span there ("Three months ended" | "June 30, 2026", Sony) may still name the span.
           if (!jpDates(row.period).length) continue;
-          if (!jpColumn(row.period, labelCol, `${labelCol} ${row.period}`, pe, span, fiscal)) continue;
+          if (!jpColumn(row.period, labelCol, `${labelCol} ${row.period}`, pe, span, fiscal, row.period)) continue;
         }
         if (!field) continue;
         // Currency: the column's own header, else the row label, else the table's text and caption. US$ is skipped.
