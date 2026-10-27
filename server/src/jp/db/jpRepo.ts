@@ -87,12 +87,22 @@ interface StockRow {
 }
 
 export function jpStocks(db: DatabaseSync): JpStock[] {
-  return (db.prepare('SELECT * FROM jp_stocks ORDER BY code').all() as unknown as StockRow[]).map((r) => ({
+  return (db.prepare('SELECT * FROM jp_stocks ORDER BY code').all() as unknown as StockRow[]).map(toJpStock);
+}
+
+/** Active full-level stocks with a CIK (the 6-K watcher reads these every tick; never the whole ~3,800-row table). */
+export function jpFullLevelStocks(db: DatabaseSync): JpStock[] {
+  return (db.prepare("SELECT * FROM jp_stocks WHERE level = 'full' AND active = 1 AND cik IS NOT NULL ORDER BY code").all() as unknown as StockRow[])
+    .map(toJpStock);
+}
+
+function toJpStock(r: StockRow): JpStock {
+  return ({
     code: r.code, edinetCode: r.edinet_code, name: r.profile_name ?? r.name, nameJa: r.name_ja, yahooSymbol: r.yahoo_symbol,
     level: r.level === 'full' ? 'full' : 'basic', adr: r.adr, adrRatio: r.adr_ratio, cik: r.cik, fyEndMonth: r.fy_end_month,
     industryJa: r.industry_ja, sector: r.sector, industry: r.industry, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of,
     active: r.active === 1,
-  }));
+  });
 }
 
 // ---------- Reports ----------

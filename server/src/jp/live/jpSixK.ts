@@ -4,7 +4,7 @@ import { parseFilingDocs } from '../../sources/secFeed.js';
 import { classifySixK, pickReleaseDoc, type SixKExhibit } from '../../sources/sixKClassify.js';
 import type { ForeignFiling, SixKMarket } from '../../sources/sixKWatch.js';
 import {
-  findJpReportId, getJpReport, type JpStock, jpReportsBetween, jpSecSeen, jpStocks, markJpSecSeen, mergeJpActuals, moveJpReportDate,
+  findJpReportId, getJpReport, type JpStock, jpFullLevelStocks, jpReportsBetween, jpSecSeen, markJpSecSeen, mergeJpActuals, moveJpReportDate,
   nearestUnreleasedJp, recordJpRelease, upsertJpCalendarRow,
 } from '../db/jpRepo.js';
 import { addDaysJST, JST } from '../domain/jpCalendar.js';
@@ -21,14 +21,16 @@ const daysApart = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(
 /** Active full-level Japan stocks by CIK. */
 export function jpFullLevelByCik(ctx: JpJobContext): Map<number, JpStock> {
   const map = new Map<number, JpStock>();
-  for (const s of jpStocks(ctx.db)) if (s.active && s.level === 'full' && s.cik != null) map.set(s.cik, s);
+  for (const s of jpFullLevelStocks(ctx.db)) map.set(s.cik!, s);
   return map;
 }
 
 /**
  * One 6-K of a full-level Japan stock (Ruling 15): fetch the index, then the release document, then classify it
  * (profile 'jp', `filedOn` = the JST date of acceptance). When the picked exhibit is not a release or a notice, the
- * 6-K main document is classified too (Takeda files its results summary as the 6-K itself).
+ * 6-K main document is classified too (Takeda files its results summary as the 6-K itself); when the picked
+ * document is a release for the period but reads all blank, the distinct main document of the same period is read
+ * and, if it gives a value, is the `secDocUrl`.
  * - Results: only the row with the release's period end flips. An unreleased row dated within ±3 days of the JST
  *   date moves to it (a confirmed row only earlier, keeping its timing). With no row, one is created only when the
  *   release's period is the stock's latest period at the JST date. Timing is never taken from acceptance (Ruling 7:
@@ -57,8 +59,8 @@ export async function handleJpFiling(
   let docUrl = picked;
   let html = await http.text(picked);
   let ex = classify(html);
+  const main = docs.find((d) => /^6-K(\/A)?$/i.test(d.type))?.url;
   if (ex.kind === 'other') {
-    const main = docs.find((d) => /^6-K(\/A)?$/i.test(d.type))?.url;
     if (main && main !== picked) {
       const mainHtml = await http.text(main);
       const mainEx = classify(mainHtml);
@@ -97,7 +99,18 @@ export async function handleJpFiling(
       const laterFiling = rep.releasedAt != null && Date.parse(rep.releasedAt) < Date.parse(f.acceptedAt);
       let changed = recordJpRelease(ctx.db, id, f.acceptedAt, null);
       if (!laterFiling && (gates.jpEps || gates.jpRevenue)) {
-        const v = readJpRelease(html, { periodEnd: rep.periodEnd, fiscalQuarter: rep.fiscalQuarter, issuer: jpIssuerFor(stock.code) });
+        const read = (h: string) => readJpRelease(h, { periodEnd: rep.periodEnd, fiscalQuarter: rep.fiscalQuarter, issuer: jpIssuerFor(stock.code) });
+        let v = read(html);
+        // Takeda: the picked exhibit (an appendix) may be classed as the release yet read blank; the 6-K tanshin of
+        // the same period carries the figures.
+        if (v.eps == null && v.epsDiluted == null && v.revenue == null && main && main !== docUrl) {
+          const mainHtml = await http.text(main);
+          const mainEx = classify(mainHtml);
+          if (mainEx.kind === 'results' && mainEx.periodEnd === ex.periodEnd) {
+            const mv = read(mainHtml);
+            if (mv.eps != null || mv.epsDiluted != null || mv.revenue != null) { v = mv; docUrl = main; }
+          }
+        }
         const currency = v.currency;
         const span = v.span;
         if (currency && span) {

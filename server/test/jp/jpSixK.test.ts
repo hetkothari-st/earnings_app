@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../../src/config.js';
 import { openDb } from '../../src/db/repo.js';
@@ -17,6 +18,7 @@ import { SixKWatch } from '../../src/sources/sixKWatch.js';
 
 const jpFx = (n: string) => readFileSync(new URL(`../fixtures/jp/${n}`, import.meta.url), 'utf8');
 const hkFx = (n: string) => readFileSync(new URL(`../fixtures/hk/${n}`, import.meta.url), 'utf8');
+const corpusFx = (n: string) => gunzipSync(readFileSync(new URL(`../fixtures/jp/corpus/${n}`, import.meta.url))).toString('utf8');
 
 const FEED_6K = 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=6-K&company=&dateb=&owner=include&start=0&count=100&output=atom';
 
@@ -33,6 +35,15 @@ const NMR_CIK = 1163653;
 const NMR_ACC = '0001193125-26-393642';
 const NMR_DIR = 'https://www.sec.gov/Archives/edgar/data/1163653/000119312526393642';
 const NMR_INDEX = `${NMR_DIR}/${NMR_ACC}-index.htm`;
+// Takeda 1Q FY2026 (corpus fixtures): EX-99.1 is the Financial Appendix, the 6-K itself the Kessan Tanshin;
+// accepted 2026-07-30 06:01 ET = 19:01 JST.
+const TAK_CIK = 1395064;
+const TAK_ACC = '0001395064-26-000327';
+const TAK_DIR = 'https://www.sec.gov/Archives/edgar/data/1395064/000139506426000327';
+const TAK_INDEX = `${TAK_DIR}/${TAK_ACC}-index.htm`;
+const TAK_APPENDIX = `${TAK_DIR}/exhibit991_073026.htm`;
+const TAK_MAIN = `${TAK_DIR}/form6k_073026.htm`;
+const TAK_FILING = { cik: TAK_CIK, accession: TAK_ACC, indexUrl: TAK_INDEX, acceptedAt: '2026-07-30T10:01:21.000Z', form: '6-K' };
 // Alibaba results 6-K (HK Task 6 fixtures).
 const BABA_CIK = 1577552;
 const BABA_ACC = '0001104659-26-099220';
@@ -45,6 +56,9 @@ const BASE_DOCS: Record<string, string> = {
   [TM_MAIN]: '<html><body>Form 6-K cover</body></html>',
   [NMR_INDEX]: jpFx('sec_index_nomura_date_notice.htm'),
   [`${NMR_DIR}/d140285d6k.htm`]: jpFx('nomura_2q_date_notice_6k.htm'),
+  [TAK_INDEX]: corpusFx(`${TAK_ACC}_index.htm.gz`),
+  [TAK_APPENDIX]: corpusFx(`${TAK_ACC}_exhibit991_073026.htm.gz`),
+  [TAK_MAIN]: corpusFx(`${TAK_ACC}_form6k_073026.htm.gz`),
   [BABA_INDEX]: hkFx('sec_index_baba_results.htm'),
   [`${BABA_DIR}/tm2623667d1_ex99-1.htm`]: hkFx('baba_results_ex99.htm'),
   [`${BABA_DIR}/tm2623667d1_6k.htm`]: '<html><body>Form 6-K cover</body></html>',
@@ -87,6 +101,7 @@ const full = (code: string, name: string): JpUniverseEntry => {
 const ENTRIES: JpUniverseEntry[] = [
   full('7203', 'TOYOTA MOTOR CORPORATION'),
   full('8604', 'Nomura Holdings, Inc.'),
+  full('4502', 'Takeda Pharmaceutical Company Limited'),
   { code: '6501', edinetCode: 'E01737', name: 'Hitachi, Ltd.', nameJa: 'Hitachi', fyEndMonth: 3, industryJa: null, adr: null, adrRatio: null, cik: null },
 ];
 
@@ -207,6 +222,35 @@ describe('Japan 6-K handling', () => {
     expect(getJpReport(db, id)).toMatchObject({ releasedAt: TM_ACCEPTED, epsActual: 120.69, secDocUrl: TM_MAIN });
   });
 
+  it('Takeda: the appendix is no release, the 6-K tanshin is read; secDocUrl is the tanshin', async () => {
+    const { db, ctx } = setup({ today: '2026-07-30' });
+    const id = row(db, '4502', '2026-07-30', '2026-07-29');
+    expect(await handleJpFiling(ctx, TAK_FILING, GATES_OPEN)).toEqual({ released: [id], dated: [] });
+    expect(getJpReport(db, id)).toMatchObject({
+      periodEnd: '2026-06-30', epsActual: 71.65, epsDilutedActual: 70.54, revenueActual: 1_219_900_000_000, epsSpan: 'quarter', secDocUrl: TAK_MAIN,
+    });
+  });
+
+  it('a picked exhibit classified as results that reads all blank: the distinct 6-K main document is read instead', async () => {
+    // An appendix-style exhibit that names the quarter and has a revenue row but no figure for it.
+    const blankRelease = `<p>Earnings Report (Kessan Tanshin) for the Three-month Period Ended June 30, 2026 — Financial Appendix</p>
+      <table><tr><td>Revenue</td><td>see page A-4</td></tr></table>`;
+    const { db, ctx, requested } = setup({ today: '2026-07-30', docs: { [TAK_APPENDIX]: blankRelease } });
+    const id = row(db, '4502', '2026-07-30', '2026-07-29');
+    expect(await handleJpFiling(ctx, TAK_FILING, GATES_OPEN)).toEqual({ released: [id], dated: [] });
+    expect(requested).toContain(TAK_MAIN);
+    expect(getJpReport(db, id)).toMatchObject({
+      releasedAt: TAK_FILING.acceptedAt, epsActual: 71.65, epsDilutedActual: 70.54, revenueActual: 1_219_900_000_000, epsSource: 'sec', secDocUrl: TAK_MAIN,
+    });
+
+    // Gates closed: nothing is read, so the main document is not fetched.
+    const closed = setup({ today: '2026-07-30', docs: { [TAK_APPENDIX]: blankRelease } });
+    const c = row(closed.db, '4502', '2026-07-30', '2026-07-29');
+    expect(await handleJpFiling(closed.ctx, TAK_FILING, GATES_CLOSED)).toEqual({ released: [c], dated: [] });
+    expect(closed.requested).not.toContain(TAK_MAIN);
+    expect(getJpReport(closed.db, c)).toMatchObject({ releasedAt: TAK_FILING.acceptedAt, epsActual: null, secDocUrl: null });
+  });
+
   it('a date notice confirms the date and timing; one naming a past date is ignored', async () => {
     const { db, ctx } = setup({ today: '2026-09-17' });
     const id = row(db, '8604', '2026-10-30');
@@ -233,7 +277,7 @@ describe('Japan 6-K handling', () => {
   it('due: a full-level report in JST today−1..+3, unreleased', () => {
     const { db, ctx } = setup({ today: '2026-08-01' });
     const m = jpSixKMarket(ctx, () => {});
-    expect(m.ciks()).toEqual(new Set([TM_CIK, NMR_CIK]));
+    expect(m.ciks()).toEqual(new Set([TM_CIK, NMR_CIK, TAK_CIK]));
     expect(m.eightKCiks()).toEqual(new Set());
     row(db, '6501', '2026-08-02'); // basic level: never counts
     expect(m.due()).toBe(false);
@@ -241,6 +285,18 @@ describe('Japan 6-K handling', () => {
     expect(m.due()).toBe(false);
     row(db, '8604', '2026-08-04', '2026-07-31'); // today+3
     expect(m.due()).toBe(true);
+  });
+
+  it('the watcher tick reads only active full-level stocks with a CIK, never the whole jp_stocks table', async () => {
+    const { db, ctx, http } = setup({ docs: { [FEED_6K]: feed(entry('6-K', TM_CIK, TM_ACC, '2026-08-04T06:03:00-04:00', TM_INDEX)) } });
+    row(db, '7203', '2026-08-04');
+    const sql: string[] = [];
+    const prepare = db.prepare.bind(db);
+    vi.spyOn(db, 'prepare').mockImplementation((s: string) => { sql.push(s); return prepare(s); });
+    await new SixKWatch([jpSixKMarket(ctx, () => {})], http, ctx).tick();
+    const stockReads = sql.filter((s) => /\bFROM\s+jp_stocks\b/i.test(s));
+    expect(stockReads.length).toBeGreaterThan(0);
+    for (const s of stockReads) expect(s).toMatch(/level\s*=\s*'full'/i);
   });
 
   it('shared watcher: an HK CIK and a JP CIK in one feed each reach their market', async () => {
