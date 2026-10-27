@@ -1,6 +1,8 @@
 import { DateTime } from 'luxon';
 import { todayEt } from './time';
 
+export const todayHkt = (): string => DateTime.now().setZone('Asia/Hong_Kong').toISODate()!;
+
 export const todayIst = (): string => DateTime.now().setZone('Asia/Kolkata').toISODate()!;
 
 /**

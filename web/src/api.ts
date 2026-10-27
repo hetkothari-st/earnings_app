@@ -1,4 +1,6 @@
 import type { EarningsResponse, StatusResponse } from '../../server/src/api/types';
+import type { HkAdminDto, HkEarningsResponse, HkLivePriceDto, HkMarketDto, HkReportDto } from '../../server/src/hk/api/types';
+import type { Market } from './lib/market';
 import type { InEarningsResponse, InLivePriceDto, KiteStatusDto } from '../../server/src/india/api/types';
 
 /** Fired on window whenever an API call answers 401, so the app can show the login page. */
@@ -23,11 +25,11 @@ export async function fetchEarnings(
 }
 
 /** One report as the calendar lists it; null when it is gone. Live updates patch rows with these. */
-export async function fetchReport(market: 'US' | 'IN', id: number): Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | null> {
-  const res = await apiFetch(market === 'IN' ? `/api/in/earnings/${id}` : `/api/earnings/${id}`);
+export async function fetchReport(market: Market, id: number): Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto | null> {
+  const res = await apiFetch(market === 'IN' ? `/api/in/earnings/${id}` : market === 'HK' ? `/api/hk/earnings/${id}` : `/api/earnings/${id}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
-  return res.json() as Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number]>;
+  return res.json() as Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto>;
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
@@ -140,38 +142,57 @@ export async function fetchInPrices(): Promise<Record<string, InLivePriceDto>> {
   return ((await res.json()) as { prices: Record<string, InLivePriceDto> }).prices;
 }
 
+export type { HkAdminDto, HkEarningsResponse, HkLivePriceDto, HkMarketDto, HkReportDto };
+
+export async function fetchHkEarnings(
+  p: { from: string; to: string; q: string },
+  signal: AbortSignal,
+): Promise<HkEarningsResponse> {
+  const qs = new URLSearchParams({ from: p.from, to: p.to });
+  if (p.q.trim()) qs.set('q', p.q.trim());
+  const res = await apiFetch(`/api/hk/earnings?${qs}`, { signal });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return res.json() as Promise<HkEarningsResponse>;
+}
+
+export async function fetchHkPrices(): Promise<Record<string, HkLivePriceDto>> {
+  const res = await apiFetch('/api/hk/prices');
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { prices: Record<string, HkLivePriceDto> }).prices;
+}
+
 export type { SymbolsResponse, WatchHistoryDto, WatchRow, WatchRowsResponse } from '../../server/src/api/types';
 
-export async function fetchWatchlist(market: 'US' | 'IN'): Promise<string[]> {
+export async function fetchWatchlist(market: Market): Promise<string[]> {
   const res = await apiFetch(`/api/watchlist?market=${market}`);
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return ((await res.json()) as { symbols: string[] }).symbols;
 }
 
-const watchUrl = (market: 'US' | 'IN', symbol: string) => `/api/watchlist/${market}/${encodeURIComponent(symbol)}`;
+const watchUrl = (market: Market, symbol: string) => `/api/watchlist/${market}/${encodeURIComponent(symbol)}`;
 
 /** An API failure that keeps the HTTP status, so callers can word the message. */
 export class HttpError extends Error {
   constructor(public status: number) { super(`Server returned ${status}`); }
 }
 
-export async function putWatch(market: 'US' | 'IN', symbol: string): Promise<void> {
+export async function putWatch(market: Market, symbol: string): Promise<void> {
   const res = await apiFetch(watchUrl(market, symbol), { method: 'PUT' });
   if (!res.ok) throw new HttpError(res.status);
 }
 
-export async function deleteWatch(market: 'US' | 'IN', symbol: string): Promise<void> {
+export async function deleteWatch(market: Market, symbol: string): Promise<void> {
   const res = await apiFetch(watchUrl(market, symbol), { method: 'DELETE' });
   if (!res.ok) throw new HttpError(res.status);
 }
 
-export async function searchSymbols(market: 'US' | 'IN', q: string, signal?: AbortSignal): Promise<{ symbol: string; name: string; exchange: string }[]> {
+export async function searchSymbols(market: Market, q: string, signal?: AbortSignal): Promise<{ symbol: string; name: string; exchange: string }[]> {
   const res = await apiFetch(`/api/symbols?market=${market}&q=${encodeURIComponent(q)}`, { signal });
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return ((await res.json()) as { results: { symbol: string; name: string; exchange: string }[] }).results;
 }
 
-export async function fetchWatchRows(market: 'US' | 'IN', signal?: AbortSignal): Promise<import('../../server/src/api/types').WatchRowsResponse> {
+export async function fetchWatchRows(market: Market, signal?: AbortSignal): Promise<import('../../server/src/api/types').WatchRowsResponse> {
   const res = await apiFetch(`/api/watchlist/rows?market=${market}`, { signal });
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return res.json() as Promise<import('../../server/src/api/types').WatchRowsResponse>;

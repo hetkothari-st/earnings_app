@@ -1,13 +1,13 @@
 /** Persists market preference in localStorage (overrides server pref for instant switch). */
 
-export type Market = 'US' | 'IN';
+export type Market = 'US' | 'IN' | 'HK';
 
 const KEY = 'market';
 
 export function getStoredMarket(): Market | null {
   try {
     const v = localStorage.getItem(KEY);
-    return v === 'US' || v === 'IN' ? v : null;
+    return v === 'US' || v === 'IN' || v === 'HK' ? v : null;
   } catch {
     return null;
   }

@@ -6,10 +6,10 @@ const KEEPALIVE_MS = 60_000; // the server forgets a user after 2 minutes withou
 const MAX_SYMBOLS = 100;
 
 /**
- * Tells the server which US rows are on screen (`[data-symbol]` elements in view), so those stocks
+ * Tells the server which US or Hong Kong rows are on screen (`[data-symbol]` elements in view), so those stocks
  * get live-price slots. Debounced; re-sent every minute while the page is open.
  */
-export function useVisibleSymbols(enabled: boolean): void {
+export function useVisibleSymbols(enabled: boolean, market: 'US' | 'HK' = 'US'): void {
   useEffect(() => {
     if (!enabled || typeof IntersectionObserver === 'undefined') return;
     const visible = new Set<string>();
@@ -23,7 +23,7 @@ export function useVisibleSymbols(enabled: boolean): void {
       apiFetch('/api/live/visible', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ market: 'US', symbols }),
+        body: JSON.stringify({ market, symbols }),
       }).catch(() => {});
     };
     const schedule = () => {
@@ -62,5 +62,5 @@ export function useVisibleSymbols(enabled: boolean): void {
       mutations?.disconnect();
       io.disconnect();
     };
-  }, [enabled]);
+  }, [enabled, market]);
 }

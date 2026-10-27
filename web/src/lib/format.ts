@@ -64,3 +64,23 @@ export function formatEpsInr(eps: number | null): string {
   if (eps == null) return '—';
   return `${eps < 0 ? '−' : ''}₹${Math.abs(eps).toFixed(2)}`;
 }
+
+const HK_PREFIX: Record<string, string> = { CNY: 'RMB¥', USD: 'US$', HKD: 'HK$' };
+const hkPrefix = (currency: string | null | undefined) => HK_PREFIX[currency ?? 'HKD'] ?? `${currency} `;
+
+/** A Hong Kong share price in HK$: "HK$512.50". */
+export function formatHkPrice(n: number | null): string {
+  return n == null ? '—' : `HK$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Compact amount in its stated currency: "RMB¥247.6B", "HK$1.2T". Never converted. */
+export function formatHkMoney(n: number | null, currency: string | null | undefined): string {
+  if (n == null) return '—';
+  return formatUsd(n).replace('$', hkPrefix(currency));
+}
+
+/** EPS in its stated currency: "RMB¥1.23", "−US$0.50". */
+export function formatHkEps(n: number | null, currency: string | null | undefined): string {
+  if (n == null) return '—';
+  return `${n < 0 ? '−' : ''}${hkPrefix(currency)}${Math.abs(n).toFixed(2)}`;
+}

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { DateTime } from 'luxon';
 import type { InReportDto } from '../../../server/src/india/api/types';
+import type { HkReportDto } from '../../../server/src/hk/api/types';
 import type { ReportDto } from '../../../server/src/api/types';
 import { fetchWatchRows, type WatchRow } from '../api';
 import type { Watchlist } from '../hooks/useWatchlist';
-import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatInrCr, formatMoney } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatHkEps, formatHkMoney, formatHkPrice, formatInrCr, formatMoney } from '../lib/format';
 import type { Market } from '../lib/market';
+import { todayHkt } from '../lib/liveCap';
 import { todayEt } from '../lib/time';
 import { priceKey } from '../lib/ticker';
 import { SymbolSearch } from './SymbolSearch';
@@ -13,7 +15,7 @@ import { Star } from './Star';
 import { Tags } from './Tags';
 
 type Price = { price: number; changePct: number | null; source?: string };
-type Report = ReportDto | InReportDto;
+type Report = ReportDto | InReportDto | HkReportDto;
 
 interface Props {
   market: Market;
@@ -27,6 +29,7 @@ const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionD
 const pct1 = (n: number) => (Math.round(n * 10 + 1e-9) / 10).toFixed(1);
 
 function today(market: Market): string {
+  if (market === 'HK') return todayHkt();
   return market === 'IN' ? DateTime.now().setZone('Asia/Kolkata').toISODate()! : todayEt();
 }
 
@@ -51,16 +54,27 @@ function Latest({ latest, market }: { latest: WatchRow['latest']; market: Market
     return <span className="wl-fig"><span className="muted">EPS </span>{(market === 'IN' ? formatEpsInr : formatEps)(latest.eps.actual)}<span className="muted"> from Yahoo</span></span>;
   }
   const r = latest as Report;
+  if (market === 'HK') {
+    const h = r as HkReportDto;
+    if (h.eps.actual == null && h.revenue.actual == null) return <span className="muted">—</span>;
+    return (
+      <>
+        <Figure label="EPS" actual={h.eps.actual} result={h.eps.result} format={(n) => formatHkEps(n, h.eps.actualCurrency)} preliminary={false} corrected={false} />
+        <Figure label="Revenue" actual={h.revenue.actual} result={h.revenue.result} format={(n) => formatHkMoney(n, h.revenue.actualCurrency)} preliminary={false} corrected={false} />
+      </>
+    );
+  }
+  const r2 = r as ReportDto | InReportDto;
   const eps = market === 'IN' ? formatEpsInr : formatEps;
-  const money = market === 'IN' ? formatInrCr : (n: number | null) => formatMoney(n, (r as ReportDto).revenue.currency);
-  const basis = 'basis' in r.eps ? (r.eps as ReportDto['eps']).basis : null;
-  const any = r.eps.actual != null || r.revenue.actual != null || ('profit' in r && r.profit.actual != null);
+  const money = market === 'IN' ? formatInrCr : (n: number | null) => formatMoney(n, (r2 as ReportDto).revenue.currency);
+  const basis = 'basis' in r2.eps ? (r2.eps as ReportDto['eps']).basis : null;
+  const any = r2.eps.actual != null || r2.revenue.actual != null || ('profit' in r2 && r2.profit.actual != null);
   if (!any) return <span className="muted">—</span>;
   return (
     <>
-      <Figure label="EPS" actual={r.eps.actual} result={r.eps.result} format={eps} preliminary={r.eps.preliminary} corrected={r.eps.corrected} basis={basis} />
-      <Figure label="Revenue" actual={r.revenue.actual} result={r.revenue.result} format={money} preliminary={r.revenue.preliminary} corrected={r.revenue.corrected} />
-      {'profit' in r && <Figure label="Profit" actual={r.profit.actual} result={null} format={formatInrCr} preliminary={r.profit.preliminary} corrected={r.profit.corrected} />}
+      <Figure label="EPS" actual={r2.eps.actual} result={r2.eps.result} format={eps} preliminary={r2.eps.preliminary} corrected={r2.eps.corrected} basis={basis} />
+      <Figure label="Revenue" actual={r2.revenue.actual} result={r2.revenue.result} format={money} preliminary={r2.revenue.preliminary} corrected={r2.revenue.corrected} />
+      {'profit' in r2 && <Figure label="Profit" actual={r2.profit.actual} result={null} format={formatInrCr} preliminary={r2.profit.preliminary} corrected={r2.profit.corrected} />}
     </>
   );
 }
@@ -79,7 +93,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
 
   const t = today(market);
   const shown = (rows ?? []).filter((r) => watch.symbols.has(r.symbol));
-  const money = (n: number) => (market === 'IN' ? rupees(n) : `$${n.toFixed(2)}`);
+  const money = (n: number) => (market === 'IN' ? rupees(n) : market === 'HK' ? formatHkPrice(n) : `$${n.toFixed(2)}`);
 
   return (
     <section className="watchlist" aria-label="Watchlist">

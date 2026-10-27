@@ -97,3 +97,22 @@ test('sockets that never open fall back to the event stream', () => {
   expect(FakeSource.last!.url).toBe('/api/stream');
   vi.useRealTimers();
 });
+
+test('hk-results and hk-prices reach the hk group', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  vi.stubGlobal('WebSocket', undefined); // event-stream path
+  const hk = { onIds: vi.fn(), onMoves: vi.fn(), onPrices: vi.fn(), onIndices: vi.fn() };
+  const onIds = vi.fn();
+  renderHook(() => useLiveResults(onIds, undefined, undefined, undefined, undefined, hk));
+  FakeSource.last!.emit('hk-results', { ids: [2000000001] });
+  FakeSource.last!.emit('hk-moves', { ids: [2000000002] });
+  const price = { price: 512.5, prevClose: 510, changePct: 0.49, at: '2026-10-27T02:00:00Z' };
+  FakeSource.last!.emit('hk-prices', { prices: { '0700': price } });
+  const idx = [{ index: 'HSI', price: 25000, changePct: 0.1, asOf: null }];
+  FakeSource.last!.emit('hk-indices', { indices: idx });
+  expect(hk.onIds).toHaveBeenCalledWith([2000000001]);
+  expect(hk.onMoves).toHaveBeenCalledWith([2000000002]);
+  expect(hk.onPrices).toHaveBeenCalledWith({ '0700': price });
+  expect(hk.onIndices).toHaveBeenCalledWith(idx);
+  expect(onIds).not.toHaveBeenCalled();
+});
