@@ -33,9 +33,9 @@
  *          EPS     jpcrp_cor:BasicEarningsLossPerShareIFRSSummaryOfBusinessResults,
  *                  jpcrp_cor:DilutedEarningsLossPerShareIFRSSummaryOfBusinessResults (Toyota, Takeda),
  *                  jpigp_cor:BasicEarningsLossPerShareIFRS, jpigp_cor:DilutedEarningsLossPerShareIFRS (Takeda)
- *   US GAAP revenue jpcrp_cor:RevenuesUSGAAPSummaryOfBusinessResults (Nomura: 収益合計), cross-checked with
- *                   NetRevenueSummaryOfBusinessResults (Nomura's own element: 収益合計（金融費用控除後）, net revenue).
- *                   A broker shows both and they differ, so its revenue is blank rather than the gross figure.
+ *   US GAAP revenue NetRevenueSummaryOfBusinessResults when present (Nomura's own element: 収益合計（金融費用控除後）,
+ *                   net revenue, the broker headline), else jpcrp_cor:RevenuesUSGAAPSummaryOfBusinessResults
+ *                   (Nomura: 収益合計, the gross figure, read only for filers without a net-revenue line).
  *          EPS     jpcrp_cor:BasicEarningsLossPerShareUSGAAPSummaryOfBusinessResults,
  *                  jpcrp_cor:DilutedEarningsLossPerShareUSGAAPSummaryOfBusinessResults (Nomura)
  *   Never revenue   jpcrp_cor:OrdinaryIncomeSummaryOfBusinessResults, jppfs_cor:OrdinaryIncome,
@@ -76,10 +76,19 @@ const TABLES: Record<Standard, Record<Field, string[]>> = {
     epsDiluted: ['DilutedEarningsLossPerShareIFRSSummaryOfBusinessResults', 'DilutedEarningsLossPerShareIFRS'],
   },
   usgaap: {
-    revenue: ['RevenuesUSGAAPSummaryOfBusinessResults', 'NetRevenueSummaryOfBusinessResults'],
+    revenue: ['RevenuesUSGAAPSummaryOfBusinessResults'],
     epsBasic: ['BasicEarningsLossPerShareUSGAAPSummaryOfBusinessResults'],
     epsDiluted: ['DilutedEarningsLossPerShareUSGAAPSummaryOfBusinessResults'],
   },
+};
+
+/**
+ * Elements read before the table when present (controller ruling, Task 4 fix): a US GAAP broker's headline is
+ * net revenue (Nomura: 収益合計（金融費用控除後）), so `NetRevenue…` wins over the gross `Revenues…` line.
+ * Without it, the table is read as usual.
+ */
+const PREFERRED: Partial<Record<Standard, Partial<Record<Field, string[]>>>> = {
+  usgaap: { revenue: ['NetRevenueSummaryOfBusinessResults'] },
 };
 
 const STANDARDS: Record<string, Standard> = { 'Japan GAAP': 'jgaap', IFRS: 'ifrs', 'US GAAP': 'usgaap' };
@@ -199,10 +208,11 @@ export function parseEdinetXbrl(xml: string, doc: { docTypeCode: '120' | '160'; 
   if (contextIds.size === 0) return blank(`no ${consolidated ? 'consolidated' : 'non-consolidated'} context ${fyStart}..${doc.periodEnd}`);
 
   const units = parseUnits(xml);
-  const read = (field: Field): number | null => {
+  /** The agreed value of `names`; `undefined` when none of them has a value. */
+  const readNames = (field: Field, names: string[]): number | null | undefined => {
     const unit = field === 'revenue' ? 'JPY' : 'JPYPerShares';
     const values: number[] = [];
-    for (const name of TABLES[standard][field]) {
+    for (const name of names) {
       for (const f of factsNamed(xml, name)) {
         if (!contextIds.has(f.contextRef) || f.nil || f.value === '') continue;
         if (!f.unitRef || units.get(f.unitRef) !== unit) {
@@ -217,15 +227,22 @@ export function parseEdinetXbrl(xml: string, doc: { docTypeCode: '120' | '160'; 
         values.push(v);
       }
     }
-    if (values.length === 0) {
-      notes.push(`${field}: no value`);
-      return null;
-    }
+    if (values.length === 0) return undefined;
     if (values.some((v) => v !== values[0])) {
       notes.push(`${field}: elements disagree (${[...new Set(values)].join(' / ')})`);
       return null;
     }
     return values[0]!;
+  };
+  const read = (field: Field): number | null => {
+    const preferred = PREFERRED[standard]?.[field];
+    const first = preferred ? readNames(field, preferred) : undefined;
+    const v = first !== undefined ? first : readNames(field, TABLES[standard][field]);
+    if (v === undefined) {
+      notes.push(`${field}: no value`);
+      return null;
+    }
+    return v;
   };
 
   const revenue = read('revenue');
