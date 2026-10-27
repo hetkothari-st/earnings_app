@@ -13,6 +13,8 @@ const TICK_MS = 15_000;
 const SESSION_EVERY_MS = 60_000;
 const OFF_SESSION_EVERY_MS = 15 * 60_000;
 const VISIBLE_TTL_MS = 2 * 60_000;
+/** A code Yahoo has no quote for is asked again at most this often between full rounds. */
+const MISSING_RETRY_MS = 60_000;
 
 export interface HkPricesDeps {
   quote: (yahooSymbol: string) => Promise<{ price: number; prevClose: number; time: number }>;
@@ -29,6 +31,7 @@ export class HkPrices {
   private visible = new Map<string, { codes: string[]; at: number }>();
   private prices = new Map<string, HkLivePriceDto>();
   private idx = new Map<string, HkMarketDto>();
+  private tried = new Map<string, number>();
   private lastStocks = -Infinity;
   private timer: NodeJS.Timeout | null = null;
   private polling = false;
@@ -86,6 +89,11 @@ export class HkPrices {
       const stocksDue = this.now() - this.lastStocks >= (session ? SESSION_EVERY_MS : OFF_SESSION_EVERY_MS);
       if (session || stocksDue) await this.pollIndices();
       if (stocksDue) await this.pollStocks();
+      else {
+        // A code with no price yet (just opened, rows created after start) is fetched now, not at the next round.
+        const missing = this.codes().filter((c) => !this.prices.has(c) && this.now() - (this.tried.get(c) ?? -Infinity) >= MISSING_RETRY_MS);
+        if (missing.length > 0) await this.pollStocks(missing);
+      }
     } finally {
       this.ticking = false;
     }
@@ -110,13 +118,15 @@ export class HkPrices {
     return [...out].sort();
   }
 
-  private async pollStocks(): Promise<void> {
+  /** All current codes (a full round), or only `only` (codes still without a price). */
+  private async pollStocks(only?: string[]): Promise<void> {
     if (this.polling) return;
     this.polling = true;
     try {
-      this.lastStocks = this.now();
+      if (!only) this.lastStocks = this.now();
       const changed: Record<string, HkLivePriceDto> = {};
-      for (const code of this.codes()) {
+      for (const code of only ?? this.codes()) {
+        this.tried.set(code, this.now());
         const q = (await this.failover({ name: 'yahoo-hk-prices', run: () => blockAware('yahoo-hk-prices', () => this.deps.quote(yahooHkSymbol(code))) }, null))?.value;
         if (!q) continue; // keep the last value
         const next: HkLivePriceDto = { price: q.price, prevClose: q.prevClose, changePct: changePct(q.price, q.prevClose), at: new Date(q.time).toISOString() };

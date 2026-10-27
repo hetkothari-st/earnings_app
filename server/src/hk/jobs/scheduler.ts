@@ -58,4 +58,6 @@ export async function warmUpHk(ctx: HkJobContext, job: JobRunner): Promise<void>
   await job('hk-sec-sweep', async () => { await sweepHkSec(ctx); })();
   await job('hk-estimates', () => refreshHkEstimates(ctx))();
   await job('hk-prev-moves', () => computeHkPrevMoves(ctx))();
+  // Provisional expected moves now, not only at the next 16:20 ET snapshot.
+  await job('hk-moves', async () => { await snapshotHkMoves(ctx); })();
 }

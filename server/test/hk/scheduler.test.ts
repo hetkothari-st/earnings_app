@@ -35,8 +35,8 @@ describe('HK scheduler', () => {
       return run;
     };
     await warmUpHk(ctx, job);
-    expect(started).toEqual(['hk-stocks', 'hk-calendar', 'hk-results', 'hk-sec-sweep', 'hk-estimates', 'hk-prev-moves']);
-    expect(finished).toEqual(['hk-stocks', 'hk-results', 'hk-sec-sweep', 'hk-estimates', 'hk-prev-moves']);
+    expect(started).toEqual(['hk-stocks', 'hk-calendar', 'hk-results', 'hk-sec-sweep', 'hk-estimates', 'hk-prev-moves', 'hk-moves']);
+    expect(finished).toEqual(['hk-stocks', 'hk-results', 'hk-sec-sweep', 'hk-estimates', 'hk-prev-moves', 'hk-moves']);
     expect(errors).toHaveBeenCalledWith('[job hk-calendar]', expect.any(Error));
     expect(hkStocks(db).length).toBeGreaterThan(90); // the universe is in even though Yahoo is down
   });

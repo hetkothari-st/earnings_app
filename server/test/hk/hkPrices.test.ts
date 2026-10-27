@@ -37,6 +37,38 @@ function setup(start: number) {
 }
 
 describe('HkPrices', () => {
+  it('a code with no price yet is fetched on the next tick, even outside the session', async () => {
+    const s = setup(AFTER_CLOSE);
+    await s.hp.tick(); // nothing to poll yet (no rows, nobody looking)
+    expect(s.quoted).toEqual([]);
+
+    s.hp.setVisible('u1', ['0700']);
+    s.advance(15_000);
+    await s.hp.tick();
+    expect(s.quoted).toEqual(['0700.HK']);
+    expect(s.hp.snapshot()['0700']).toMatchObject({ price: 500 });
+
+    // Priced now: no refetch until the 15-minute off-session round.
+    s.quoted.length = 0;
+    s.advance(15_000);
+    await s.hp.tick();
+    expect(s.quoted).toEqual([]);
+  });
+
+  it('a code Yahoo cannot quote is retried at most once a minute', async () => {
+    const s = setup(AFTER_CLOSE);
+    s.hp.setVisible('u1', ['2382']); // no price in the stub: every quote fails
+    await s.hp.tick();
+    expect(s.quoted).toEqual(['2382.HK']);
+    s.quoted.length = 0;
+    s.advance(15_000);
+    await s.hp.tick();
+    expect(s.quoted).toEqual([]);
+    s.advance(45_000);
+    await s.hp.tick();
+    expect(s.quoted).toEqual(['2382.HK']);
+  });
+
   it('polls visible ∪ watched ∪ reporting codes and publishes only changes', async () => {
     const s = setup(IN_SESSION);
     addWatch(s.db, 'u2', 'HK', '0005', IN_SESSION);
