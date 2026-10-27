@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { makeExchangeCalendar, type ExchangeCalendar, type LocalTiming } from '../../domain/exchangeCalendar.js';
 
 export const HKT = 'Asia/Hong_Kong';
 
@@ -6,7 +7,7 @@ export const HKT = 'Asia/Hong_Kong';
 export const HK_OPEN = '09:30';
 export const HK_CLOSE = '16:00';
 
-export type HkTiming = 'BMO' | 'DMH' | 'AMC' | 'UNKNOWN';
+export type HkTiming = LocalTiming;
 
 /**
  * HK general holidays (weekday closures only), from gov.hk, checked by hand 2026-10-27:
@@ -44,50 +45,31 @@ export const HK_HOLIDAYS: Record<number, ReadonlySet<string>> = {
   ]),
 };
 
+export const HK_CAL: ExchangeCalendar = makeExchangeCalendar({
+  zone: HKT,
+  holidays: HK_HOLIDAYS,
+  openMin: 9 * 60 + 30,
+  closeMin: 16 * 60,
+  unknownFrom: '2028-01-01',
+});
+
 /** YYYY-MM-DD in Hong Kong. */
-export function todayHKT(): string {
-  return DateTime.now().setZone(HKT).toISODate()!;
-}
+export const todayHKT = (): string => HK_CAL.today();
 
 /** Add calendar days to a YYYY-MM-DD string. */
-export function addDaysHKT(date: string, n: number): string {
-  return DateTime.fromISO(date, { zone: HKT }).plus({ days: n }).toISODate()!;
-}
+export const addDaysHKT = (date: string, n: number): string => HK_CAL.addDays(date, n);
 
 /** Weekends, then holidays. Years without a list count as weekends-only. */
-export function isHkTradingDay(date: string): boolean {
-  const dow = DateTime.fromISO(date, { zone: HKT }).weekday; // 1=Mon … 7=Sun
-  if (dow === 6 || dow === 7) return false;
-  return !HK_HOLIDAYS[Number(date.slice(0, 4))]?.has(date);
-}
+export const isHkTradingDay = (date: string): boolean => HK_CAL.isTradingDay(date);
 
 /** Previous HK trading day, strictly before `date`. */
-export function prevHkTradingDay(date: string): string {
-  let d = addDaysHKT(date, -1);
-  while (!isHkTradingDay(d)) d = addDaysHKT(d, -1);
-  return d;
-}
+export const prevHkTradingDay = (date: string): string => HK_CAL.prevTradingDay(date);
 
 /** First HK trading day on or after `date`. */
-export function hkTradingDayOnOrAfter(date: string): string {
-  let d = date;
-  while (!isHkTradingDay(d)) d = addDaysHKT(d, 1);
-  return d;
-}
+export const hkTradingDayOnOrAfter = (date: string): string => HK_CAL.tradingDayOnOrAfter(date);
 
 /** Timing from an HKT clock "HH:MM[:SS]". BMO < 09:30, DMH 09:30–16:00 inclusive (lunch counts), AMC > 16:00. */
-export function hkTimingFromHkt(hhmm: string | null | undefined): HkTiming {
-  if (!hhmm) return 'UNKNOWN';
-  const parts = hhmm.split(':');
-  if (parts.length < 2) return 'UNKNOWN';
-  const hh = Number(parts[0]);
-  const mm = Number(parts[1]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return 'UNKNOWN';
-  const total = hh * 60 + mm;
-  if (total < 9 * 60 + 30) return 'BMO';
-  if (total > 16 * 60) return 'AMC';
-  return 'DMH';
-}
+export const hkTimingFromHkt = (hhmm: string | null | undefined): HkTiming => HK_CAL.timingFromClock(hhmm);
 
 /**
  * SEC acceptance is an upper bound on the release time (EDGAR only accepts 06:00–22:00 ET), so it can
@@ -102,6 +84,4 @@ export function hkTimingFromAcceptance(reportDate: string, acceptedAtIso: string
 }
 
 /** True for 2028 and later, whose HK holiday list is not in the app yet (weekends only). */
-export function holidaysUnknownHk(date: string): boolean {
-  return date >= '2028-01-01';
-}
+export const holidaysUnknownHk = (date: string): boolean => HK_CAL.holidaysUnknown(date);
