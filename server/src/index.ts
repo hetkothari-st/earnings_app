@@ -21,7 +21,17 @@ import { HKT, todayHKT } from './hk/domain/hkCalendar.js';
 import type { HkJobContext } from './hk/jobs/context.js';
 import { startHkScheduler, warmUpHk } from './hk/jobs/scheduler.js';
 import { HkPrices } from './hk/live/hkPrices.js';
-import { HkSecWatch } from './hk/live/hkSecWatch.js';
+import { hkSixKMarket } from './hk/live/hkSecWatch.js';
+import { JST, todayJST } from './jp/domain/jpCalendar.js';
+import type { JpJobContext } from './jp/jobs/context.js';
+import { startJpScheduler, warmUpJp, type JpSchedulerHooks } from './jp/jobs/scheduler.js';
+import { JpPrices, toDelayedQuotes } from './jp/live/jpPrices.js';
+import { jpSixKMarket } from './jp/live/jpSixK.js';
+import { fetchEdinetCodeList, makeEdinetClient } from './jp/sources/edinet.js';
+import { createYahooJpSummary, fetchJpEarningsCalendar, fetchYahooQuotes } from './jp/sources/yahooJp.js';
+import { SixKWatch } from './sources/sixKWatch.js';
+import { createYahooClient } from './sources/yahooClient.js';
+import { yahooLimiter } from './sources/yahooLimiter.js';
 import { createYahooHkFetcher, yahooHkPastDates } from './hk/sources/yahooHk.js';
 import { todayIST } from './india/domain/nseCalendar.js';
 import type { InJobContext } from './india/jobs/context.js';
@@ -34,7 +44,7 @@ import { refreshWatchedEstimates } from './jobs/refreshCalendar.js';
 import { allWatched } from './watchlist/store.js';
 import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js';
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
-import { SymbolIndex, hkEntries, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
+import { SymbolIndex, hkEntries, jpEntries, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
 import { createKiteApi } from './india/sources/kiteApi.js';
 import { completeBrowserLogin, ensureSession, getKiteCredentials, getSession, kiteStatus, startBrowserLogin } from './india/sources/kiteLogin.js';
 import { createYahooInFetcher, fetchYahooIndex } from './india/sources/yahooIn.js';
@@ -45,6 +55,8 @@ const sources = createSources(config);
 const ctx: JobContext = { db, sources, now: () => new Date().toISOString(), today: () => todayET() };
 
 const yahoo = makeHttp({ minIntervalMs: 300, headers: { 'User-Agent': BROWSER_UA } });
+/** Batch Yahoo work of the foreign markets (HK daily closes) on the one cross-market Yahoo budget (1 request/s). */
+const yahooBudgeted = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': BROWSER_UA }, limiter: yahooLimiter });
 const live = new Broadcaster();
 const finnhubQuotes = makeHttp({ minIntervalMs: 1100, headers: { 'X-Finnhub-Token': config.finnhubToken } });
 const prices = new LivePrices(db, config.finnhubToken, finnhubQuotes, () => todayET(), (p) => live.publish('prices', { prices: p }),
@@ -87,12 +99,36 @@ const hkCtx: HkJobContext = {
   todayHKT,
   yahoo: createYahooHkFetcher(),
   yahooPastDates: yahooHkPastDates,
-  yahooCloses: (s, f, t) => fetchYahooDailyCloses(yahoo, s, f, t, HKT),
+  yahooCloses: (s, f, t) => fetchYahooDailyCloses(yahooBudgeted, s, f, t, HKT),
   optionChain: (adr) => sources.optionChain(adr), // the shared Cboe limiter
   secHttp: sources.secHttp ?? null,
 };
 const hkPrices = new HkPrices(db, { quote: (s) => fetchStockQuote(yahoo, s), index: (s) => fetchIndexQuote(yahoo, s) },
   (p) => live.publish('hk-prices', { prices: p }), (m) => live.publish('hk-indices', { indices: m }));
+
+// Japan: every Yahoo call (date sweep, summaries, batch quotes, closes, prices, indices) goes through this one client:
+// one session, on the cross-market Yahoo budget (at most 1 request/s together with HK and India). EDINET only with a
+// key; SEC through the one shared client (null without SEC_USER_AGENT).
+const jpYahoo = createYahooClient({ limiter: yahooLimiter });
+const jpCtx: JpJobContext = {
+  db,
+  now: () => new Date().toISOString(),
+  todayJST,
+  yahooCalendar: (f, t) => fetchJpEarningsCalendar(jpYahoo, f, t),
+  yahooSummary: createYahooJpSummary(jpYahoo),
+  yahooQuotes: (s) => fetchYahooQuotes(jpYahoo, s),
+  yahooCloses: (s, f, t) => fetchYahooDailyCloses(jpYahoo, s, f, t, JST),
+  edinetCodeList: () => fetchEdinetCodeList(),
+  edinet: config.edinetApiKey ? makeEdinetClient({ key: config.edinetApiKey }) : null,
+  optionChain: (adr) => sources.optionChain(adr), // the shared Cboe limiter
+  secHttp: sources.secHttp ?? null,
+  tierA: () => [...new Set([...jpPrices.visibleCodes(), ...allWatched(db, 'JP')])],
+};
+const jpPrices = new JpPrices(db, {
+  quote: (s) => fetchStockQuote(jpYahoo, s),
+  quotes: async (s) => toDelayedQuotes(await fetchYahooQuotes(jpYahoo, s)),
+  index: (s) => fetchIndexQuote(jpYahoo, s),
+}, (p) => live.publish('jp-prices', { prices: p }), (m) => live.publish('jp-indices', { indices: m }));
 
 // Search and validation lists for watchlists: built in memory, refreshed daily (started below).
 const symbolIndex = new SymbolIndex();
@@ -118,6 +154,7 @@ const app = buildServer(db, {
       }
       else if (market === 'IN') syncInWatched();
       else if (market === 'HK') hkPrices.refresh();
+      else if (market === 'JP') jpPrices.refresh();
     },
   },
   indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true, webRoot: config.webRoot, trustProxy: config.trustProxy,
@@ -147,6 +184,12 @@ const app = buildServer(db, {
     indexQuote: (s) => fetchIndexQuote(yahoo, s),
     setVisible: (u, c) => hkPrices.setVisible(u, c),
   },
+  jp: {
+    prices: () => jpPrices.snapshot(),
+    indices: () => jpPrices.indices(),
+    indexQuote: (s) => fetchIndexQuote(jpYahoo, s),
+    setVisible: (u, c) => jpPrices.setVisible(u, c),
+  },
 });
 // Live stream: signed-in users only (the HTTP routes check the same session cookie).
 registerStream(app, live, (cookie) => {
@@ -156,6 +199,7 @@ registerStream(app, live, (cookie) => {
 startSymbolRefresh(symbolIndex, {
   ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers(), db) } : {}),
   HK: async () => hkEntries(db),
+  JP: async () => jpEntries(db),
   IN: async () => {
     const list = await loadInEntries(inCtx.http, db, inTokens);
     // Names for watched stocks outside F&O come from this list.
@@ -174,8 +218,12 @@ if (config.finnhubToken) prices.start();
 // One shared SEC client (<= 10 req/s overall). The 8-K watcher flips US reports to released within seconds.
 const secHttp = sources.secHttp;
 if (secHttp) {
-  // HK: the 6-K feed (2 s / 30 s); YUMC and ONC file 8-Ks, forwarded from the US feed below (no second 8-K request).
-  const hkWatch = new HkSecWatch(hkCtx, secHttp, (ids) => live.publish('hk-results', { ids }));
+  // HK and Japan: one 6-K feed for both (2 s while either has a full-level report due, else 30 s); HK's YUMC and ONC
+  // file 8-Ks, forwarded from the US feed below (no second 8-K request).
+  const sixK = new SixKWatch([
+    hkSixKMarket(hkCtx, (ids) => live.publish('hk-results', { ids })),
+    jpSixKMarket(jpCtx, (ids) => live.publish('jp-results', { ids })),
+  ], secHttp, { db, now: () => new Date().toISOString() });
   // Quick read of the press release: preliminary values until an official source confirms them.
   const reader = async (exhibitUrl: string, reportId: number): Promise<void> => {
     const rep = getReport(db, reportId);
@@ -187,16 +235,28 @@ if (secHttp) {
     if (savePrelim(db, reportId, v, new Date().toISOString())) live.publish('results', { ids: [reportId] });
   };
   // Every 2 s: one feed request each (SEC allows 10/s); a release shows on screen within a few seconds of filing.
-  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids }), reader, (items) => hkWatch.onUsFeed(items)).start(2000);
-  hkWatch.start();
+  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids }), reader, (items) => sixK.onUsFeed(items)).start(2000);
+  sixK.start();
 }
 
 startHkScheduler(hkCtx, job, {
   onResults: (ids) => live.publish('hk-results', { ids }),
   onMoves: (ids) => live.publish('hk-moves', { ids }),
 });
-void warmUpHk(hkCtx, job);
+const hkWarm = warmUpHk(hkCtx, job);
 hkPrices.start();
+
+const jpHooks: JpSchedulerHooks = {
+  onResults: (ids) => live.publish('jp-results', { ids }),
+  onMoves: (ids) => live.publish('jp-moves', { ids }),
+  // The watchlist index takes the universe as soon as jp_stocks fills (until then PUT only checks the code format).
+  onStocks: () => { const list = jpEntries(db); if (list.length > 0) symbolIndex.set('JP', list); },
+};
+startJpScheduler(jpCtx, job, jpHooks);
+// Japan warms up after Hong Kong: both wait on the one Yahoo budget, and Japan's thousands of codes would otherwise
+// slow HK's warm-up. Neither blocks US or India startup.
+void hkWarm.then(() => warmUpJp(jpCtx, job, jpHooks)).catch((e) => console.error('[job jp-warm-up]', e));
+jpPrices.start();
 
 startInScheduler(inCtx, job, {
   onResults: (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); },

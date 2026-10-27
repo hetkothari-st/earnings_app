@@ -41,9 +41,11 @@ export function makeHttp(opts: {
   retries?: number;
   backoffMs?: number;
   fetchImpl?: typeof fetch;
+  /** A limiter shared with other clients (e.g. the cross-market Yahoo budget) instead of one per client. */
+  limiter?: { wait(): Promise<void> };
 }): Http {
   const { headers = {}, minIntervalMs, timeoutMs = 20_000, retries = 2, backoffMs = 2_000, fetchImpl = fetch } = opts;
-  const limiter = new RateLimiter(minIntervalMs);
+  const limiter = opts.limiter ?? new RateLimiter(minIntervalMs);
 
   async function get(url: string): Promise<Response> {
     for (let attempt = 0; ; attempt++) {

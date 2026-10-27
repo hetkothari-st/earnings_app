@@ -1,5 +1,6 @@
 import { BROWSER_UA, type Http, HttpError } from './http.js';
 import { openYahooSession } from './yahooEarnings.js';
+import { createSlotLimiter, type SlotLimiter } from './yahooLimiter.js';
 
 /** Yahoo Finance with one session (cookie + crumb) and one rate limit shared by GET and POST. */
 export interface YahooClient extends Http {
@@ -13,7 +14,8 @@ const TIMEOUT_MS = 20_000;
 /**
  * One Yahoo client: the session is opened on first use, reused, and renewed once when Yahoo answers
  * 401/403. The crumb is appended to every URL; every request (GET and POST together) waits for one
- * limiter slot, at most one per `minIntervalMs` (default 1 s). Opening the session (fc.yahoo.com and
+ * limiter slot, at most one per `minIntervalMs` (default 1 s), or one of `limiter` when given (a budget shared
+ * with other Yahoo callers). Opening the session (fc.yahoo.com and
  * getcrumb) is not counted by the limiter; it happens once and again only on renewal.
  * Errors name the URL as given by the caller, never the crumb.
  */
@@ -22,6 +24,7 @@ export function createYahooClient(o: {
   session?: () => Promise<Session>;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  limiter?: SlotLimiter;
 } = {}): YahooClient {
   const minIntervalMs = o.minIntervalMs ?? 1000;
   const open = o.session ?? openYahooSession;
@@ -29,14 +32,8 @@ export function createYahooClient(o: {
   const now = o.now ?? Date.now;
 
   let session: Promise<Session> | null = null;
-  let nextSlot = 0;
-
-  const waitSlot = async (): Promise<void> => {
-    const t = now();
-    const slot = Math.max(t, nextSlot);
-    nextSlot = slot + minIntervalMs;
-    if (slot > t) await new Promise<void>((r) => setTimeout(r, slot - t));
-  };
+  const limiter = o.limiter ?? createSlotLimiter(minIntervalMs, now);
+  const waitSlot = (): Promise<void> => limiter.wait();
 
   const withCrumb = (url: string, crumb: string): string =>
     `${url}${url.includes('?') ? '&' : '?'}crumb=${encodeURIComponent(crumb)}`;
