@@ -34,8 +34,8 @@ function finish(s: Stat): void {
 
 if (process.argv.includes('--india')) await runIndia();
 else if (process.argv.includes('--hk')) runHk();
-else if (process.argv.includes('--jp-heldout')) runJp('heldout/', 6);
-else if (process.argv.includes('--jp')) runJp('', 20);
+else if (process.argv.includes('--jp-heldout')) runJp('heldout/', true);
+else if (process.argv.includes('--jp')) runJp('', false);
 else runUs();
 
 /**
@@ -78,9 +78,10 @@ function runHk(): void {
  * JP (Global Constraints, reader gate): every hand-checked entry of test/fixtures/jp/releases/[heldout/]expected.json
  * is read with readJpRelease for its period. A field is exact when `===` the hand-read value (null === null counts),
  * blank when the reader returned null for a non-null value, wrong otherwise. A release is exact when all six fields
- * are. The main set needs >= 20 checked, the held-out set >= 6, all exact, none wrong; jpEps / jpRevenue need both.
+ * are. Gate (controller ruling): the main set needs >= 20 exact releases and none wrong; a held-out set needs none wrong
+ * (blanks are acceptable in both). jpEps / jpRevenue may be on only when the main and every held-out set pass.
  */
-function runJp(sub: string, minChecked: number): void {
+function runJp(sub: string, heldout: boolean): void {
   const dir = fileURLToPath(new URL(`../../test/fixtures/jp/releases/${sub}`, import.meta.url));
   interface JpExpected {
     adr: string; periodEnd: string; fiscalQuarter: 1 | 2 | 3 | 4; checked: boolean; note: string;
@@ -103,12 +104,12 @@ function runJp(sub: string, minChecked: number): void {
     FIELDS.forEach((f, i) => { if (marks[i] !== 'exact') console.log(`      ${f}: got ${got[f]}, expected ${e[f]} [${marks[i]}]`); });
     if (verdict !== 'exact' && got.notes.length) console.log(`      notes: ${got.notes.join('; ')}`);
   }
-  const gatePasses = checked >= minChecked && exact === checked && wrong === 0;
-  console.log(`${sub ? 'held-out' : 'main'}: checked ${checked} (${adrs.size} issuers), exact ${exact}, wrong ${wrong}${unchecked ? `, not yet checked ${unchecked}` : ''}; gate ${gatePasses ? 'passes' : 'fails'}`);
+  const gatePasses = wrong === 0 && (heldout ? checked > 0 : exact >= 20);
+  console.log(`${heldout ? 'held-out' : 'main'}: checked ${checked} (${adrs.size} issuers), exact ${exact}, wrong ${wrong}${unchecked ? `, not yet checked ${unchecked}` : ''}; gate ${gatePasses ? 'passes' : 'fails'}`);
   for (const k of ['jpEps', 'jpRevenue'] as const) {
     const cfg = config.fastFields[k] ?? false;
     const note = !gatePasses && cfg ? '  <-- config on but this set fails' : '';
-    console.log(`${k}: config ${cfg} (needs the main and the held-out gate)${note}`);
+    console.log(`${k}: config ${cfg} (may be on only when main >= 20 exact and 0 wrong, and every held-out set 0 wrong)${note}`);
   }
 }
 

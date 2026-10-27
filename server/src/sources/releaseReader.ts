@@ -800,7 +800,7 @@ interface JpFiscal { quarter?: number; year?: number }
  * Text naming the parent company alone, not the group ("Summary of Non-consolidated Financial Results", "… (Parent
  * Company)", 単体, 非連結, 個別).
  */
-const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|unconsolidated|parent[\s-]only|parent company\b|単体|非連結|個別/i;
+const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|unconsolidated|parent[\s-]only|(?<!owners of (?:the )?)parent company\b|単体|非連結|個別/i;
 /**
  * Anchored allowlist of group-results headings, after `JP_HEADING_PREFIX` is stripped: "Consolidated Financial
  * Results / Statements / Highlights", "Consolidated Results", "Consolidated Operating Results", "Consolidated
@@ -970,13 +970,9 @@ const jpPhraseSpan = (phrase: string): JpSpan =>
 
 /** A table title naming the group's figures: "Consolidated" (not non- / un-consolidated) or 連結. */
 const JP_GROUP_TITLE = /(?<!non[\s-]?|un)\bconsolidated\b|連結/i;
-/**
- * The document's group summary title: "Consolidated Summary Report", "Consolidated Financial Statements / Results /
- * Data / Highlights", "Consolidated (Operating) Results", "Consolidated Earnings Report" (not non-consolidated).
- */
-const JP_DOC_GROUP_TITLE = /(?<!non[\s-]?)\bconsolidated\s+(?:summary\s+report|financial\s+(?:results|statements|data|highlights)|(?:operating\s+)?results|earnings\s+report)\b/i;
+
 /** A title naming another entity's figures: a subsidiary, the parent company, a "Co., Ltd." / "K.K." / securities arm. */
-const JP_ENTITY_TITLE = /subsidiar|子会社|\bparent company\b|\bco\.,?\s*ltd\b|\bk\.\s?k\.|\bsecurities\b/i;
+const JP_ENTITY_TITLE = /subsidiar|子会社|(?<!owners of (?:the )?)\bparent company\b|\bco\.,?\s*ltd\b|\bk\.\s?k\.|\bsecurities\b/i;
 
 /** The first cell of a note row inside a table: "Note:", "Notes:", a bare "1." / "2)", or "(a) …". */
 const JP_NOTE_ROW = /^(?:notes?\s*:?|\d{1,2}\s*[.)]|\([a-z]\)\s.*)$/i;
@@ -1014,21 +1010,36 @@ function jpHeadingTableText(t: Table): string | null {
  * the heading block of that run of adjacent tables (the text before the run's first table) plus the heading-only
  * tables of the run above it. Splits with the same pattern as `parseTables`, so the indexes line up.
  */
-function jpHeadingBlocks(html: string, tables: Table[]): { block: string[]; heading: string[] } {
+function jpHeadingBlocks(html: string, tables: Table[]): { block: string[]; heading: string[]; titles: string[] } {
   // Title-like blocks of the text between tables: short (<= 200 characters) and not a footnote ("*1 Please refer …",
   // "※", "Note:"). Long prose and footnotes title nothing.
   const between = html.split(/<table\b[\s\S]*?<\/table>/gi).slice(0, tables.length).map((seg) =>
-    seg.split(JP_BLOCK_END).map((b) => decode(b)).filter((t) => t && t.length <= 200 && !JP_FOOTNOTE.test(t)).join(' '));
+    seg.split(JP_BLOCK_END).map((b) => decode(b)).filter((t) => t && t.length <= 200 && !JP_FOOTNOTE.test(t)));
   const empty = html.split(/<table\b[\s\S]*?<\/table>/gi).slice(0, tables.length).map((seg) => !decode(seg));
-  const block: string[] = [];
+  const lists: string[][] = [];
   const heading: string[] = [];
   for (let i = 0; i < tables.length; i++) {
     // `heading`: the heading-only table right above, with nothing between the two.
     const head = i > 0 && empty[i] ? jpHeadingTableText(tables[i - 1]!) ?? '' : '';
     heading.push(head);
-    block.push(i > 0 && empty[i] ? `${block[i - 1]} ${head}`.trim() : between[i] ?? '');
+    lists.push(i > 0 && empty[i] ? [...lists[i - 1]!, ...(head ? [head] : [])] : between[i] ?? []);
   }
-  return { block, heading };
+  return { block: lists.map((l) => l.join(' ')), heading, titles: lists.map(jpTitleChain) };
+}
+
+/**
+ * The table's own title: its nearest title-like block (unit / parenthetical-only blocks such as "(Yen)" skipped), and,
+ * when that is a numbered sub-heading ("(1) Operating results"), the headings above it up to the first that is not.
+ */
+function jpTitleChain(blocks: string[]): string {
+  const out: string[] = [];
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]!.trim();
+    if (/^\([^()]*\)$/.test(b) || jpUnit(b) !== null) continue;
+    out.unshift(b);
+    if (!/^\(\s*(?:\d{1,2}|[a-z]|[ivx]+)\s*\)/i.test(b)) break;
+  }
+  return out.join(' ');
 }
 /** A footnote block: "*1 …", "※ …", "† …", "Note: …", "(Note) …". */
 const JP_FOOTNOTE = /^\s*(?:[*※†]|\(?notes?\)?\s*[:.)]?\s)/i;
@@ -1141,7 +1152,6 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
   const docText = decode(html);
   const docDefs = jpPeriodDefinitions(docText);
   const naming = jpFiscalNaming(docText);
-  const docGroupTitled = JP_DOC_GROUP_TITLE.test(docText);
   const tables = parseTables(html, { rowspan: true });
   const heads = jpHeadingBlocks(html, tables);
   for (const [ti, table] of tables.entries()) {
@@ -1152,9 +1162,10 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
     // Forecast tables, Core / non-GAAP / adjusted tables and tables in the parent company's own (non-consolidated)
     // sections are never read.
     if (JP_FORECAST.test(title) || JP_ADJUSTED_CONTEXT.test(context) || nonConsolidated[ti]) continue;
-    // Summary (period-in-rows) layouts and "¥" signs count only under a heading naming the group's figures.
-    // A neutral heading block (a note, nothing) falls back on the document's own group summary title.
-    const groupTitled = !JP_ENTITY_TITLE.test(context) && !JP_NON_CONSOLIDATED.test(context) && (JP_GROUP_TITLE.test(context) || docGroupTitled);
+    // Summary (period-in-rows) layouts and "¥" signs count only when the table's OWN heading block names the group's
+    // figures ("Consolidated" / 連結) and no other entity; a document-level title never vouches for a table.
+    // Own title: the nearest heading (with its parents when it is a numbered sub-heading), not any text since the table before.
+    const groupTitled = !JP_ENTITY_TITLE.test(context) && !JP_NON_CONSOLIDATED.test(context) && JP_GROUP_TITLE.test(heads.titles[ti]!);
     // Appendix columns ("FY2024 Q4 (Jan-Mar)") count only under a title naming the reported figures.
     const reportedTitled = JP_REPORTED_TITLE.test(context);
     // Token rows ("3Q F2025") are dated only by a definition in the table's own heading block.

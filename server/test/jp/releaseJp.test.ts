@@ -411,9 +411,11 @@ describe('real 6-K releases', () => {
     });
   });
 
-  it('MUFG 1Q FY2026: ordinary income is not revenue, EPS read from the summary', () => {
+  it('MUFG 1Q FY2026: ordinary income is not revenue; the EPS summary has no group heading of its own → blank', () => {
+    // Ruling (fix round 2): the summary layout needs the table's own heading to name the group. MUFG's EPS table sits
+    // under the comprehensive-income note; "1. Consolidated Financial Data …" heads the tables above it. Blank, never wrong.
     expect(readJpRelease(fx('MUFG_2026-06-30.htm'), { periodEnd: '2026-06-30', fiscalQuarter: 1 })).toMatchObject({
-      revenue: null, eps: 71.77, epsDiluted: 71.59, currency: 'JPY', span: 'quarter',
+      revenue: null, eps: null, epsDiluted: null,
     });
   });
 });
@@ -486,6 +488,23 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
     expect(readJpRelease(group + yenRows(['Dividends per share', 'Earnings per share']), Q1)).toMatchObject({ eps: 131.59, epsDiluted: null });
     // b4: a US$ caption against the ¥ sign: conflicting evidence.
     expect(readJpRelease(`${group}<p>(U.S. dollars)</p>${smfg}`, Q1)).toMatchObject({ eps: null, epsDiluted: null });
+  });
+
+  it('S1 (n1, n1b, n1c, n2, n6): a document-level group title never vouches for a summary whose own heading does not name the group', () => {
+    const doc = '<p>Consolidated Financial Results for the First Quarter of Fiscal 2026</p><p>Our results were strong.</p>';
+    const sumT = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`;
+    const blank = { eps: null, epsDiluted: null };
+    expect(readJpRelease(doc + '<p>Summary of results of Mizuho Bank</p>' + sumT, Q1), 'n1').toMatchObject(blank);
+    expect(readJpRelease('<p>Summary of results of Mizuho Bank</p>' + sumT, Q1), 'n1b').toMatchObject(blank);
+    expect(readJpRelease(doc + '<p>Results of Toyota Financial Services Corporation</p>' + sumT, Q1), 'n1c').toMatchObject(blank);
+    expect(readJpRelease(doc + '<p>Summary of SMBC Nikko Securities</p>' + `<table>${tr('Branches', '120')}</table>` + '<p>(Yen)</p>' + sumT, Q1), 'n2').toMatchObject(blank);
+    expect(readJpRelease(doc + '<p>Summary of SMBC Nikko Securities</p>' + `<table>${tr('Branches', '120')}</table>` + sumT, Q1), 'n2b').toMatchObject(blank);
+    expect(readJpRelease(doc + '<p>Results of equity-method affiliate Sony Financial Group</p>' + sumT, Q1), 'n6').toMatchObject(blank);
+    // The nearest heading is the table's own title: a group heading right above a subsidiary's does not count.
+    expect(readJpRelease('<p>Consolidated Financial Results</p><p>Summary of results of Mizuho Bank</p>' + sumT, Q1)).toMatchObject(blank);
+    // Controls: the table's own heading names the group, or is a numbered sub-heading under the group heading.
+    expect(readJpRelease(doc + '<p>(1) Consolidated Results of Operations</p>' + sumT, Q1)).toMatchObject({ eps: 31.62, epsDiluted: 31.59 });
+    expect(readJpRelease('<p>1. Consolidated financial results</p><p>(1) Operating results</p><p>(Yen)</p>' + sumT, Q1)).toMatchObject({ eps: 31.62, epsDiluted: 31.59 });
   });
 
   it('S2: a "3Q F2025" row is dated only by the definition in its own table\'s heading block', () => {
@@ -686,7 +705,7 @@ describe('Task 12b: financial appendix ("Billion JPY, except EPS", "FY2024 Q4 (J
     expect(section).toContain('125.29');
     expect(readJpRelease(section, { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ revenue: null, eps: null, epsDiluted: null });
     // Titled "Consolidated" instead, the same tables would be read: the exclusion is what blanks them.
-    expect(readJpRelease(section.replace(/Unconsolidated/g, 'Consolidated'), { periodEnd: '2026-03-31', fiscalQuarter: 4 }).eps).toBe(125.29);
+    expect(readJpRelease(`<p>Summary of Consolidated Results</p>${section.replace(/Unconsolidated/g, 'Consolidated')}`, { periodEnd: '2026-03-31', fiscalQuarter: 4 }).eps).toBe(125.29);
     expect(six('TAK_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 4_505_720_000_000, eps: 121.75, epsDiluted: 119.64, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
   });
 });
@@ -716,6 +735,15 @@ describe('Task 12b: "Unaudited Consolidated Statement of …" headings end a non
     const parent = `<p>Consolidated Statement of Income</p>${statement}<p>Statement of Income (Parent Company)</p>` +
       `<table>${tr('', 'Yen in millions')}${tr('', 'For the year ended March 31, 2026')}${tr('Total sales revenues', '15,684,952')}${tr('Basic earnings per share', '195.25')}</table>`;
     expect(readJpRelease(parent, Q4)).toMatchObject({ revenue: 50_684_952_000_000, eps: 295.25 });
+  });
+
+  it('H4 (probe4): "attributable to owners of the parent (company)" is IFRS wording, not a parent-only marker', () => {
+    for (const h of ['Earnings per share attributable to owners of the parent company:', 'Earnings per share attributable to owners of the parent:']) {
+      const html = `<p>Consolidated Statement of Income</p><table>${tr('', 'Yen in millions')}${tr('', 'For the year ended March 31, 2026')}${tr('Revenue', '15,684,952')}${tr(h)}${tr('Basic', '195.25')}${tr('Diluted', '195.20')}</table>`;
+      expect(readJpRelease(html, Q4), h).toMatchObject({ revenue: 15_684_952_000_000, eps: 195.25, epsDiluted: 195.2 });
+      // The same words between tables do not open a parent-only section either.
+      expect(readJpRelease(`<p>Net income attributable to owners of the parent company increased.</p>${statement}`, Q4)).toMatchObject({ revenue: 50_684_952_000_000, eps: 295.25 });
+    }
   });
 
   it('Toyota FY2026: statements after the unconsolidated summary are read', () => {
