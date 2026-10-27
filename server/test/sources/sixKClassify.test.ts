@@ -62,6 +62,17 @@ describe("classifySixK, profile 'jp'", () => {
       .toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
   });
 
+  it('a release reports a period ending within 100 days before filing; forecast ranges never win', () => {
+    // Filed long after its quarter: not this filing's release.
+    expect(classifySixK(jp('toyota_1q_fy27_ex991.htm'), { filedOn: '2026-10-09', profile: 'jp' }).kind).not.toBe('results');
+    expect(classifySixK(jp('toyota_1q_fy27_ex991.htm'), { filedOn: '2026-10-08', profile: 'jp' })).toMatchObject({ periodEnd: '2026-06-30' });
+    const withForecast = `<p>Consolidated Summary Report for the first quarter of fiscal year 2026. Tokyo, August 4, 2026.</p>
+      <table><tr><td></td><td>Apr.-Jun. 2026</td><td>Forecast Apr. 2026 - Mar. 2027</td></tr><tr><td>Net revenue</td><td>1,234</td><td>5,000</td></tr></table>`;
+    expect(classifySixK(withForecast, { filedOn: '2026-08-04', profile: 'jp' })).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
+    // Without a filing date month ranges are unusable (they may head forecast columns).
+    expect(classifySixK(withForecast, { profile: 'jp' }).kind).not.toBe('results');
+  });
+
   it('Toyota full-year summary is results for the year', () => {
     // 0001193125-26-213363 EX-99.1 "FY2026 Financial Summary", filed 2026-05-08.
     expect(classifySixK(jp('toyota_fy26_ex991.htm'), { filedOn: '2026-05-08', profile: 'jp' }))

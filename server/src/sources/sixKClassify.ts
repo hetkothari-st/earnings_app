@@ -229,8 +229,11 @@ function dividendContext(text: string, at: number): boolean {
   return /\bdividends?\b[\s\S]*\b(?:for|in respect of)\s+the\s+(?:financial\s+)?$/i.test(sentence); // "$0.10" may sit in between
 }
 
-/** A stated period end. `range`: from a `'jp'` month-range header, which may also head a forecast column. */
-type PeriodMention = { end: string; span: SixKSpan; range?: true };
+/**
+ * A stated period end. `range`: from a `'jp'` month-range header, which may also head a forecast column. `index`:
+ * where the prose states it (absent for table headers).
+ */
+type PeriodMention = { end: string; span: SixKSpan; range?: true; index?: number };
 
 /** All period ends the document states, as (end date, span). */
 function periodMentions(text: string, profile: SixKProfile): PeriodMention[] {
@@ -243,22 +246,36 @@ function periodMentions(text: string, profile: SixKProfile): PeriodMention[] {
     const span: SixKSpan | null = profile === 'jp'
       ? (w.includes('three') ? 'quarter' : w.includes('six') ? 'half' : w.includes('nine') ? 'nine' : w.includes('twelve') ? 'year' : null)
       : (w.includes('three') ? 'quarter' : w.includes('six') ? 'half' : w.includes('twelve') ? 'year' : null);
-    if (span) out.push({ end: d.date, span });
+    if (span) out.push({ end: d.date, span, index: m.index! });
   }
   for (const m of text.matchAll(/\bquarter\s+ended\s+/gi)) {
     const d = dateAt(text, m.index! + m[0].length);
-    if (d) out.push({ end: d.date, span: 'quarter' });
+    if (d) out.push({ end: d.date, span: 'quarter', index: m.index! });
   }
   for (const m of text.matchAll(/\byear\s+ended\s+/gi)) {
     const d = dividendContext(text, m.index!) ? null : dateAt(text, m.index! + m[0].length);
-    if (d) out.push({ end: d.date, span: 'year' });
+    if (d) out.push({ end: d.date, span: 'year', index: m.index! });
   }
   for (const m of text.matchAll(new RegExp(`\\b(${MONTH_RE})\\s+quarter\\s+(\\d{4})\\b`, 'gi'))) {
     const month = MONTHS.indexOf(m[1]!.toLowerCase()) + 1;
     const end = DateTime.utc(Number(m[2]), month, 1).endOf('month').toISODate();
-    if (end) out.push({ end, span: 'quarter' });
+    if (end) out.push({ end, span: 'quarter', index: m.index! });
   }
-  if (profile === 'jp') out.push(...monthRangeMentions(text));
+  if (profile === 'jp') {
+    // Takeda: "Three-month Period Ended June 30, 2026", "Nine-month Period Ended December 31, 2025".
+    for (const m of text.matchAll(/\b(three|six|nine|twelve)[- ]month\s+period\s+ended\s+/gi)) {
+      const d = dateAt(text, m.index! + m[0].length);
+      if (d) out.push({ end: d.date, span: JP_MONTH_WORD_SPAN[m[1]!.toLowerCase()]!, index: m.index! });
+    }
+    // Nomura: "results for the first quarter of the fiscal year ending March 31, 2027" — that quarter's own end.
+    for (const m of text.matchAll(/\b(first|second|third|fourth)\s+quarter\s+of\s+(?:the\s+)?fiscal\s+year\s+ending\s+/gi)) {
+      const d = dateAt(text, m.index! + m[0].length);
+      const back = 3 * (4 - ['first', 'second', 'third', 'fourth'].indexOf(m[1]!.toLowerCase()) - 1);
+      const end = d && DateTime.fromISO(d.date, { zone: 'utc' }).minus({ months: back }).endOf('month').toISODate();
+      if (end) out.push({ end, span: 'quarter', index: m.index! });
+    }
+    out.push(...monthRangeMentions(text));
+  }
   return out;
 }
 
@@ -266,6 +283,7 @@ function periodMentions(text: string, profile: SixKProfile): PeriodMention[] {
 const MONTH_ANY_RE = '(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)';
 const MONTH_RANGE = new RegExp(`\\b${MONTH_ANY_RE}\\.?\\s*[-–~～]\\s*${MONTH_ANY_RE}\\.?,?\\s*(\\d{4})\\b`, 'gi');
 const RANGE_SPAN: Record<number, SixKSpan> = { 3: 'quarter', 6: 'half', 9: 'nine', 12: 'year' };
+const JP_MONTH_WORD_SPAN: Record<string, SixKSpan> = { three: 'quarter', six: 'half', nine: 'nine', twelve: 'year' };
 
 /** `'jp'` month-range headers: the range's end month, span by its length (3, 6, 9 or 12 months; any other is skipped). */
 function monthRangeMentions(text: string): PeriodMention[] {
@@ -276,7 +294,7 @@ function monthRangeMentions(text: string): PeriodMention[] {
     const to = monthNo(m[2]!);
     const span = RANGE_SPAN[((to - from + 12) % 12) + 1];
     const end = DateTime.utc(Number(m[3]), to, 1).endOf('month').toISODate();
-    if (span && end) out.push({ end, span, range: true });
+    if (span && end) out.push({ end, span, range: true, index: m.index! });
   }
   return out;
 }
@@ -333,36 +351,93 @@ const HK_RESULTS_PHRASES = [
 /**
  * Japanese results titles (tanshin translations): "Consolidated Financial Results for the Three Months Ended …"
  * (Honda), "FY2027 First Quarter Financial Summary" (Toyota), "Consolidated Summary Report … for the three months
- * ended …" (MUFG), "Consolidated Financial Summary for the First Quarter Ended …" (Sony), "Q1 FY2026".
+ * ended …" (MUFG), "Consolidated Financial Summary for the First Quarter Ended …" (Sony), "Q1 FY2026", "Consolidated
+ * Financial Statements for the First Quarter of Fiscal 2026" (Mizuho), "Earnings Report (Kessan Tanshin) for …"
+ * (Takeda).
  */
 const JP_RESULTS_PHRASES = [
   String.raw`\bconsolidated financial results for the (?:three|six|nine) months ended\b`,
-  String.raw`\b(?:first|second|third) quarter (?:of )?(?:the )?(?:fiscal year|FY) ?\d{2,4}\b`,
+  String.raw`\bconsolidated financial results\s*\(?for the (?:fiscal|first|second|third)\b`,
+  String.raw`\b(?:first|second|third) quarter (?:of )?(?:the )?(?:fiscal year|fiscal|FY) ?\d{2,4}\b`,
   String.raw`\bFY\s?\d{4} (?:first|second|third|fourth) quarter\b`,
   String.raw`\bFY\d{4} Q[1-4]\b`,
   String.raw`\bconsolidated summary report\b`,
   String.raw`\bfinancial summary\b`,
   String.raw`\b(?:annual|full[- ]year) (?:consolidated )?financial results\b`,
+  String.raw`\bconsolidated financial statements for (?:the )?(?:(?:first|second|third) quarter of )?fiscal \d{4}\b`,
+  String.raw`\bkessan tanshin\b`,
+  String.raw`\bearnings report\b`,
 ];
 
 const RESULTS_PHRASE: Record<SixKProfile, RegExp> = {
   hk: new RegExp(HK_RESULTS_PHRASES.join('|'), 'i'),
-  jp: new RegExp([...HK_RESULTS_PHRASES, ...JP_RESULTS_PHRASES].join('|'), 'i'),
+  jp: new RegExp([...HK_RESULTS_PHRASES, ...JP_RESULTS_PHRASES].join('|'), 'gi'),
 };
 
 /**
- * `'jp'`: an EDINET report translation ("Annual Securities Report", "Semi-Annual Securities Report", "Share
- * Buyback Report") named as the document itself near the top. A tanshin's own "Scheduled date to file the annual
- * securities report: …" line is not this (it is a filing schedule, not the title).
+ * Words that make a results phrase's own title / sentence about something else than this release's results. A TSE
+ * "Notice regarding / concerning …" is a notice, never the release itself.
+ */
+const JP_NOT_RELEASE = /\b(?:forecasts?|revisions?|revised?|dividends?|outlook|differences?|notice\s+(?:regarding|concerning|on|of))\b/i;
+
+/**
+ * `'jp'`: where the first results title in the opening is, or -1. A phrase whose own sentence (up to 250 characters
+ * before it and 100 after, cut at a sentence end) names a forecast, revision, dividend, outlook, difference or a TSE
+ * notice does not count: "Revision on Forecast for Consolidated Financial Results", "Notice regarding difference in
+ * consolidated financial results … Mizuho hereby announces that … its consolidated financial results …".
+ */
+function jpResultsTitleAt(opening: string): number {
+  for (const m of opening.matchAll(RESULTS_PHRASE.jp)) {
+    const start = m.index!;
+    const end = start + m[0].length;
+    const before = opening.slice(Math.max(0, start - 250), start).split(/[.!?]\s+(?=[A-Z])/).pop()!;
+    const after = opening.slice(end, end + 100).split(/[.!?]\s+(?=[A-Z])/)[0]!;
+    if (!JP_NOT_RELEASE.test(before + m[0] + after)) return start;
+  }
+  return -1;
+}
+
+/**
+ * `'jp'`: an EDINET report translation ("Annual Securities Report", "(English Translation) Semi-annual Securities
+ * Report For The Six-month Period …") named as the document itself: at the start of the text, or right after an
+ * exhibit number, a "Translation (of the)" label or a bracket. A cover line that names the report with a date —
+ * "Annual securities report (Yukashoken hokokusho) issuing date: June 19, 2026" (SMFG), "Scheduled date to file the
+ * annual securities report" — is not a title.
  */
 const JP_EDINET_REPORT = /\b(?:semi-?annual|annual|quarterly|extraordinary)\s+securities\s+report\b/gi;
-const JP_FILING_SCHEDULE = /\b(?:fil(?:e|ed|ing)|submi(?:t|ssion|tting)|date)\b[^.:]{0,40}$/i;
+const JP_TITLE_LEAD = /(?:^|\bexhibit(?:\s+number)?\s+\d+\.?|\btranslation(?:\s+of(?:\s+the)?)?\)?|[[(])\s*$/i;
+const JP_SCHEDULE_AFTER = /^\s*(?:\([^)]{0,60}\)\s*)?(?:issu|fil|submi|dat|schedul|due)/i;
 
 function isJpEdinetReport(opening: string): boolean {
   for (const m of opening.matchAll(JP_EDINET_REPORT)) {
-    if (!JP_FILING_SCHEDULE.test(opening.slice(Math.max(0, m.index! - 60), m.index!))) return true;
+    const lead = opening.slice(Math.max(0, m.index! - 40), m.index!);
+    const tail = opening.slice(m.index! + m[0].length, m.index! + m[0].length + 80);
+    if (JP_TITLE_LEAD.test(m.index! === 0 ? '' : lead) && !JP_SCHEDULE_AFTER.test(tail)) return true;
   }
   return false;
+}
+
+/** `'jp'`: a release reports a period that ended at most this many days before it was filed. */
+const JP_RECENT_DAYS = 100;
+/** `'jp'`: a period named within this many characters of the results title is the title's own. */
+const JP_TITLE_SPAN = 600;
+
+/**
+ * `'jp'`: this release's period among the stated ones. Only periods ending in [filedOn − 100 days, filedOn] count
+ * (an appendix whose only dated mention is a prior-year footnote, a dividend table's next-year column, a forecast
+ * month range are not it); without `filedOn` month ranges are unusable (they may head forecast columns) and no
+ * window applies. Periods named with the title (from 100 characters before it to 600 after) win over the rest; among
+ * the winners the latest end, and at that end the most specific span.
+ */
+function jpReleasePeriod(all: PeriodMention[], titleAt: number, filedOn: string | undefined): { end: string; span: SixKSpan } | null {
+  const from = filedOn ? DateTime.fromISO(filedOn, { zone: 'utc' }).minus({ days: JP_RECENT_DAYS }).toISODate()! : null;
+  const usable = all.filter((p) => (filedOn ? p.end <= filedOn && p.end >= from! : !p.range));
+  if (usable.length === 0) return null;
+  const titled = usable.filter((p) => p.index != null && p.index >= titleAt - 100 && p.index <= titleAt + JP_TITLE_SPAN);
+  const pool = titled.length > 0 ? titled : usable;
+  const latest = pool.reduce((a, b) => (b.end > a ? b.end : a), '');
+  const span = pool.filter((p) => p.end === latest).reduce<SixKSpan>((a, p) => (SPAN_ORDER[p.span] < SPAN_ORDER[a] ? p.span : a), 'year');
+  return { end: latest, span };
 }
 
 /** True when some table row is labelled revenue / per share / per ADS (results releases carry one, notices do not). */
@@ -386,14 +461,16 @@ export function classifySixK(html: string, opts: { filedOn?: string; profile: Si
   const opening = parseDateNoticeFor(text.slice(0, 5000), profile);
   if (opening && opts.filedOn && opening.date > opts.filedOn) return { kind: 'date-notice', ...opening };
 
-  if (RESULTS_PHRASE[profile].test(text.slice(0, 5000))) {
+  if (profile === 'jp') {
+    const titleAt = jpResultsTitleAt(text.slice(0, 5000));
+    if (titleAt >= 0 && hasResultsTable(html)) {
+      const p = jpReleasePeriod([...periodMentions(text, profile), ...tableHeaderMentions(html, profile)], titleAt, opts.filedOn);
+      if (p) return { kind: 'results', periodEnd: p.end, span: p.span };
+    }
+  } else if (RESULTS_PHRASE[profile].test(text.slice(0, 5000))) {
     // A results release cannot report a period ending after it was filed (`filedOn`: the acceptance date).
-    const all = [...periodMentions(text, profile), ...tableHeaderMentions(html, profile)];
-    const periods = all.filter((p) => !opts.filedOn || p.end <= opts.filedOn);
-    // 'jp': a period stated as already ended ("three months ended D") after the filing means the document cannot be
-    // a release filed then; an earlier comparative period is never taken instead. (Month ranges may be forecasts.)
-    const endsAfterFiling = profile === 'jp' && all.some((p) => !p.range && opts.filedOn != null && p.end > opts.filedOn);
-    if (!endsAfterFiling && periods.length > 0 && hasResultsTable(html)) {
+    const periods = [...periodMentions(text, profile), ...tableHeaderMentions(html, profile)].filter((p) => !opts.filedOn || p.end <= opts.filedOn);
+    if (periods.length > 0 && hasResultsTable(html)) {
       // The latest period end is this release's; at that end the most specific span wins.
       const latest = periods.reduce((a, b) => (b.end > a ? b.end : a), '');
       const span = periods.filter((p) => p.end === latest).reduce<SixKSpan>((a, p) => (SPAN_ORDER[p.span] < SPAN_ORDER[a] ? p.span : a), 'year');
@@ -402,6 +479,9 @@ export function classifySixK(html: string, opts: { filedOn?: string; profile: Si
   }
 
   const notice = parseDateNoticeFor(text, profile);
+  // 'jp': a "notice" naming a date before the filing is about something past (Takeda's revision of results
+  // "announced on May 19"), not a results date.
+  if (notice && profile === 'jp' && opts.filedOn && notice.date < opts.filedOn) return { kind: 'other' };
   if (notice) return { kind: 'date-notice', ...notice };
   return { kind: 'other' };
 }
