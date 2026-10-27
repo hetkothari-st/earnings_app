@@ -96,6 +96,23 @@ describe("classifySixK, profile 'jp'", () => {
       <table><tr><td>Revenue</td><td>1,234</td></tr></table>`;
     expect(classifySixK(nine, { filedOn: '2027-02-10', profile: 'jp' })).toEqual({ kind: 'results', periodEnd: '2026-12-31', span: 'nine' });
   });
+
+  it('date-range headers "(April 1, 2024 through September 30, 2024)" name the period (Toyota semi-annual summary)', () => {
+    const release = (range: string, forecast = '') => `<p>FY2025 SEMI-ANNUAL FINANCIAL SUMMARY</p><p>FY2025 Semi-Annual ${range}</p>
+      <p>1. Consolidated Results for FY2025 First Half ${range} (1) Consolidated financial results (For the six months ended September 30)</p>
+      <table><tr><td>Sales revenues</td><td>23,282,450</td></tr></table>${forecast}`;
+    expect(classifySixK(release('(April 1, 2024 through September 30, 2024)'), { filedOn: '2024-11-06', profile: 'jp' }))
+      .toEqual({ kind: 'results', periodEnd: '2024-09-30', span: 'half' });
+    expect(classifySixK(release('(July 1, 2024 through September 30, 2024)'), { filedOn: '2024-11-06', profile: 'jp' }))
+      .toEqual({ kind: 'results', periodEnd: '2024-09-30', span: 'quarter' });
+    // A forecast range ending after the filing is outside the window; it never names the period.
+    expect(classifySixK(release('(April 1, 2024 through September 30, 2024)', '<p>Forecast (April 1, 2024 through March 31, 2025)</p>'), { filedOn: '2024-11-06', profile: 'jp' }))
+      .toEqual({ kind: 'results', periodEnd: '2024-09-30', span: 'half' });
+    // Without a filing date a range is unusable (it may head a forecast column).
+    expect(classifySixK(release('(April 1, 2024 through September 30, 2024)'), { profile: 'jp' }).kind).not.toBe('results');
+    // A range that is not 3, 6, 9 or 12 whole months is skipped.
+    expect(classifySixK(release('(April 15, 2024 through September 30, 2024)'), { filedOn: '2024-11-06', profile: 'jp' }).kind).not.toBe('results');
+  });
 });
 
 describe("parseDateNoticeFor 'jp'", () => {

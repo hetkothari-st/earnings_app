@@ -275,7 +275,7 @@ function periodMentions(text: string, profile: SixKProfile): PeriodMention[] {
       const end = d && DateTime.fromISO(d.date, { zone: 'utc' }).minus({ months: back }).endOf('month').toISODate();
       if (end) out.push({ end, span: 'quarter', index: m.index! });
     }
-    out.push(...monthRangeMentions(text));
+    out.push(...monthRangeMentions(text), ...dateRangeMentions(text));
   }
   return out;
 }
@@ -296,6 +296,28 @@ function monthRangeMentions(text: string): PeriodMention[] {
     const span = RANGE_SPAN[((to - from + 12) % 12) + 1];
     const end = DateTime.utc(Number(m[3]), to, 1).endOf('month').toISODate();
     if (span && end) out.push({ end, span, range: true, index: m.index! });
+  }
+  return out;
+}
+
+/** "April 1, 2024 through September 30, 2024" / "July 1, 2024 to September 30, 2024" (Toyota's semi-annual summary). */
+const DATE_RANGE = new RegExp(`\\b(${MONTH_RE})\\s+(\\d{1,2}),?\\s+(\\d{4})\\s*(?:through|to|[-–~～])\\s*`, 'gi');
+
+/**
+ * `'jp'` date-range headers: a range from a month's first day through a month's last day of 3, 6, 9 or 12 months
+ * names its end with the span of its length; any other range is skipped. Like month ranges, a range may head a
+ * forecast column, so it is `range` (usable only within the filing-date window).
+ */
+function dateRangeMentions(text: string): PeriodMention[] {
+  const out: PeriodMention[] = [];
+  for (const m of text.matchAll(DATE_RANGE)) {
+    const to = dateAt(text, m.index! + m[0].length);
+    if (!to || Number(m[2]) !== 1) continue;
+    const from = DateTime.utc(Number(m[3]), MONTHS.indexOf(m[1]!.toLowerCase()) + 1, 1);
+    const end = DateTime.fromISO(to.date, { zone: 'utc' });
+    if (!from.isValid || end.toISODate() !== end.endOf('month').toISODate()) continue;
+    const span = RANGE_SPAN[(end.year * 12 + end.month) - (from.year * 12 + from.month) + 1];
+    if (span) out.push({ end: to.date, span, range: true, index: m.index! });
   }
   return out;
 }
