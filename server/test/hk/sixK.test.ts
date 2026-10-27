@@ -61,6 +61,19 @@ describe('classifyHkExhibit: results titles without "announces … results" (HSB
     expect(classifyHkExhibit(notice)).toEqual({ kind: 'date-notice', date: '2025-10-28', timing: 'UNKNOWN' });
   });
 
+  it('dividend context is "dividend … for / in respect of" in the same sentence; other mentions are kept', () => {
+    const table = '<table><tr><td>Revenue</td><td>1</td></tr></table>';
+    // "Dividends declared." is its own sentence: the following year-ended mention counts.
+    expect(classifyHkExhibit(`<p>Acme 2025 Annual Results. Dividends declared. Year ended 31 December 2025 results summary.</p>${table}`))
+      .toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
+    // The dividend's period is ignored; the release's own mention is kept.
+    expect(classifyHkExhibit(`<p>Acme 2026 Interim Results. The interim dividend in respect of the six months ended 30 June 2026 is US$0.1. For the six months ended 30 June 2026, revenue grew.</p>${table}`))
+      .toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'half' });
+    // A quarter named in the title is the release's, even when the prose only names it for a dividend.
+    expect(classifyHkExhibit(`<p>Acme Earnings Release 3Q25. Dividends: the third interim dividend for the quarter ended 30 September 2025 is $0.10. Comparative: year ended 31 December 2024.</p>${table}`))
+      .toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
+  });
+
   it('a period named for a dividend is not the release period', () => {
     const html = '<p>Acme Earnings Release 3Q25. For the quarter ended 30 September 2025. The second interim dividend in respect of the financial year ended 31 December 2025 was paid in June 2025.</p>'
       + '<table><tr><td>Revenue</td><td>1</td></tr></table>';

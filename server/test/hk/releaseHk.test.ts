@@ -345,6 +345,29 @@ describe('readHkRelease: captions and prose never widen what is read (review rou
     expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
   });
 
+  // Review round 2 probes: a unit phrase inside prose never labels currency-less columns.
+  const plain = (unit: string, rev: string, eps: string) => `<table>${Q3h}<tr><td>${unit}</td></tr>${row('Total revenues', rev)}${row('Diluted earnings per share', eps)}</table>`;
+  it('proseUsdM: "The Group\'s cash position, in US$ millions, remained strong" → blank', () => {
+    const html = `<p>The Group's cash position, in US$ millions, remained strong</p>${plain('(in millions)', '1,200', '0.60')}`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
+  });
+
+  it('convNote: a convenience-translation note naming "thousands of U.S. dollars" → blank', () => {
+    const html = `<p>Note: amounts in thousands of U.S. dollars are translated solely for convenience at RMB7.1 to US$1.00</p>${plain('(in thousands)', '19,000', '1.10')}`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
+  });
+
+  it('proseUnitHK: "Note: the Group held HK$ millions in deposits" → blank', () => {
+    const html = `<p>Note: the Group held HK$ millions in deposits</p>${plain('(in millions)', '1,200', '0.60')}`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
+  });
+
+  it('a statement title "(in thousands of RMB, except for US$ amounts)" with RMB | US$ headers reads the RMB column', () => {
+    const html = `<p>Unaudited Condensed Consolidated Statements of Operations (in thousands of RMB, except for US$ amounts)</p>
+    <table>${Q3h}<tr><td></td><td></td><td>RMB</td><td></td><td>US$</td></tr>${row('Total revenues', '19,000', '2,600')}${row('Diluted earnings per share', '1.10', '0.15')}</table>`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: 19_000_000, revenueCurrency: 'CNY', eps: 1.1, epsCurrency: 'CNY' });
+  });
+
   it('a split statement needs the same title on both tables and per-share lines in the second', () => {
     const head = `${Q3h}<tr><td></td><td colspan="2">RMB</td></tr>`;
     const first = `<p>Unaudited Condensed Consolidated Statements of Operations (in thousands)</p><table>${head}${row('Total revenues', '19,743,593')}</table>`;

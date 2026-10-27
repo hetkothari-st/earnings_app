@@ -140,7 +140,12 @@ const SPAN_ORDER: Record<HkSpan, number> = { quarter: 0, half: 1, year: 2 };
  * A period named for a dividend ("second interim dividend … in respect of the financial year ended 31 December
  * 2025", paid mid-year) is not the period the release reports, and may even end after it.
  */
-const dividendContext = (text: string, at: number) => /\bin respect of\b|\bdividends?\b/i.test(text.slice(Math.max(0, at - 60), at));
+function dividendContext(text: string, at: number): boolean {
+  // The current sentence up to the mention: "… dividend … for / in respect of <the mention>".
+  const before = text.slice(Math.max(0, at - 300), at);
+  const sentence = before.split(/[.!?;:]\s+(?=[A-Z0-9(])/).pop() ?? '';
+  return /\bdividends?\b[\s\S]*\b(?:for|in respect of)\b/i.test(sentence); // "$0.10" may sit in between
+}
 
 /** All period ends the document states, as (end date, span). */
 function periodMentions(text: string): { end: string; span: HkSpan }[] {
@@ -234,8 +239,15 @@ function hasResultsTable(html: string): boolean {
 export function classifyHkExhibit(html: string): HkExhibit {
   const text = htmlToText(html);
 
-  if (RESULTS_PHRASE.test(text.slice(0, 5000))) {
+  const title = text.slice(0, 5000).match(RESULTS_PHRASE);
+  if (title) {
     const periods = [...periodMentions(text), ...tableHeaderMentions(html)];
+    // A calendar quarter named in the title itself ("Earnings Release 3Q25", "3Q 2025 Results") is the release's.
+    const tq = text.slice(title.index!, title.index! + title[0].length + 20).match(/\b([1-4])q\s?'?(\d{4}|\d{2})\b/i);
+    if (tq) {
+      const end = DateTime.utc(tq[2]!.length === 2 ? 2000 + Number(tq[2]) : Number(tq[2]), Number(tq[1]) * 3, 1).endOf('month').toISODate();
+      if (end) periods.push({ end, span: 'quarter' });
+    }
     if (periods.length > 0 && hasResultsTable(html)) {
       // The latest period end is this release's; at that end the most specific span wins.
       const latest = periods.reduce((a, b) => (b.end > a ? b.end : a), '');

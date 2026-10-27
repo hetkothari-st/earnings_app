@@ -260,8 +260,30 @@ const CURRENCY_UNIT_RE = new RegExp(
   String.raw`|\bin\s+${UNIT_CURS}\s*(?:thousand|million|billion)s?\b`,
   'gi',
 );
-export function currencyUnitPhrases(text: string): string {
+function currencyUnitPhrases(text: string): string {
   return [...text.matchAll(CURRENCY_UNIT_RE)].map((m) => m[0]).join(' ; ');
+}
+
+/** A caption that is prose, not a table title: a note, a sentence, or a convenience-translation remark. */
+const PROSE_CAPTION = /^\s*(?:note\b|the\b)|translated|convenience/i;
+const VERBISH = /\b(?:is|are|was|were|be|been|has|have|had|held|holds|remained|remains|includes?|included|presented|denominated|represents?|reflects?|amounted)\b/i;
+/** A caption that starts with its unit statement: "Amounts in …", "All amounts in …", "In thousands of …", "(in …". */
+const UNIT_FIRST_CAPTION = /^\s*(?:\(\s*)?(?:(?:all\s+)?amounts\s+(?:are\s+)?in\b|in\s+(?:thousands|millions|billions)\s+of\b|\(\s*in\b)/i;
+/** A parenthesised unit statement: "(in thousands of U.S. dollars, …)", "(RMB in millions …)", "(in US$ million, except …)". */
+const UNIT_PAREN = /^\s*(?:all\s+)?(?:amounts\s+)?(?:(?:expressed\s+)?in\b|rmb\b|renminbi\b|us\$|hk\$|usd\b|hkd\b)/i;
+
+/**
+ * Profile 'hk': the currency-bearing unit phrases a table caption states for the table, or '' when it states none.
+ * A caption counts only when it is a title (a statement title, or a short title line without verbs), when it
+ * starts with its unit statement, or through a parenthesised unit statement. Prose never counts: a note, a
+ * sentence starting "The", or a convenience-translation remark ("in thousands of U.S. dollars are translated…").
+ */
+export function captionCurrencyText(caption: string): string {
+  if (PROSE_CAPTION.test(caption)) return '';
+  const words = caption.replace(/\([^()]*\)/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const title = STATEMENT_TITLE.test(caption) || (words.length <= 12 && !VERBISH.test(caption.replace(/\([^()]*\)/g, ' ')));
+  if (title || UNIT_FIRST_CAPTION.test(caption)) return currencyUnitPhrases(caption);
+  return [...caption.matchAll(/\(([^()]*)\)/g)].map((m) => m[1]!).filter((g) => UNIT_PAREN.test(g)).map(currencyUnitPhrases).filter(Boolean).join(' ; ');
 }
 
 /** A figure cell: "1,234", "(0.29)", "$ 0.87", "12%". A lone footnote mark "(2)" and header text are not. */
@@ -519,8 +541,8 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     else if (inTable.size === 0 && near.size === 1) unit = [...near][0]!;
     const dollarM = hk && DOLLAR_M.test(nonDataText);
     // Profile 'hk': the caption names a currency only through a unit phrase ("in thousands of U.S. dollars").
-    const captionCurrencyText = hk ? currencyUnitPhrases(caption) : caption;
-    const capCur = currenciesIn(captionCurrencyText);
+    const capCurText = hk ? captionCurrencyText(caption) : caption;
+    const capCur = currenciesIn(capCurText);
     const dollarIsUsd = dollarIsUsdInDoc || (capCur.has('USD') && !capCur.has('CNY') && !capCur.has('HKD'));
 
     for (const { field, nums, headers: hs, label, rawLabel, section: sec } of rowsOut) {
@@ -548,7 +570,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
           // The column's currency: its own header, else the row label, else the table's titles and caption.
           // A header and a row label naming different currencies ("RMB" column, "… (USD)" row) is ambiguous.
           let cur: Currency | null | undefined;
-          for (const t of [over, rawLabel, `${nonDataText} ${captionCurrencyText}`]) if ((cur = oneCurrency(t, dollarIsUsd)) !== undefined) break;
+          for (const t of [over, rawLabel, `${nonDataText} ${capCurText}`]) if ((cur = oneCurrency(t, dollarIsUsd)) !== undefined) break;
           const rowCur = oneCurrency(rawLabel, dollarIsUsd);
           if (cur !== undefined && rowCur !== undefined && rowCur !== cur) cur = null;
           if (cur === undefined && n.dollar && dollarIsUsd) cur = 'USD';

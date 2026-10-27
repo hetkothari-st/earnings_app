@@ -10,7 +10,7 @@
  * - Uncertain means blank: no currency stated, no unit, or disagreeing candidates → null.
  */
 import type { HkPeriodKind } from '../domain/period.js';
-import { currenciesIn, currencyUnitPhrases, isFigure, parseTables, readRelease, tableCaption, type Currency, type ReaderOptions } from '../../sources/releaseReader.js';
+import { currenciesIn, captionCurrencyText, isFigure, parseTables, readRelease, tableCaption, type Currency, type ReaderOptions } from '../../sources/releaseReader.js';
 
 export interface HkReleaseValues {
   revenue: number | null;
@@ -38,7 +38,7 @@ export function statementCurrencies(html: string): Set<Currency | '$'> {
     const figures = (r: (typeof t.rows)[number]) => r.slice(r.findIndex((c) => c.text) + 1).some((c) => isFigure(c.text));
     const lines = t.rows.filter((r) => STATEMENT_ROW.test(label(r)) && figures(r));
     if (!lines.length) continue;
-    text.push(currencyUnitPhrases(tableCaption(t)));
+    text.push(captionCurrencyText(tableCaption(t)));
     for (const r of t.rows) if (!figures(r)) text.push(r.map((c) => c.text).join(' '));
     for (const r of lines) text.push(label(r));
   }
