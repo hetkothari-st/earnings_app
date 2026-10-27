@@ -13,7 +13,7 @@ import { toHkDto } from '../hk/api/dto.js';
 import { listHkForSymbols } from '../hk/db/hkRepo.js';
 import { HKT } from '../hk/domain/hkCalendar.js';
 import type { HkReportDto } from '../hk/api/types.js';
-import { SymbolIndex } from './search.js';
+import { hkEntries, SymbolIndex } from './search.js';
 import { addWatch, listWatch, MAX_WATCH, removeWatch, type WatchMarket } from './store.js';
 
 export interface WatchlistOptions {
@@ -38,6 +38,8 @@ export function registerWatchlist(
   app: FastifyInstance, db: Db, currentUser: (req: FastifyRequest) => string | null, now: () => number, opts: WatchlistOptions = {},
 ): void {
   const index = opts.index ?? new SymbolIndex();
+  // The HK list is the fixed universe: load it now, so non-universe codes are rejected even right after a restart.
+  if (index.size('HK') === 0) index.set('HK', hkEntries(db));
   const NOT_SIGNED_IN = { error: 'Not signed in' };
   const BAD_MARKET = { error: 'market must be US, IN or HK' };
 

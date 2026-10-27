@@ -26,7 +26,8 @@ const FIELDS: Record<Market, FieldDef[]> = {
   HK: [
     { field: 'epsEstimate', min: 40, filled: 'r.eps_estimate IS NOT NULL' },
     { field: 'marketCap', min: 95, filled: 's.market_cap IS NOT NULL' },
-    { field: 'previousMove', min: 50, filled: 'r.prev_move_pct IS NOT NULL' },
+    // Only full-level names have a prior date (the ADR's US report); Yahoo's .HK past dates stop in May 2025.
+    { field: 'previousMove', min: 50, filled: 'r.prev_move_pct IS NOT NULL', where: "s.level = 'full'" },
     // Only full-level names have an ADR straddle.
     { field: 'expectedMove', min: 60, filled: 'EXISTS (SELECT 1 FROM hk_expected_moves e WHERE e.report_id = r.id)', withinWeek: true, where: "s.level = 'full'" },
   ],

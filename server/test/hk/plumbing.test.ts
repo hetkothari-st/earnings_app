@@ -87,6 +87,13 @@ describe('market HK plumbing', () => {
     expect((await app.inject({ url: '/api/watchlist/rows?market=HK', headers: h })).json().rows[0]).toMatchObject({ symbol: '0700', next: null });
   });
 
+  test('right after a restart (HK index not loaded yet) a non-universe code is still rejected', async () => {
+    const fresh = buildServer(db, { requireAuth: true, now: () => clock, watchlist: { index: new SymbolIndex() } });
+    const h = as('1A');
+    expect((await fresh.inject({ method: 'PUT', url: '/api/watchlist/HK/1234', headers: h })).statusCode).toBe(400);
+    expect((await fresh.inject({ method: 'PUT', url: '/api/watchlist/HK/0700', headers: h })).statusCode).toBe(204);
+  });
+
   test('watchlist rows for HK carry the next report', async () => {
     syncHkUniverse(db, HK_UNIVERSE, NOW);
     upsertHkCalendarRow(db, { code: '0700', name: 'Tencent', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26', reportDate: '2026-11-13', dateStatus: 'confirmed' }, NOW);
@@ -138,7 +145,10 @@ describe('market HK plumbing', () => {
     expect(cov.map((r) => r.field)).toEqual(['epsEstimate', 'marketCap', 'previousMove', 'expectedMove']);
     expect(cov.find((r) => r.field === 'epsEstimate')).toMatchObject({ total: 2, min: 40 });
     expect(cov.find((r) => r.field === 'marketCap')).toMatchObject({ min: 95 });
+    // Previous move: only full-level names have a prior date (the ADR's US report); basic names stay blank.
+    db.prepare('UPDATE hk_reports SET prev_move_pct = 2 WHERE id = ?').run(a);
     expect(cov.find((r) => r.field === 'previousMove')).toMatchObject({ min: 50 });
+    expect(computeCoverage(db, 'HK', TODAY).find((r) => r.field === 'previousMove')).toMatchObject({ filled: 1, total: 1, min: 50, ok: true });
     expect(cov.find((r) => r.field === 'expectedMove')).toMatchObject({ filled: 1, total: 1, min: 60, ok: true });
     const body = (await app.inject({ url: '/api/status', headers: as('1A') })).json();
     expect(body.coverage.HK.map((r: { field: string }) => r.field)).toEqual(['epsEstimate', 'marketCap', 'previousMove', 'expectedMove']);

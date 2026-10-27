@@ -362,6 +362,13 @@ describe('readHkRelease: captions and prose never widen what is read (review rou
     expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
   });
 
+  it('a caption whose unit disagrees with the in-table unit is not the caption of this table: its currency is ignored', () => {
+    const cap = '<p>Condensed Consolidated Statements of Operations (Amounts in thousands of U.S. dollars, except for share and per share amounts)</p>';
+    expect(readHkRelease(`${cap}${plain('(in millions)', '1,200', '0.60')}`, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
+    // Agreeing units: the caption still names the currency.
+    expect(readHkRelease(`${cap}${plain('(in thousands)', '1,200', '0.60')}`, Q3)).toMatchObject({ revenue: 1_200_000, revenueCurrency: 'USD', eps: 0.6, epsCurrency: 'USD' });
+  });
+
   it('captionCurrencyText: statement-title unit groups and whole unit statements only', () => {
     expect(captionCurrencyText('Unaudited Condensed Consolidated Statements of Operations (in thousands of RMB, except for US$ amounts)')).toBe('in thousands of RMB');
     expect(captionCurrencyText('Condensed Consolidated Statements of Operations (U.S. GAAP) (Amounts in thousands of U.S. dollars, except for shares, American Depositary Shares (ADSs), per share and per ADS data)'))

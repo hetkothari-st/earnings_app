@@ -543,7 +543,10 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     else if (inTable.size === 0 && near.size === 1) unit = [...near][0]!;
     const dollarM = hk && DOLLAR_M.test(nonDataText);
     // Profile 'hk': the caption names a currency only through a unit phrase ("in thousands of U.S. dollars").
-    const capCurText = hk ? captionCurrencyText(caption) : caption;
+    // A caption whose unit disagrees with the table's own ("thousands" above, "(in millions)" inside) belongs to
+    // something else: its currency is not this table's.
+    const captionElsewhere = hk && inTable.size > 0 && near.size > 0 && ![...near].some((u) => inTable.has(u));
+    const capCurText = hk ? (captionElsewhere ? '' : captionCurrencyText(caption)) : caption;
     const capCur = currenciesIn(capCurText);
     const dollarIsUsd = dollarIsUsdInDoc || (capCur.has('USD') && !capCur.has('CNY') && !capCur.has('HKD'));
 
