@@ -803,13 +803,19 @@ const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|unconsolidated|parent[\s-]onl
  * Statement(s) of …", "Consolidated Balance Sheet(s)", "Consolidated Earnings", "Consolidated Summary Report", or a
  * bare "<CO> Consolidated" heading (one all-caps token of 2–6 letters: MUFG). "Statement(s) of" names Income /
  * Operations / Comprehensive Income / Financial Position / Profit or Loss only. The English heading is end-anchored:
- * only a closing bracket, a colon, a parenthetical unit / date phrase or a full stop may follow. 連結業績 / 連結財務諸表 / 連結経営成績 / 連結損益計算書 / 連結貸借対照表 / 連結決算.
+ * only a closing bracket, a colon, a parenthetical unit / date phrase or a full stop may follow. A statement title may
+ * be qualified ("Unaudited / Condensed / Quarterly / Interim Consolidated Statement of Income", "… Balance Sheet",
+ * "… Financial Statements"). 連結業績 / 連結財務諸表 / 連結経営成績 / 連結損益計算書 / 連結貸借対照表 / 連結決算.
  */
 const JP_CONSOLIDATED_HEADING = new RegExp(
   String.raw`^(?:[A-Z]{2,6}\s)?Consolidated` +
   String.raw`(?:\s(?:Financial (?:Results|Statements|Highlights)|Results|Operating Results|Balance Sheets?|Earnings|Summary Report` +
   String.raw`|Statements? of (?:Income|Operations|Comprehensive Income|Financial Position|Profit or Loss)))?` +
-  // Only a closing bracket, a colon, a parenthetical unit / date phrase or a full stop may follow.
+  // A statement title may carry Unaudited / Audited / Condensed / Quarterly / Interim before "Consolidated"
+  // ("Unaudited Consolidated Statement of Income"); then the statement name itself is required.
+  String.raw`(?:\s*(?:[\]】）)］:：]|[(（][^()（）]{0,80}[)）]))*\s*[.．]?\s*$` +
+  String.raw`|^(?:(?:Unaudited|Audited|Condensed|Quarterly|Interim)\s+)+Consolidated\s` +
+  String.raw`(?:Financial Statements|Balance Sheets?|Statements? of (?:Income|Operations|Comprehensive Income|Financial Position|Profit or Loss))` +
   String.raw`(?:\s*(?:[\]】）)］:：]|[(（][^()（）]{0,80}[)）]))*\s*[.．]?\s*$` +
   String.raw`|^連結(?:業績|財務諸表|経営成績|損益計算書|貸借対照表|決算)`,
 );

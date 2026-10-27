@@ -612,6 +612,28 @@ describe('Task 12b: financial appendix ("Billion JPY, except EPS", "FY2024 Q4 (J
   });
 });
 
+describe('Task 12b: "Unaudited Consolidated Statement of …" headings end a non-consolidated section', () => {
+  const Q4 = { periodEnd: '2026-03-31', fiscalQuarter: 4 as const };
+  const nc = `<p>Unconsolidated Results for FY2026 (April 1, 2025 through March 31, 2026)</p><table>${tr('', 'Net revenues', 'Basic EPS')}${tr('', 'Million yen', 'Yen')}${tr('Fiscal year ended March 31, 2026', '15,000,000', '260.28')}</table>`;
+  const statement = `<table>${tr('', 'Yen in millions')}${tr('', 'For the year ended March 31, 2026')}${tr('Total sales revenues', '50,684,952')}${tr('Basic earnings per share', '295.25')}</table>`;
+
+  it('H1: an "Unaudited / Condensed Consolidated Statement(s) of …" heading reopens the group figures', () => {
+    for (const h of ['Unaudited Consolidated Statement of Income', 'Unaudited Condensed Consolidated Statements of Income', 'Condensed Quarterly Consolidated Statement of Financial Position']) {
+      expect(readJpRelease(`${nc}<p>${h}</p>${statement}`, Q4), h).toMatchObject({ revenue: 50_684_952_000_000, eps: 295.25, span: 'ytd', ytdMonths: 12 });
+    }
+  });
+
+  it('H2: qualified headings that are not group-statement titles keep the section closed', () => {
+    for (const h of ['Unaudited Consolidated subsidiaries', 'Unaudited Non-consolidated Statement of Income', 'Unaudited Consolidated Statement of Income compared with the parent', 'Preliminary Consolidated Statement of Income']) {
+      expect(readJpRelease(`${nc}<p>${h}</p>${statement}`, Q4), h).toMatchObject({ revenue: null, eps: null });
+    }
+  });
+
+  it('Toyota FY2026: statements after the unconsolidated summary are read', () => {
+    expect(six('TM_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 50_684_952_000_000, eps: 295.25, epsDiluted: 295.25, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
+  });
+});
+
 describe("readRelease profile 'jp'", () => {
   it('yen is detected only under jp: the hk profile reads nothing from a yen table', () => {
     const html = table('(Millions of yen, except per share amounts)',
