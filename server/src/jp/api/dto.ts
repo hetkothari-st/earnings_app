@@ -1,6 +1,7 @@
 import { beatMiss, surprisePct } from '../../domain/surprise.js';
 import type { JpReport } from '../db/jpRepo.js';
 import type { JpFigureDto, JpReportDto } from './types.js';
+import { jpAdrRatioShown } from '../universe.js';
 
 const TIMING_SOURCES = ['sec-6k', 'sec-notice', 'yahoo'] as const;
 
@@ -41,7 +42,7 @@ export function toJpDto(r: JpReport): JpReportDto {
     nameJa: r.nameJa,
     level: r.level,
     adrTicker: r.adr,
-    adrRatio: r.adrRatio,
+    adrRatio: jpAdrRatioShown(r.code, r.adrRatio),
     reportDate: r.reportDate,
     dateStatus: r.dateStatus,
     period: r.periodLabel,

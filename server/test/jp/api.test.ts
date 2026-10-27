@@ -4,7 +4,7 @@ import { openDb } from '../../src/db/repo.js';
 import type { IndexQuote } from '../../src/sources/yahoo.js';
 import { mergeJpActuals, setJpEstimates, syncJpUniverse, upsertJpCalendarRow } from '../../src/jp/db/jpRepo.js';
 import type { JpEarningsResponse, JpReportDto } from '../../src/jp/api/types.js';
-import { JP_INDICES, type JpUniverseEntry } from '../../src/jp/universe.js';
+import { JP_FULL, JP_INDICES, type JpUniverseEntry } from '../../src/jp/universe.js';
 
 const NOW = '2026-10-27T00:00:00.000Z';
 const entry = (code: string, name: string, extra: Partial<JpUniverseEntry> = {}): JpUniverseEntry => ({
@@ -88,7 +88,9 @@ describe('GET /api/jp/earnings', () => {
       expectedMove: null, liveMove: null, previousMove: null,
     });
     expect(row.id).toBeGreaterThan(3_000_000_000);
-    expect(rows.find((r) => r.id === d)).toMatchObject({ level: 'full', adrTicker: 'TM', adrRatio: 10, eps: { actual: null, actualSource: null, actualSpan: null } });
+    // The ratio is display-only and served only when the verify CLI recorded it as verified (20-F vs price-implied).
+    const tmVerified = JP_FULL.find((e) => e.code === '7203')!.adrRatioVerified;
+    expect(rows.find((r) => r.id === d)).toMatchObject({ level: 'full', adrTicker: 'TM', adrRatio: tmVerified ? 10 : null, eps: { actual: null, actualSource: null, actualSpan: null } });
   });
 
   it('rejects bad ranges', async () => {

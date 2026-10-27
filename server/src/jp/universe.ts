@@ -26,19 +26,29 @@ export interface JpFullEntry {
   cik: number;
   /** English name variants as the issuer's releases print them (the 6-K reader allows only these in group headings). */
   names?: readonly string[];
+  /**
+   * The ratio is display-only and shown only when true: `npm run verify-jp-universe` found the 20-F ratio and the
+   * price-implied one (ADR close × USD/JPY ÷ Tokyo close) within 15% of each other. Recorded by hand from its output.
+   */
+  adrRatioVerified: boolean;
 }
 
 /** Live-verified by `npm run verify-jp-universe` (SEC company_tickers.json, Cboe chain, latest 20-F). */
 export const JP_FULL: readonly JpFullEntry[] = [
-  { code: '7203', adr: 'TM', adrRatio: 10, cik: 1094517, names: ['Toyota Motor Corporation'] },
-  { code: '6758', adr: 'SONY', adrRatio: 1, cik: 313838, names: ['Sony Group Corporation'] },
-  { code: '8306', adr: 'MUFG', adrRatio: 1, cik: 67088, names: ['Mitsubishi UFJ Financial Group, Inc.', 'Mitsubishi UFJ Financial Group'] },
-  { code: '8316', adr: 'SMFG', adrRatio: 0.6, cik: 1022837, names: ['Sumitomo Mitsui Financial Group, Inc.', 'Sumitomo Mitsui Financial Group'] },
-  { code: '8411', adr: 'MFG', adrRatio: 2, cik: 1335730, names: ['Mizuho Financial Group, Inc.', 'Mizuho Financial Group'] },
-  { code: '7267', adr: 'HMC', adrRatio: 3, cik: 715153, names: ['Honda Motor Co., Ltd.'] },
-  { code: '8604', adr: 'NMR', adrRatio: 1, cik: 1163653, names: ['Nomura Holdings, Inc.', 'Nomura Holdings'] },
-  { code: '4502', adr: 'TAK', adrRatio: 0.5, cik: 1395064, names: ['Takeda Pharmaceutical Company Limited', 'Takeda Pharmaceutical Co., Ltd.'] },
+  { code: '7203', adr: 'TM', adrRatio: 10, cik: 1094517, names: ['Toyota Motor Corporation'], adrRatioVerified: true },
+  { code: '6758', adr: 'SONY', adrRatio: 1, cik: 313838, names: ['Sony Group Corporation'], adrRatioVerified: true },
+  { code: '8306', adr: 'MUFG', adrRatio: 1, cik: 67088, names: ['Mitsubishi UFJ Financial Group, Inc.', 'Mitsubishi UFJ Financial Group'], adrRatioVerified: true },
+  { code: '8316', adr: 'SMFG', adrRatio: 0.6, cik: 1022837, names: ['Sumitomo Mitsui Financial Group, Inc.', 'Sumitomo Mitsui Financial Group'], adrRatioVerified: false },
+  { code: '8411', adr: 'MFG', adrRatio: 2, cik: 1335730, names: ['Mizuho Financial Group, Inc.', 'Mizuho Financial Group'], adrRatioVerified: false },
+  { code: '7267', adr: 'HMC', adrRatio: 3, cik: 715153, names: ['Honda Motor Co., Ltd.'], adrRatioVerified: true },
+  { code: '8604', adr: 'NMR', adrRatio: 1, cik: 1163653, names: ['Nomura Holdings, Inc.', 'Nomura Holdings'], adrRatioVerified: true },
+  { code: '4502', adr: 'TAK', adrRatio: 0.5, cik: 1395064, names: ['Takeda Pharmaceutical Company Limited', 'Takeda Pharmaceutical Co., Ltd.'], adrRatioVerified: true },
 ];
+
+/** The ADR ratio as served (display only): the stored ratio when the code's full-level entry is verified, else null. */
+export function jpAdrRatioShown(code: string, ratio: number | null, full: readonly Pick<JpFullEntry, 'code' | 'adrRatioVerified'>[] = JP_FULL): number | null {
+  return ratio != null && full.find((e) => e.code === code)?.adrRatioVerified === true ? ratio : null;
+}
 
 /** The 6-K reader's issuer identity for a full-level name (by TSE code or ADR ticker): its names and ADR ticker. */
 export function jpIssuerFor(codeOrAdr: string): { names: readonly string[]; ticker: string } | undefined {
@@ -110,7 +120,7 @@ export function parseEdinetCodeList(csv: string): JpUniverseEntry[] {
 }
 
 /** Full entries override level/ADR/CIK; a full code missing from the list is appended with name = adr. */
-export function buildJpUniverse(listed: JpUniverseEntry[], full: readonly JpFullEntry[] = JP_FULL): JpUniverseEntry[] {
+export function buildJpUniverse(listed: JpUniverseEntry[], full: readonly Pick<JpFullEntry, 'code' | 'adr' | 'adrRatio' | 'cik'>[] = JP_FULL): JpUniverseEntry[] {
   const fullBy = new Map(full.map((f) => [f.code, f]));
   const out = listed.map((e) => {
     const f = fullBy.get(e.code);
