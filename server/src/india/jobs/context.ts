@@ -20,7 +20,7 @@ export interface InJobContext {
 }
 
 /** Runs one India source call; records success/error; never throws. */
-export async function trackIn<T>(ctx: InJobContext, source: string, fn: () => Promise<T>): Promise<T | undefined> {
+export async function trackIn<T>(ctx: { db: DatabaseSync; now(): string }, source: string, fn: () => Promise<T>): Promise<T | undefined> {
   try {
     const result = await fn();
     recordSourceSuccess(ctx.db, source, ctx.now());
@@ -38,7 +38,7 @@ export async function trackIn<T>(ctx: InJobContext, source: string, fn: () => Pr
  * page instead of the feed) backs the fast source off. Never throws; null when neither worked.
  */
 export async function guardedIn<T>(
-  ctx: InJobContext, fast: { name: string; run: () => Promise<T> }, backup: { name: string; run: () => Promise<T> } | null = null,
+  ctx: { db: DatabaseSync; now(): string }, fast: { name: string; run: () => Promise<T> }, backup: { name: string; run: () => Promise<T> } | null = null,
 ): Promise<{ value: T; via: 'fast' | 'backup' } | null> {
   const failover = failoverFor(ctx, ctx.db, () => Date.parse(ctx.now()));
   return failover({ name: fast.name, run: () => blockAware(fast.name, fast.run) }, backup);
