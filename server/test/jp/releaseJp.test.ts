@@ -457,6 +457,60 @@ describe('Task 12b: unit headers "Yen (millions)", "JPY (millions)", "Million JP
   });
 });
 
+describe('Task 12b: summaries with periods in rows (banks)', () => {
+  const Q3 = { periodEnd: '2025-12-31', fiscalQuarter: 3 as const };
+  const Q1 = { periodEnd: '2026-06-30', fiscalQuarter: 1 as const };
+  const eps = (rows: string) => `<table>${tr('', 'Earnings per Share of Common Stock', 'Diluted Earnings per Share of Common Stock')}${tr('', '&yen;', '&yen;')}${rows}</table>`;
+
+  it('S1: a "&yen; 131.62" figure cell is read, and its ¥ sign states the currency', () => {
+    const html = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 131.62', '&yen; 131.59')}${tr('Three months ended June 30, 2025', '97.46', '97.44')}</table>`;
+    expect(readJpRelease(html, Q1)).toMatchObject({ eps: 131.62, epsDiluted: 131.59, span: 'quarter', currency: 'JPY' });
+    // A statement / note layout still needs its header or caption to name the currency (unchanged rule).
+    const note = `<p>(Per Share Information)</p><table>${tr('', 'For the three months ended June 30, 2026')}${tr('Basic earnings per common share', '&yen;', '131.62')}</table>`;
+    expect(readJpRelease(note, Q1)).toMatchObject({ eps: null });
+  });
+
+  it('S2: a "3Q F2025" row is dated only through the document\'s own definition of that label', () => {
+    const def = '<p>1. Financial Highlights for the Third Quarter of Fiscal 2025 (for the nine months ended December 31, 2025)</p>';
+    const rows = tr('3Q F2025', '409.21', '409.21') + tr('3Q F2024', '337.64', '337.64');
+    expect(readJpRelease(def + eps(rows), Q3)).toMatchObject({ eps: 409.21, epsDiluted: 409.21, span: 'ytd', ytdMonths: 9, currency: 'JPY' });
+    // No definition: the token row stays undated → blank.
+    expect(readJpRelease(eps(rows), Q3)).toMatchObject({ eps: null, epsDiluted: null, span: null });
+    // A definition of another label ("Fiscal 2025") does not date "3Q F2025".
+    const other = '<p>Financial Highlights for Fiscal 2025 (for the fiscal year ended March 31, 2026)</p>';
+    expect(readJpRelease(other + eps(rows), Q3)).toMatchObject({ eps: null, span: null });
+  });
+
+  it('S3: conflicting definitions of one label → blank; a "3Q" defined as nine months is never the quarter', () => {
+    const rows = tr('3Q F2025', '409.21', '409.21');
+    const two = '<p>Third Quarter of Fiscal 2025 (for the nine months ended December 31, 2025)</p><p>Third Quarter of Fiscal 2025 (for the three months ended December 31, 2025)</p>';
+    expect(readJpRelease(two + eps(rows), Q3)).toMatchObject({ eps: null, span: null });
+    const nine = '<p>Third Quarter of Fiscal 2025 (for the nine months ended December 31, 2025)</p>';
+    expect(readRelease(nine + eps(rows), { periodEnd: '2025-12-31', span: 'quarter', profile: 'jp', fiscalQuarter: 3, fiscalYear: 2026 })).toMatchObject({ epsBasic: null, epsGaap: null });
+  });
+
+  it('S4: a forecast definition ("fiscal year ending") dates nothing; a row with more than the label is not a token row', () => {
+    const rows = tr('Fiscal 2025', '502.92', '502.92');
+    const ending = '<p>Forecast for Fiscal 2025 (for the fiscal year ending March 31, 2026)</p>';
+    expect(readJpRelease(ending + eps(rows), { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ eps: null, span: null });
+    const def = '<p>Financial Highlights for Fiscal 2025 (for the fiscal year ended March 31, 2026)</p>';
+    expect(readJpRelease(def + eps(rows), { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ eps: 502.92, span: 'ytd', ytdMonths: 12 });
+    expect(readJpRelease(def + eps(tr('Fiscal 2025 (estimate)', '502.92', '502.92')), { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ eps: null });
+  });
+
+  it('Mizuho: "1Q F2026" / "3Q F2025" / "Fiscal 2025" summary rows', () => {
+    expect(six('MFG_2026-06-30.htm', '2026-06-30', 1)).toEqual({ revenue: null, eps: 173.53, epsDiluted: 173.53, currency: 'JPY', span: 'quarter', ytdMonths: null });
+    expect(six('MFG_2025-12-31.htm', '2025-12-31', 3)).toEqual({ revenue: null, eps: 409.21, epsDiluted: 409.21, currency: 'JPY', span: 'ytd', ytdMonths: 9 });
+    expect(six('MFG_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: null, eps: 502.92, epsDiluted: 502.92, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
+  });
+
+  it('SMFG: "Three months ended June 30, 2026" summary rows with "&yen;" figures', () => {
+    expect(six('SMFG_2026-06-30.htm', '2026-06-30', 1)).toEqual({ revenue: null, eps: 131.62, epsDiluted: 131.59, currency: 'JPY', span: 'quarter', ytdMonths: null });
+    expect(six('SMFG_2025-12-31.htm', '2025-12-31', 3)).toEqual({ revenue: null, eps: 362.2, epsDiluted: 362.12, currency: 'JPY', span: 'ytd', ytdMonths: 9 });
+    expect(six('SMFG_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: null, eps: 411.97, epsDiluted: 411.88, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
+  });
+});
+
 describe("readRelease profile 'jp'", () => {
   it('yen is detected only under jp: the hk profile reads nothing from a yen table', () => {
     const html = table('(Millions of yen, except per share amounts)',

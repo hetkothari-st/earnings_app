@@ -900,9 +900,68 @@ function jpColumn(own: string, labelCol: string, block: string, pe: Date, span: 
   return JP_EXPLICIT_SPAN.test(exclusive);
 }
 
+/**
+ * A period label that the document itself defines: "Third Quarter of Fiscal 2025 (for the nine months ended
+ * December 31, 2025)", "Financial Highlights for Fiscal 2025 (for the fiscal year ended March 31, 2026)". The
+ * parenthesis must state the span and an "ended" date (a forecast's "ending" defines nothing).
+ */
+const JP_PERIOD_DEFINITION = new RegExp(
+  String.raw`(?:\b(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\s+of\s+)?\b(?:fiscal\s+(?:year\s+)?|fy\s?)(\d{4})\s*` +
+  String.raw`\(\s*(?:for\s+)?the\s+((?:three|six|nine|twelve)\s+months|fiscal\s+year)\s+ended\s+(${MONTH_RE}\.?\s+\d{1,2}\s*,?\s*\d{4})\s*\)`,
+  'gi',
+);
+const JP_ORDINAL: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, '1st': 1, '2nd': 2, '3rd': 3, '4th': 4 };
+/** A row label that is only a fiscal-period token: "1Q F2026", "3Q FY2025", "Q3 FY2025", "Fiscal 2025", "FY2025". */
+const JP_TOKEN_LABEL = /^(?:([1-4])q\s*|q([1-4])\s+)?(?:f|fy|fiscal)\s?'?(\d{4})$/i;
+
+/**
+ * The document's own definitions of fiscal-period labels, keyed "quarter:fiscal-year label" (quarter 0 = the whole
+ * fiscal year), as the defining phrase ("nine months ended December 31, 2025"); null when two definitions disagree.
+ */
+function jpPeriodDefinitions(html: string): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  for (const m of decode(html).matchAll(JP_PERIOD_DEFINITION)) {
+    const key = `${m[1] ? JP_ORDINAL[m[1].toLowerCase()] : 0}:${m[2]}`;
+    const phrase = `${m[3]!.replace(/\s+/g, ' ')} ended ${m[4]!.replace(/\s+/g, ' ')}`.toLowerCase();
+    out.set(key, out.has(key) && out.get(key) !== phrase ? null : phrase);
+  }
+  return out;
+}
+
+/** A token row label resolved through the document's definitions: the defining phrase, null if undefined / ambiguous, undefined if not a token label. */
+function jpTokenPeriod(label: string, defs: Map<string, string | null>): string | null | undefined {
+  const m = label.trim().match(JP_TOKEN_LABEL);
+  if (!m) return undefined;
+  return defs.get(`${m[1] ?? m[2] ?? 0}:${m[3]}`) ?? null;
+}
+
+/** The first cell of a note row inside a table: "Note:", "Notes:", a bare "1." / "2)", or "(a) …". */
+const JP_NOTE_ROW = /^(?:notes?\s*:?|\d{1,2}\s*[.)]|\([a-z]\)\s.*)$/i;
+
+/** A "¥" sign on a figure ("¥ 131.62", or a "¥" cell just before it): the figure is in yen. */
+const JP_YEN_FIGURE = /^¥\s*(?=[(\-–−]?\d)/;
+
+/** Cells with "&yen;" decoded and a leading "¥" taken off figures; `yen` holds the starts of figures signed "¥". */
+function jpCells(cells: Cell[]): { cells: Cell[]; yen: Set<number> } {
+  const yen = new Set<number>();
+  const out = cells.map((c) => {
+    const text = c.text.replace(/&yen;/gi, '¥');
+    if (JP_YEN_FIGURE.test(text)) { yen.add(c.start); return { ...c, text: text.replace(JP_YEN_FIGURE, '') }; }
+    return text === c.text ? c : { ...c, text };
+  });
+  out.forEach((c, i) => {
+    if (c.text !== '¥') return;
+    const next = out.slice(i + 1).find((x) => x.text);
+    if (next && isFigure(next.text)) yen.add(next.start);
+  });
+  return { cells: out, yen };
+}
+
 interface JpRow {
   /** 'row': the label names the field, the columns the period; 'cross': the label names the period, the columns the field. */
   kind: 'row' | 'cross';
+  /** Starts of the figures signed "¥". */
+  yen: Set<number>;
   field: JpField | null;
   nums: Num[];
   headers: Cell[][];
@@ -926,6 +985,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
   const isEpsField = (f: JpField | null) => f === 'basic' || f === 'diluted' || f === 'both';
 
   const nonConsolidated = jpNonConsolidatedSections(html);
+  const defs = jpPeriodDefinitions(html);
   for (const [ti, table] of parseTables(html, { rowspan: true }).entries()) {
     const caption = tableCaption(table, true);
     // Forecast tables and tables in the parent company's own (non-consolidated) sections are never read.
@@ -940,10 +1000,12 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
     let hasEps = false;
     const rowsOut: JpRow[] = [];
 
-    for (const cells of table.rows) {
+    for (const rawCells of table.rows) {
+      const { cells, yen } = jpCells(rawCells);
       const li = cells.findIndex((c) => c.text);
       const first = cells[li]!;
-      const hasLabel = /[a-z]/i.test(first.text) && !/^\(?\s*\d/.test(first.text);
+      // A row label: text that does not start with a figure, or a fiscal-period token ("3Q F2025").
+      const hasLabel = (/[a-z]/i.test(first.text) && !/^\(?\s*\d/.test(first.text)) || JP_TOKEN_LABEL.test(first.text.trim());
       const nums = rowNumbers(cells, hasLabel ? li + 1 : li);
       const yearRow = nums.length > 0 && nums.every((n) => isYear(n) && !n.dollar && !n.pct);
       const otherText = cells.slice(li + 1).some((c) => c.text);
@@ -957,15 +1019,28 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
         const field = jpField(label, perShare);
         if (isEpsField(field)) hasEps = true;
         const vals = nums.filter((n) => !n.pct);
+        const token = jpTokenPeriod(first.text, defs);
         if (vals.length) {
-          if (field) rowsOut.push({ kind: 'row', field, nums: vals, headers, label, rawLabel: first.text, period: '' });
-          // Summary layout: the row label itself must name the period ("June 30, 2026", "Six months ended …").
-          else if (jpDates(first.text).length || jpKinds(first.text).size) rowsOut.push({ kind: 'cross', field: null, nums: vals, headers, label, rawLabel: first.text, period: `${sectionRaw} ${first.text}`.trim() });
+          if (field) rowsOut.push({ kind: 'row', yen, field, nums: vals, headers, label, rawLabel: first.text, period: '' });
+          // Summary layout: a token label ("3Q F2025") is dated only by the document's own definition of it.
+          else if (token !== undefined) { if (token) rowsOut.push({ kind: 'cross', yen, field: null, nums: vals, headers, label, rawLabel: first.text, period: token }); }
+          // Otherwise the row label itself must name the period ("June 30, 2026", "Six months ended …").
+          else if (jpDates(first.text).length || jpKinds(first.text).size) rowsOut.push({ kind: 'cross', yen, field: null, nums: vals, headers, label, rawLabel: first.text, period: `${sectionRaw} ${first.text}`.trim() });
         }
         if (/:\s*$/.test(first.text)) { section = jpLabel(first.text); sectionRaw = first.text; }
         continue;
       }
       nonData.push(cells.map((c) => c.text).join(' '));
+      // A note row ("Notes: | 1. | Comprehensive income:", "2. | Percentages shown …", "(a) for the three months …")
+      // heads no column: it ends the header block above it and is not part of the next one.
+      if (JP_NOTE_ROW.test(first.text)) {
+        headers = [];
+        titles = [];
+        lastWasData = false;
+        section = '';
+        sectionRaw = '';
+        continue;
+      }
       if (cells.some((c) => c.text && isEpsField(jpField(jpLabel(c.text), false)))) hasEps = true;
       if (!otherText) {
         // Label-only row: a section ("Earnings per share attributable to …", "For the three months ended") or a title.
@@ -1026,10 +1101,13 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
         }
         if (!field) continue;
         // Currency: the column's own header, else the row label, else the table's text and caption. US$ is skipped.
+        // In the summary layout the field header names no currency ("Earnings per share"): there the figure's own
+        // "¥" sign ("¥ 131.62", SMFG) also states it. Statement / note layouts keep the header / caption rule.
         const curOwn = jpCurrency(over);
         const curLabel = jpCurrency(row.rawLabel);
         if (curOwn === 'USD' || curOwn === null || curLabel === 'USD' || curLabel === null) continue;
-        if ((curOwn ?? curLabel ?? jpCurrency(tableText)) !== 'JPY') continue;
+        const curSign = row.kind === 'cross' && row.yen.has(n.start) ? 'JPY' : undefined;
+        if ((curSign ?? curOwn ?? curLabel ?? jpCurrency(tableText)) !== 'JPY') continue;
 
         if (field === 'revenue') {
           if (n.value <= 0 || n.decimals > 2 || !statement) continue;
