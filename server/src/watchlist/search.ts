@@ -9,7 +9,8 @@ import type { WatchMarket } from './store.js';
 export type { SymbolEntry };
 
 /** An index entry; `weight` (market cap) orders ties within a match class, `words` is precomputed. */
-export type IndexEntry = SymbolEntry & { weight?: number; words?: string[] };
+/** `nameJa` (Japan) is matched as a substring, since Japanese has no A-Z words. */
+export type IndexEntry = SymbolEntry & { weight?: number; words?: string[]; nameJa?: string };
 
 const words = (s: string) => s.toUpperCase().split(/[^A-Z0-9&]+/).filter(Boolean);
 
@@ -23,7 +24,7 @@ export function rankSymbols(entries: IndexEntry[], q: string, limit = 20): Symbo
   const scored: [number, IndexEntry][] = [];
   for (const e of entries) {
     const sym = e.symbol.toUpperCase();
-    const rank = sym === needle ? 0 : sym.startsWith(needle) ? 1 : (e.words ?? words(e.name)).some((w) => w.startsWith(needle)) ? 2 : -1;
+    const rank = sym === needle ? 0 : sym.startsWith(needle) ? 1 : (e.words ?? words(e.name)).some((w) => w.startsWith(needle)) || (e.nameJa != null && e.nameJa.includes(q.trim())) ? 2 : -1;
     if (rank >= 0) scored.push([rank, e]);
   }
   scored.sort((x, y) => x[0] - y[0] || (y[1].weight ?? 0) - (x[1].weight ?? 0)
@@ -33,9 +34,9 @@ export function rankSymbols(entries: IndexEntry[], q: string, limit = 20): Symbo
 
 /** In-memory symbol lists per market. Loaded in the background, never inside a request. */
 export class SymbolIndex {
-  private lists: Record<WatchMarket, IndexEntry[]> = { US: [], IN: [], HK: [] };
-  private sets: Record<WatchMarket, Set<string>> = { US: new Set(), IN: new Set(), HK: new Set() };
-  private names: Record<WatchMarket, Map<string, string>> = { US: new Map(), IN: new Map(), HK: new Map() };
+  private lists: Record<WatchMarket, IndexEntry[]> = { US: [], IN: [], HK: [], JP: [] };
+  private sets: Record<WatchMarket, Set<string>> = { US: new Set(), IN: new Set(), HK: new Set(), JP: new Set() };
+  private names: Record<WatchMarket, Map<string, string>> = { US: new Map(), IN: new Map(), HK: new Map(), JP: new Map() };
   set(market: WatchMarket, entries: IndexEntry[]): void {
     this.lists[market] = entries.map((e) => ({ ...e, words: words(e.name) }));
     this.sets[market] = new Set(entries.map((e) => e.symbol));
@@ -81,6 +82,17 @@ export function hkEntries(db?: Db): IndexEntry[] {
   });
 }
 
+/** Japan: active jp_stocks; English and Japanese names are both searchable (the served name is the Yahoo one when known). */
+export function jpEntries(db?: Db): IndexEntry[] {
+  if (!db) return [];
+  const rows = db.prepare('SELECT code, COALESCE(profile_name, name) AS name, name_ja AS nameJa, market_cap AS cap FROM jp_stocks WHERE active = 1')
+    .all() as { code: string; name: string; nameJa: string | null; cap: number | null }[];
+  return rows.map((r) => ({
+    symbol: r.code, name: r.name, exchange: 'TSE', weight: r.cap ?? undefined,
+    ...(r.nameJa ? { nameJa: r.nameJa } : {}),
+  }));
+}
+
 /**
  * Loads the lists now and every 24 h. A failed load keeps the previous list; the timer does not keep the process alive.
  * Until a market is loaded its search is empty and PUT falls back to a format check.
@@ -110,5 +122,6 @@ export function startSymbolRefresh(
   run('US');
   run('IN');
   run('HK');
+  run('JP');
   return () => { stopped = true; for (const t of timers.values()) clearTimeout(t); };
 }

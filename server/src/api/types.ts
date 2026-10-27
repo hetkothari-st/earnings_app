@@ -1,6 +1,7 @@
 // Type-only module shared with the web app. No runtime code here.
 import type { InReportDto } from '../india/api/types.js';
 import type { HkReportDto } from '../hk/api/types.js';
+import type { JpReportDto } from '../jp/api/types.js';
 export type Timing = 'BMO' | 'AMC' | 'DMH' | 'UNKNOWN';
 export type TimingSource = 'nasdaq' | 'finnhub' | 'sec' | 'investing' | null;
 export type SecCheck = 'verified' | 'consistent' | 'derived' | 'contradicted' | 'unverifiable';
@@ -79,7 +80,7 @@ export interface CoverageRow { field: string; filled: number; total: number; pct
 export interface StatusResponse {
   sources: SourceStatusDto[];
   counts: { reports: number; withExpectedMove: number; secVerified: number };
-  coverage: { US: CoverageRow[]; IN: CoverageRow[]; HK: CoverageRow[] };
+  coverage: { US: CoverageRow[]; IN: CoverageRow[]; HK: CoverageRow[]; JP: CoverageRow[] };
 }
 
 export interface MarketIndexDto {
@@ -115,7 +116,7 @@ export interface WatchHistoryDto {
 export interface WatchRow {
   symbol: string;
   name: string;
-  next: ReportDto | InReportDto | HkReportDto | null;
-  latest: ReportDto | InReportDto | HkReportDto | WatchHistoryDto | null;
+  next: ReportDto | InReportDto | HkReportDto | JpReportDto | null;
+  latest: ReportDto | InReportDto | HkReportDto | JpReportDto | WatchHistoryDto | null;
 }
 export interface WatchRowsResponse { rows: WatchRow[] }

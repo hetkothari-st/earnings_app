@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { type Db, getReport } from '../db/repo.js';
 import { getHkReport } from '../hk/db/hkRepo.js';
+import { getJpReport } from '../jp/db/jpRepo.js';
 import { getInReport } from '../india/db/inRepo.js';
 import { listNotes, MAX_NOTE_LENGTH, setNote } from './store.js';
 
@@ -18,7 +19,7 @@ export function registerNotes(
     const user = currentUser(req);
     if (!user) return reply.code(401).send({ error: 'Not signed in' });
     const reportId = Number((req.params as { reportId: string }).reportId);
-    if (!Number.isInteger(reportId) || !(getReport(db, reportId) ?? getInReport(db, reportId) ?? getHkReport(db, reportId))) return reply.code(404).send({ error: 'Report not found' });
+    if (!Number.isInteger(reportId) || !(getReport(db, reportId) ?? getInReport(db, reportId) ?? getHkReport(db, reportId) ?? getJpReport(db, reportId))) return reply.code(404).send({ error: 'Report not found' });
     const text = (req.body as { text?: unknown } | null)?.text;
     if (typeof text !== 'string' || text.length > MAX_NOTE_LENGTH) {
       return reply.code(400).send({ error: `text must be a string of up to ${MAX_NOTE_LENGTH} characters` });

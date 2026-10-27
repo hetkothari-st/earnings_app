@@ -4,7 +4,7 @@ import type { CoverageRow } from '../api/types.js';
 
 export type { CoverageRow };
 
-type Market = 'US' | 'IN' | 'HK';
+type Market = 'US' | 'IN' | 'HK' | 'JP';
 
 interface FieldDef { field: string; min: number; filled: string; withinWeek?: boolean; where?: string }
 
@@ -31,6 +31,13 @@ const FIELDS: Record<Market, FieldDef[]> = {
     // Only full-level names have an ADR straddle.
     { field: 'expectedMove', min: 60, filled: 'EXISTS (SELECT 1 FROM hk_expected_moves e WHERE e.report_id = r.id)', withinWeek: true, where: "s.level = 'full'" },
   ],
+  JP: [
+    { field: 'epsEstimate', min: 30, filled: 'r.eps_estimate IS NOT NULL' },
+    { field: 'marketCap', min: 90, filled: 's.market_cap IS NOT NULL' },
+    { field: 'previousMove', min: 30, filled: 'r.prev_move_pct IS NOT NULL', withinWeek: true },
+    // Only full-level names have an ADR straddle.
+    { field: 'expectedMove', min: 60, filled: 'EXISTS (SELECT 1 FROM jp_expected_moves e WHERE e.report_id = r.id)', withinWeek: true, where: "s.level = 'full'" },
+  ],
 };
 
 /** How much of the next 14 days' reports (7 for expectedMove) have each field. `today` is the market's own date. */
@@ -45,7 +52,8 @@ export function computeCoverage(db: Db, market: Market, today: string): Coverage
   const to7 = addDays(today, 7);
   const source = market === 'US' ? 'reports r'
     : market === 'IN' ? 'in_reports r JOIN in_stocks s ON s.symbol = r.symbol AND s.active = 1'
-    : 'hk_reports r JOIN hk_stocks s ON s.code = r.code AND s.active = 1';
+    : market === 'HK' ? 'hk_reports r JOIN hk_stocks s ON s.code = r.code AND s.active = 1'
+    : 'jp_reports r JOIN jp_stocks s ON s.code = r.code AND s.active = 1';
   return FIELDS[market].map((f) => {
     const to = f.withinWeek ? to7 : to14;
     const row = db.prepare(`SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN ${f.filled} THEN 1 ELSE 0 END), 0) AS filled
@@ -65,12 +73,14 @@ export function coverageTable(label: string, rows: CoverageRow[]): string {
 }
 
 /** Prints the tables through `log`; returns the process exit code (1 when any field is below its minimum). */
-export function runCoverageCheck(db: Db, todayUs: string, todayIn: string, todayHk: string, log: (line: string) => void): number {
+export function runCoverageCheck(db: Db, todayUs: string, todayIn: string, todayHk: string, todayJp: string, log: (line: string) => void): number {
   const us = computeCoverage(db, 'US', todayUs);
   const india = computeCoverage(db, 'IN', todayIn);
   log(coverageTable('US', us));
   const hk = computeCoverage(db, 'HK', todayHk);
   log(coverageTable('IN', india));
   log(coverageTable('HK', hk));
-  return [...us, ...india, ...hk].every((r) => r.ok) ? 0 : 1;
+  const jp = computeCoverage(db, 'JP', todayJp);
+  log(coverageTable('JP', jp));
+  return [...us, ...india, ...hk, ...jp].every((r) => r.ok) ? 0 : 1;
 }
