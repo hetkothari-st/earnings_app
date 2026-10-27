@@ -5,6 +5,7 @@ import type { JobContext } from '../../src/jobs/context.js';
 import { SecWatch } from '../../src/live/secWatch.js';
 import { HttpError } from '../../src/sources/http.js';
 import type { Http } from '../../src/sources/http.js';
+import type { SecFeedItem } from '../../src/sources/secFeed.js';
 import type { CalendarRow } from '../../src/types.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/us/${n}`, import.meta.url), 'utf8');
@@ -16,7 +17,7 @@ const udr = (over: Partial<CalendarRow> = {}): CalendarRow => ({
   lastYearEps: null, lastYearReportDate: null, ...over,
 });
 
-function setup(opts: { feed?: () => Promise<string>; row?: Partial<CalendarRow>; reader?: (u: string, id: number) => Promise<void> } = {}) {
+function setup(opts: { feed?: () => Promise<string>; row?: Partial<CalendarRow>; reader?: (u: string, id: number) => Promise<void>; onFeed?: (items: SecFeedItem[]) => void } = {}) {
   const db = openDb(':memory:');
   const ctx: JobContext = {
     db, now: () => NOW, today: () => '2026-10-21',
@@ -29,7 +30,7 @@ function setup(opts: { feed?: () => Promise<string>; row?: Partial<CalendarRow>;
     text: async (u) => { urls.push(u); return u.includes('browse-edgar') ? (opts.feed ?? (async () => fx('sec_getcurrent_8k.xml')))() : fx('sec_index_udr_ex99.htm'); },
   };
   const released: number[][] = [];
-  const watch = new SecWatch(ctx, http, (ids) => released.push(ids), opts.reader);
+  const watch = new SecWatch(ctx, http, (ids) => released.push(ids), opts.reader, opts.onFeed);
   const row = () => listRange(db, { from: '2000-01-01', to: '2100-01-01', minCap: null, q: null })[0]!;
   return { db, ctx, watch, released, row, urls };
 }
@@ -104,5 +105,22 @@ describe('SecWatch', () => {
     expect(t.row()).toMatchObject({ reportDate: '2026-10-21', rescheduledFrom: '2026-10-20', timing: 'BMO', timingSource: 'sec' });
     mergeFinnhubRow(t.db, { symbol: 'UDR', reportDate: '2026-10-21', timing: 'AMC', revenueEstimate: 1, revenueActual: null, epsActual: null }, NOW);
     expect(t.row()).toMatchObject({ reportDate: '2026-10-21', timing: 'BMO', timingSource: 'sec' });
+  });
+
+  test('onFeed receives fresh items once; its errors are caught and the flip still happens', async () => {
+    const calls: SecFeedItem[][] = [];
+    const t = setup({ onFeed: (items) => { calls.push(items); } });
+    await t.watch.tick();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.length).toBeGreaterThan(1);
+    expect(calls[0]!.some((i) => i.accession === '0000074208-26-000081')).toBe(true);
+    await t.watch.tick();
+    expect(calls).toHaveLength(1); // same feed again: nothing fresh, no call
+
+    const boom = setup({ onFeed: () => { throw new Error('boom'); } });
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await boom.watch.tick()).toEqual([boom.row().id]);
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('onFeed: boom'));
+    err.mockRestore();
   });
 });

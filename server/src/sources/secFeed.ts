@@ -2,8 +2,8 @@ import { BlockedError, looksBlocked } from './failover.js';
 import { HttpError, SourceFormatError } from './http.js';
 import type { Http } from './http.js';
 
-const FEED_URL =
-  'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&start=0&count=100&output=atom';
+const feedUrl = (form: '8-K' | '6-K'): string =>
+  `https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=${form}&company=&dateb=&owner=include&start=0&count=100&output=atom`;
 
 export interface SecFeedItem {
   cik: number;
@@ -11,7 +11,7 @@ export interface SecFeedItem {
   acceptedAt: string; // ISO UTC
   items: string[];    // e.g. ['2.02', '7.01', '9.01']
   indexUrl: string;
-  form: string;       // '8-K' | '8-K/A'
+  form: string;       // '8-K' | '8-K/A' | '6-K' | '6-K/A'
 }
 
 function decodeEntities(s: string): string {
@@ -67,11 +67,27 @@ export function parseFilingIndex(html: string, indexUrl: string): { exhibit991Ur
   return { exhibit991Url: first };
 }
 
-/** Fetch the latest 100 8-K filings. A block (403/429 or a 200 challenge page) throws BlockedError. */
-export async function fetchSecFeed(http: Http): Promise<SecFeedItem[]> {
+export interface FilingDoc { type: string; url: string; description: string }
+
+/** Every document row of a filing index page (type, absolute url, description), from the same table walk as parseFilingIndex. */
+export function parseFilingDocs(html: string, indexUrl: string): FilingDoc[] {
+  const out: FilingDoc[] = [];
+  for (const row of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...row[1]!.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((c) => c[1]!);
+    const type = cells[3]?.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+    const href = cells[2]?.match(/href="([^"]+)"/i)?.[1];
+    if (!type || !href) continue; // the "Complete submission text file" row has no type
+    const description = decodeEntities((cells[1] ?? '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')).trim();
+    out.push({ type, url: new URL(href.replace(/^\/ix\?doc=/, ''), indexUrl).toString(), description });
+  }
+  return out;
+}
+
+/** Fetch the latest 100 filings of one form (8-K by default). A block (403/429 or a 200 challenge page) throws BlockedError. */
+export async function fetchSecFeed(http: Http, form: '8-K' | '6-K' = '8-K'): Promise<SecFeedItem[]> {
   let text: string;
   try {
-    text = await http.text(FEED_URL);
+    text = await http.text(feedUrl(form));
   } catch (err) {
     if (err instanceof HttpError && (err.status === 403 || err.status === 429)) {
       throw new BlockedError('sec', `HTTP ${err.status}`);

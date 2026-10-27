@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BlockedError } from '../../src/sources/failover.js';
 import { HttpError, SourceFormatError } from '../../src/sources/http.js';
 import type { Http } from '../../src/sources/http.js';
-import { fetchSecFeed, parseFilingIndex, parseSecFeed } from '../../src/sources/secFeed.js';
+import { fetchSecFeed, parseFilingDocs, parseFilingIndex, parseSecFeed } from '../../src/sources/secFeed.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/us/${n}`, import.meta.url), 'utf8');
 const stub = (text: () => Promise<string>, urls: string[] = []): Http => ({
@@ -58,5 +58,36 @@ describe('fetchSecFeed', () => {
     await expect(fetchSecFeed(stub(async () => { throw new HttpError(429, 'u'); }))).rejects.toBeInstanceOf(BlockedError);
     await expect(fetchSecFeed(stub(async () => { throw new HttpError(403, 'u'); }))).rejects.toBeInstanceOf(BlockedError);
     await expect(fetchSecFeed(stub(async () => { throw new HttpError(500, 'u'); }))).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+const hk = (n: string) => readFileSync(new URL(`../fixtures/hk/${n}`, import.meta.url), 'utf8');
+
+describe('6-K support', () => {
+  it('6-K feed parses with empty items and form 6-K', () => {
+    const items = parseSecFeed(hk('sec_getcurrent_6k.xml'));
+    expect(items).toHaveLength(100);
+    expect(items.every((i) => i.items.length === 0)).toBe(true);
+    expect(items.filter((i) => i.form === '6-K').length).toBeGreaterThan(80);
+    expect(items[0]).toMatchObject({ cik: 1073404, accession: '0001104659-26-118865', form: '6-K', acceptedAt: '2026-10-26T21:20:26.000Z' });
+  });
+
+  it('fetchSecFeed(http, "6-K") requests type=6-K; the default still requests type=8-K', async () => {
+    const urls: string[] = [];
+    await fetchSecFeed(stub(async () => hk('sec_getcurrent_6k.xml'), urls), '6-K');
+    await fetchSecFeed(stub(async () => fx('sec_getcurrent_8k.xml'), urls));
+    expect(urls[0]).toContain('type=6-K&');
+    expect(urls[1]).toBe('https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&start=0&count=100&output=atom');
+  });
+
+  it('parseFilingDocs lists every document with type and absolute url', () => {
+    const url = 'https://www.sec.gov/Archives/edgar/data/1577552/000110465926099220/0001104659-26-099220-index.htm';
+    const docs = parseFilingDocs(hk('sec_index_baba_results.htm'), url);
+    expect(docs.map((d) => d.type)).toEqual(['6-K', 'EX-99.1', 'GRAPHIC']);
+    expect(docs[1]).toEqual({
+      type: 'EX-99.1', description: 'EXHIBIT 99.1',
+      url: 'https://www.sec.gov/Archives/edgar/data/1577552/000110465926099220/tm2623667d1_ex99-1.htm',
+    });
+    expect(parseFilingIndex(hk('sec_index_baba_results.htm'), url).exhibit991Url).toBe(docs[1]!.url);
   });
 });

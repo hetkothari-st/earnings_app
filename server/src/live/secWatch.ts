@@ -22,6 +22,7 @@ export class SecWatch {
     private http: Http,
     private readonly onReleased: (ids: number[]) => void,
     private readonly reader?: (exhibitUrl: string, reportId: number) => Promise<void>,
+    private readonly onFeed?: (items: SecFeedItem[]) => void,
   ) {
     this.failover = createFailover(ctx.db, () => Date.parse(ctx.now()));
   }
@@ -46,6 +47,9 @@ export class SecWatch {
     const res = await this.failover({ name: 'sec-feed', run: () => fetchSecFeed(this.http) }, null);
     if (!res) return [];
     const fresh = res.value.filter((i) => !this.seen.has(i.accession));
+    if (this.onFeed && fresh.length > 0) {
+      try { this.onFeed(fresh); } catch (err) { console.error(`[sec-feed] onFeed: ${err instanceof Error ? err.message : String(err)}`); }
+    }
     const targets = fresh.filter((i) => i.items.includes('2.02'));
     // Only mark accessions seen once handled, so a transient failure below retries them next tick.
     const markSeen = () => { for (const i of fresh) this.seen.add(i.accession); this.trimSeen(); };
