@@ -1,0 +1,77 @@
+{
+  "source": "hand-built",
+  "sourceNote": "No EDINET_API_KEY on 2026-10-27. Shape follows the EDINET API v2 specification (documents.json, type=2). The first row (docID, name, time) is real, as seen in the EDINET viewer; the other rows are made up to exercise the filter. LIVE API CHECK PENDING.",
+  "metadata": {
+    "title": "提出された書類を把握するためのAPI",
+    "parameter": { "date": "2026-06-25", "type": "2" },
+    "resultset": { "count": 7 },
+    "processDateTime": "2026-06-26 00:05",
+    "status": "200",
+    "message": "OK"
+  },
+  "results": [
+    {
+      "seqNumber": 1, "docID": "S100Y9NX", "edinetCode": "E02367", "secCode": "79740", "JCN": "1130001011420",
+      "filerName": "任天堂株式会社", "fundCode": null, "ordinanceCode": "010", "formCode": "030000", "docTypeCode": "120",
+      "periodStart": "2025-04-01", "periodEnd": "2026-03-31", "submitDateTime": "2026-06-25 15:30",
+      "docDescription": "有価証券報告書－第86期(2025/04/01－2026/03/31)", "issuerEdinetCode": null, "subjectEdinetCode": null,
+      "subsidiaryEdinetCode": null, "currentReportReason": null, "parentDocID": null, "opeDateTime": null,
+      "withdrawalStatus": "0", "docInfoEditStatus": "0", "disclosureStatus": "0", "xbrlFlag": "1", "pdfFlag": "1",
+      "attachDocFlag": "1", "englishDocFlag": "0", "csvFlag": "1", "legalStatus": "1"
+    },
+    {
+      "seqNumber": 2, "docID": "S100ZZA0", "edinetCode": "E99000", "secCode": "44440", "JCN": null,
+      "filerName": "特定有価証券株式会社", "fundCode": null, "ordinanceCode": "030", "formCode": "030000", "docTypeCode": "120",
+      "periodStart": "2025-04-01", "periodEnd": "2026-03-31", "submitDateTime": "2026-06-25 14:00",
+      "docDescription": "有価証券報告書（内国投資信託受益証券）", "issuerEdinetCode": null, "subjectEdinetCode": null,
+      "subsidiaryEdinetCode": null, "currentReportReason": null, "parentDocID": null, "opeDateTime": null,
+      "withdrawalStatus": "0", "docInfoEditStatus": "0", "disclosureStatus": "0", "xbrlFlag": "1", "pdfFlag": "1",
+      "attachDocFlag": "1", "englishDocFlag": "0", "csvFlag": "1", "legalStatus": "1"
+    },
+    {
+      "seqNumber": 3, "docID": "S100ZZA1", "edinetCode": "E99001", "secCode": "285A0", "JCN": null,
+      "filerName": "サンプル半期株式会社", "fundCode": null, "ordinanceCode": "010", "formCode": "043A00", "docTypeCode": "160",
+      "periodStart": "2026-01-01", "periodEnd": "2026-06-30", "submitDateTime": "2026-06-25 09:00",
+      "docDescription": "半期報告書", "issuerEdinetCode": null, "subjectEdinetCode": null,
+      "subsidiaryEdinetCode": null, "currentReportReason": null, "parentDocID": null, "opeDateTime": null,
+      "withdrawalStatus": "0", "docInfoEditStatus": "0", "disclosureStatus": "0", "xbrlFlag": "1", "pdfFlag": "1",
+      "attachDocFlag": "0", "englishDocFlag": "0", "csvFlag": "1", "legalStatus": "1"
+    },
+    {
+      "seqNumber": 4, "docID": "S100ZZA2", "edinetCode": "E99002", "secCode": "11110", "JCN": null,
+      "filerName": "訂正株式会社", "fundCode": null, "ordinanceCode": "010", "formCode": "030001", "docTypeCode": "130",
+      "periodStart": "2025-04-01", "periodEnd": "2026-03-31", "submitDateTime": "2026-06-25 10:00",
+      "docDescription": "訂正有価証券報告書", "issuerEdinetCode": null, "subjectEdinetCode": null,
+      "subsidiaryEdinetCode": null, "currentReportReason": null, "parentDocID": "S100ZZ00", "opeDateTime": null,
+      "withdrawalStatus": "0", "docInfoEditStatus": "0", "disclosureStatus": "0", "xbrlFlag": "1", "pdfFlag": "1",
+      "attachDocFlag": "0", "englishDocFlag": "0", "csvFlag": "1", "legalStatus": "1"
+    },
+    {
+      "seqNumber": 5, "docID": "S100ZZA3", "edinetCode": "E99003", "secCode": "22220", "JCN": null,
+      "filerName": "取下株式会社", "fundCode": null, "ordinanceCode": "010", "formCode": "030000", "docTypeCode": "120",
+      "periodStart": "2025-04-01", "periodEnd": "2026-03-31", "submitDateTime": "2026-06-25 11:00",
+      "docDescription": "有価証券報告書", "issuerEdinetCode": null, "subjectEdinetCode": null,
+      "subsidiaryEdinetCode": null, "currentReportReason": null, "parentDocID": null, "opeDateTime": "2026-06-25 18:00",
+      "withdrawalStatus": "1", "docInfoEditStatus": "0", "disclosureStatus": "0", "xbrlFlag": "1", "pdfFlag": "1",
+      "attachDocFlag": "0", "englishDocFlag": "0", "csvFlag": "1", "legalStatus": "1"
+    },
+    {
+      "seqNumber": 6, "docID": "S100ZZA4", "edinetCode": "E99004", "secCode": null, "JCN": null,
+      "filerName": "非上場株式会社", "fundCode": null, "ordinanceCode": "010", "formCode": "030000", "docTypeCode": "120",
+      "periodStart": "2025-04-01", "periodEnd": "2026-03-31", "submitDateTime": "2026-06-25 12:00",
+      "docDescription": "有価証券報告書", "issuerEdinetCode": null, "subjectEdinetCode": null,
+      "subsidiaryEdinetCode": null, "currentReportReason": null, "parentDocID": null, "opeDateTime": null,
+      "withdrawalStatus": "0", "docInfoEditStatus": "0", "disclosureStatus": "0", "xbrlFlag": "1", "pdfFlag": "1",
+      "attachDocFlag": "0", "englishDocFlag": "0", "csvFlag": "1", "legalStatus": "1"
+    },
+    {
+      "seqNumber": 7, "docID": "S100ZZA5", "edinetCode": "E99005", "secCode": "33330", "JCN": null,
+      "filerName": "XBRLなし株式会社", "fundCode": null, "ordinanceCode": "010", "formCode": "043A00", "docTypeCode": "160",
+      "periodStart": "2026-01-01", "periodEnd": "2026-06-30", "submitDateTime": "2026-06-25 13:00",
+      "docDescription": "半期報告書", "issuerEdinetCode": null, "subjectEdinetCode": null,
+      "subsidiaryEdinetCode": null, "currentReportReason": null, "parentDocID": null, "opeDateTime": null,
+      "withdrawalStatus": "0", "docInfoEditStatus": "0", "disclosureStatus": "0", "xbrlFlag": "0", "pdfFlag": "1",
+      "attachDocFlag": "0", "englishDocFlag": "0", "csvFlag": "0", "legalStatus": "1"
+    }
+  ]
+}
