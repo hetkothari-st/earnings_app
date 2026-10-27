@@ -103,6 +103,14 @@ CREATE TABLE IF NOT EXISTS jp_edinet_seen (
   seen_at TEXT NOT NULL
 );
 
+-- Rolling per-symbol date sweep progress (jobs/calendar.ts), so a restart resumes the 24 h cycle.
+CREATE TABLE IF NOT EXISTS jp_date_sweep (
+  code TEXT PRIMARY KEY,
+  checked_at TEXT NOT NULL,          -- last calendarEvents fetch (or attempt)
+  date_seen_at TEXT,                 -- last fetch that showed a single date today or later
+  announced_date TEXT                -- last such date Yahoo marked as announced (isEarningsDateEstimate false)
+);
+
 CREATE TABLE IF NOT EXISTS jp_past_dates (
   code TEXT NOT NULL,
   date TEXT NOT NULL,

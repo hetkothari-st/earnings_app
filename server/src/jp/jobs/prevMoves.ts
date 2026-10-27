@@ -18,7 +18,8 @@ const daysBetween = (later: string, earlier: string) => (Date.parse(later) - Dat
  * ∪ watched) rows to +180 days, without a previous move and not checked in the last 20 h; at most `budget` close
  * fetches, nearest report first. The prior date is the latest released report this app has; else, at full level, the
  * ADR's US row as a JST date (US AMC → next day, before the Tokyo open: BMO; US BMO / DMH → same day, after the
- * Tokyo close: AMC); else a stored Yahoo past date. US and Yahoo dates must lie 45–140 days back. Known timing
+ * Tokyo close: AMC); else a stored Yahoo past date. Every prior date, the app's own included, must lie 45–140 days
+ * back. Known timing
  * gives basis 'known'; unknown timing is treated as AMC, basis 'assumed'. A failed close fetch leaves the row to be
  * retried; a miss never blanks an earlier value.
  */
@@ -41,7 +42,8 @@ export async function computeJpPrevMoves(ctx: JpJobContext, opts: { budget?: num
 
     let prior: { date: string; timing: JpTiming; known: boolean } | null = null;
     const own = priorJpReleased(ctx.db, r.code, r.reportDate);
-    if (own) prior = { date: own.reportDate, timing: own.timing, known: own.known };
+    // Outside 45–140 days it is not the previous quarter's release: fall through to the other sources.
+    if (own && inWindow(own.reportDate)) prior = { date: own.reportDate, timing: own.timing, known: own.known };
     if (!prior && stock.level === 'full' && stock.adr) {
       const us = usAdrRows(ctx.db, stock.adr, addDaysJST(r.reportDate, -MAX_DAYS - 1), r.reportDate)
         .map((u) => ({ date: jpDateFromUs(u.reportDate, u.timing), timing: u.timing }))

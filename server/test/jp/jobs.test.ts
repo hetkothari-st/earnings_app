@@ -137,7 +137,7 @@ describe('refreshJpStocks', () => {
   it('universe sync: 7203 full, 250A basic, a dropped code inactive; failed code-list fetch deactivates nothing', async () => {
     const quotes = await quoteFixture();
     const { db, ctx, quoteCalls } = setup({ quotes, db: openDb(':memory:') });
-    await refreshJpStocks(ctx);
+    await refreshJpStocks(ctx, { minListed: 10 });
     const by = new Map(jpStocks(db).map((s) => [s.code, s]));
     // English code-list name served over the Yahoo name; cap in JPY with the JST date of the quote.
     expect(by.get('7203')).toMatchObject({
@@ -151,14 +151,38 @@ describe('refreshJpStocks', () => {
 
     // HOKUTO (13790) drops out of the list: inactive, everything else stays. NOK (72400, 非上場) never enters.
     const without = fxText('codelist_rows.csv').split(/\r?\n/).filter((l) => !l.includes('"13790"')).join('\n');
-    await refreshJpStocks(setup({ db, codeList: without, quotes }).ctx);
+    await refreshJpStocks(setup({ db, codeList: without, quotes }).ctx, { minListed: 10 });
     expect(jpStocks(db).find((s) => s.code === '1379')?.active).toBe(false);
     expect(jpStocks(db).filter((s) => s.active).length).toBe(active - 1);
 
     // A failed code-list fetch keeps the stored universe.
-    await refreshJpStocks(setup({ db, codeList: new Error('HTTP 503'), quotes }).ctx);
+    await refreshJpStocks(setup({ db, codeList: new Error('HTTP 503'), quotes }).ctx, { minListed: 10 });
     expect(jpStocks(db).filter((s) => s.active).length).toBe(active - 1);
     expect(sourceError(db, 'edinet-codelist')).toMatch(/503/);
+  });
+
+  it('a code list that parses but is too short is refused: the stored universe is kept', async () => {
+    const quotes = await quoteFixture();
+    const { db, ctx } = setup({ quotes, db: openDb(':memory:') });
+    await refreshJpStocks(ctx, { minListed: 10 });
+    const active = jpStocks(db).filter((s) => s.active).length;
+    expect(active).toBeGreaterThan(20);
+
+    // Header only: no rows at all (< 50% of the active codes).
+    const lines = fxText('codelist_rows.csv').split(/\r?\n/);
+    await refreshJpStocks(setup({ db, codeList: lines.slice(0, 2).join('\n'), quotes }).ctx, { minListed: 0 });
+    expect(jpStocks(db).filter((s) => s.active).length).toBe(active);
+    expect(sourceError(db, 'edinet-codelist')).toMatch(/0 listed/);
+
+    // Under half of the active codes.
+    await refreshJpStocks(setup({ db, codeList: lines.slice(0, 10).join('\n'), quotes }).ctx, { minListed: 0 });
+    expect(jpStocks(db).filter((s) => s.active).length).toBe(active);
+
+    // The default floor of 1,000 listed rows refuses the 27-row sample even on an empty database.
+    const fresh = setup({ quotes, db: openDb(':memory:') });
+    await refreshJpStocks(fresh.ctx);
+    expect(jpStocks(fresh.db)).toEqual([]);
+    expect(sourceError(fresh.db, 'edinet-codelist')).toMatch(/1000/);
   });
 
   it('a jp-holidays warning while the holiday list does not reach 60 days ahead', () => {
@@ -272,13 +296,46 @@ describe('refreshJpCalendar (rolling per-symbol sweep)', () => {
         '7203.T': { ...S7203, nextDate: '2026-08-04' },               // period 2026-06-30: history has it
         '3382.T': { ...S3382, nextDate: '2026-10-09', epsHistory: [] }, // no actual: not kept
         '9983.T': { ...S9983, nextDate: '2026-04-09' },               // older than 140 days: not kept
+        '6501.T': { ...S7203, nextDate: '2026-08-04', nextDateEstimated: true }, // Yahoo's projection: not kept
       },
     });
     await refreshJpCalendar(ctx, { perRun: 10 });
+    expect(S7203.nextDateEstimated).toBe(false); // the real 7203 fixture: isEarningsDateEstimate false
     expect(jpPastDates(db, '7203')).toEqual([{ date: '2026-08-04', timing: null }]);
     expect(jpPastDates(db, '3382')).toEqual([]);
     expect(jpPastDates(db, '9983')).toEqual([]);
+    expect(jpPastDates(db, '6501')).toEqual([]);
     expect(rows(db, '7203')).toEqual([]);
+  });
+});
+
+describe('announced and projected dates', () => {
+  it('a projected date never moves a row on the last announced date; announced dates do', async () => {
+    let now = NOW;
+    const first = setup({ summaries: { '3382.T': { ...S3382, nextDate: '2027-01-07', nextDateEstimated: false } }, now: () => now });
+    await refreshJpCalendar(first.ctx, { perRun: 10 });
+    expect(rows(first.db, '3382').map((r) => r.report_date)).toEqual(['2027-01-07']);
+
+    now = at(25 * HOUR);
+    const projected = setup({ db: first.db, summaries: { '3382.T': { ...S3382, nextDate: '2027-01-09', nextDateEstimated: true } }, now: () => now });
+    await refreshJpCalendar(projected.ctx, { perRun: 10 });
+    expect(rows(first.db, '3382').map((r) => r.report_date)).toEqual(['2027-01-07']);
+
+    now = at(50 * HOUR);
+    const moved = setup({ db: first.db, summaries: { '3382.T': { ...S3382, nextDate: '2027-01-08', nextDateEstimated: false } }, now: () => now });
+    await refreshJpCalendar(moved.ctx, { perRun: 10 });
+    expect(rows(first.db, '3382').map((r) => r.report_date)).toEqual(['2027-01-08']);
+  });
+
+  it('a projected date may move another projected date', async () => {
+    expect(S9983.nextDateEstimated).toBe(true); // the real 9983 fixture is Yahoo's projection
+    let now = NOW;
+    const first = setup({ summaries: { '9983.T': S9983 }, now: () => now });
+    await refreshJpCalendar(first.ctx, { perRun: 10 });
+    now = at(25 * HOUR);
+    const next = setup({ db: first.db, summaries: { '9983.T': { ...S9983, nextDate: '2027-01-08' } }, now: () => now });
+    await refreshJpCalendar(next.ctx, { perRun: 10 });
+    expect(rows(first.db, '9983').map((r) => r.report_date)).toEqual(['2027-01-08']);
   });
 });
 
@@ -407,6 +464,24 @@ describe('computeJpPrevMoves', () => {
     const id = upsertJpCalendarRow(db, row('6501', { periodEnd: '2026-09-30', fiscalQuarter: 2, fyEnd: '2027-03-31' }, '2Q FY27', '2026-10-29'), NOW);
     await computeJpPrevMoves(ctx);
     expect(getJpReport(db, id)).toMatchObject({ prevMovePct: -5, prevMoveDate: '2026-08-06', prevMoveBasis: 'assumed' });
+  });
+
+  it('an own released report outside 45-140 days is not the prior: falls through, else blank', async () => {
+    const closes = new Map([['2026-08-06', 1000], ['2026-08-07', 950], ['2026-10-01', 1000], ['2026-10-02', 2000]]);
+    const { db, ctx } = setup({ closes });
+    const eps = { basic: 10, diluted: null, currency: 'JPY', span: 'quarter' as const, ytdMonths: null };
+    // Released 28 days before the report: too close to be the previous quarter's release.
+    const early = upsertJpCalendarRow(db, row('6501', { periodEnd: '2026-06-30', fiscalQuarter: 1, fyEnd: '2027-03-31' }, '1Q FY27', '2026-10-01'), NOW);
+    mergeJpActuals(db, early, { eps, source: 'yahoo' }, NOW);
+    upsertJpPastDates(db, [{ code: '6501', date: '2026-08-06', timing: null }]);
+    const id = upsertJpCalendarRow(db, row('6501', { periodEnd: '2026-09-30', fiscalQuarter: 2, fyEnd: '2027-03-31' }, '2Q FY27', '2026-10-29'), NOW);
+    // The same for 3382, with nothing to fall back on: blank.
+    const early2 = upsertJpCalendarRow(db, row('3382', { periodEnd: '2026-08-31', fiscalQuarter: 2, fyEnd: '2027-02-28' }, '2Q FY27', '2026-10-01'), NOW);
+    mergeJpActuals(db, early2, { eps, source: 'yahoo' }, NOW);
+    const id2 = upsertJpCalendarRow(db, row('3382', { periodEnd: '2026-11-30', fiscalQuarter: 3, fyEnd: '2027-02-28' }, '3Q FY27', '2026-10-30'), NOW);
+    await computeJpPrevMoves(ctx);
+    expect(getJpReport(db, id)).toMatchObject({ prevMovePct: -5, prevMoveDate: '2026-08-06', prevMoveBasis: 'assumed' });
+    expect(getJpReport(db, id2)).toMatchObject({ prevMovePct: null, prevMoveCheckedAt: NOW });
   });
 
   it('a failed close fetch is retried; rows outside [today-1, today+14] and not tier A are left alone; checked rows wait 20 h', async () => {

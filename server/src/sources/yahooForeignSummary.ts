@@ -14,6 +14,11 @@ export interface YahooForeignSummary {
   marketCapAsOf: string | null;
   /** Next report date: a single date only (a range gives null), local date in `zone`. */
   nextDate: string | null;
+  /**
+   * Yahoo's `calendarEvents.earnings.isEarningsDateEstimate`: true for Yahoo's own projection, false for a date the
+   * company announced, null when Yahoo does not say. Optional so hand-built summaries need not set it.
+   */
+  nextDateEstimated?: boolean | null;
   /** Periods 0q, +1q, 0y, +1y. */
   trend: {
     period: string; periodEnd: string;
@@ -37,7 +42,10 @@ const Schema = z.object({
       }).nullish(),
       assetProfile: z.object({ sector: z.string().nullish(), industry: z.string().nullish() }).nullish(),
       calendarEvents: z.object({
-        earnings: z.object({ earningsDate: z.array(z.object({ raw: z.number() })).nullish() }).nullish(),
+        earnings: z.object({
+          earningsDate: z.array(z.object({ raw: z.number() })).nullish(),
+          isEarningsDateEstimate: z.boolean().nullish(),
+        }).nullish(),
       }).nullish(),
       earningsTrend: z.object({
         trend: z.array(z.object({
@@ -83,6 +91,7 @@ export function parseYahooSummaryFor(json: unknown, o: { zone: string; capCurren
     marketCap: own ? cap : null,
     marketCapAsOf: own && cap != null && time ? DateTime.fromSeconds(time, { zone: o.zone }).toISODate() : null,
     nextDate: dates.length === 1 ? DateTime.fromSeconds(dates[0]!.raw, { zone: o.zone }).toISODate() : null,
+    nextDateEstimated: r.calendarEvents?.earnings?.isEarningsDateEstimate ?? null,
     trend: (r.earningsTrend?.trend ?? [])
       .filter((t) => t.endDate && TREND_PERIODS.has(t.period ?? ''))
       .map((t) => ({
