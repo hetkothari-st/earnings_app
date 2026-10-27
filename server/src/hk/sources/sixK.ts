@@ -66,11 +66,17 @@ const EARNINGS_WORDS = /financial|earnings|quarter|interim|annual|unaudited|half
 const CALL_WORDS = /conference call|webcast|webinar|dial-in|teleconference/i;
 
 const HK_EXCHANGE = '(?:the\\s+)?(?:HKEX|Hong Kong Stock Exchange|Hong Kong market|Stock Exchange of Hong Kong)';
+/** Words just before "on D" that make D a dividend date ("payable on", "holders of record on", "register … closed on"). */
+const DIVIDEND_DATE = /\b(?:payable|paid|payment|record|register|closed|closure|ex-dividend|ex-entitlement)\b[^.]{0,30}$/i;
+/** HKEX Rule 13.43 notice: "a meeting of [a committee of] the Board … will be held on D … to consider|approve … results|earnings release". */
+const BOARD_MEETING = /\bmeeting\s+of\s+(?:a\s+committee\s+of\s+)?the\s+Board\b[^.]{0,120}?\bwill\s+be\s+held\s+on\s+/gi;
 
 /**
  * Release date and timing from a date notice (Ruling 4). Dates are HK dates.
  * Clause: "[to|will] announce|report|release|upload|publish … results … on D", or the passive
- * "results … will be announced|released|published on D". The nearest date after the verb is D.
+ * "results … will be announced|released|published on D". The nearest date after the verb is D, skipping
+ * dividend payment / record dates. Failing those, an HKEX board-meeting notice ("a meeting of the Board will be
+ * held on D to consider … results") gives D.
  * Timing, first match wins:
  * - "before the U.S. market opens [on D]" / "before the opening of the U.S. market": D, AMC.
  * - "after the U.S. market closes [on D]": D+1, BMO.
@@ -90,7 +96,8 @@ export function parseDateNotice(text: string): { date: string; timing: HkTiming 
     if (!EARNINGS_WORDS.test(text.slice(Math.max(0, c.index! - 300), c.index! + 400))) continue;
     const window = text.slice(c.index!, c.index! + 400);
 
-    const nearest = datesAfter(window, '\\bon\\s+')[0]?.date;
+    // A dividend's payment / record / book-closure date is never the results date.
+    const nearest = datesAfter(window, '\\bon\\s+').find((d) => !DIVIDEND_DATE.test(window.slice(Math.max(0, d.index - 40), d.index)))?.date;
     let found: { date: string; timing: HkTiming } | null = null;
 
     const open = datesAfter(window, 'before the U\\.?S\\.? market opens?\\s+on\\s+')[0]?.date;
@@ -128,6 +135,14 @@ export function parseDateNotice(text: string): { date: string; timing: HkTiming 
     if (/poll|vot(?:e|ing)|general\s+meeting|meeting\s+results/i.test(c[0])) continue;
     const d = dateAt(text, c.index! + c[0].length);
     if (d) best.push({ rank: 1, date: d.date, timing: 'UNKNOWN' });
+  }
+
+  // Lowest rank: the board meeting that approves the results (results are published that day); any announce clause wins.
+  for (const c of text.matchAll(BOARD_MEETING)) {
+    const d = dateAt(text, c.index! + c[0].length);
+    if (d && /^[^.]{0,200}?\b(?:consider|approve)\b[^.]{0,200}?\b(?:results|earnings\s+release)\b/i.test(text.slice(d.end))) {
+      best.push({ rank: 0, date: d.date, timing: 'UNKNOWN' });
+    }
   }
 
   best.sort((a, b) => b.rank - a.rank);
