@@ -1,0 +1,352 @@
+{
+ "ACI_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "ACN_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 3.29,
+  "revenue": 18679110000,
+  "unit": 1000,
+  "notes": []
+ },
+ "AZO_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 56.05,
+  "revenue": 6594879000,
+  "unit": 1000,
+  "notes": []
+ },
+ "AZZ_Aug2026.htm": {
+  "epsAdjusted": 2,
+  "epsGaap": 1.94,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "BAC_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "BLK_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 10.57,
+  "revenue": 7752000000,
+  "unit": 1000000,
+  "notes": [
+   "revenue: no unit stated for table"
+  ]
+ },
+ "CAG_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": 2595900000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "CCL_Aug2026.htm": {
+  "epsAdjusted": 1.43,
+  "epsGaap": 1.4,
+  "revenue": 8435000000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "COST_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 6.75,
+  "revenue": null,
+  "unit": null,
+  "notes": [
+   "revenue: candidates disagree (93873000000, 95723000000)"
+  ]
+ },
+ "CTAS_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 1.36,
+  "revenue": 3013981000,
+  "unit": 1000,
+  "notes": []
+ },
+ "C_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "DAL_Sep2026.htm": {
+  "epsAdjusted": 1.72,
+  "epsGaap": 1.15,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "DLR_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 1.21,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "DPZ_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 4.6,
+  "revenue": 1185598000,
+  "unit": 1000,
+  "notes": []
+ },
+ "DRI_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "FAST_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 0.35,
+  "revenue": 2463300000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "FDS_Aug2026.htm": {
+  "epsAdjusted": 4.52,
+  "epsGaap": 3.41,
+  "revenue": 634698000,
+  "unit": 1000,
+  "notes": []
+ },
+ "GIS_Aug2026.htm": {
+  "epsAdjusted": 0.75,
+  "epsGaap": 0.74,
+  "revenue": 4389500000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "GS_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "JBL_Aug2026.htm": {
+  "epsAdjusted": 4.4,
+  "epsGaap": 3.76,
+  "revenue": 10616000000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "JEF_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": [
+   "epsGaap: candidates disagree (1.08, 1.13)",
+   "revenue: candidates disagree (3230798000, 2221934000)"
+  ]
+ },
+ "JNJ_Sep2026.htm": {
+  "epsAdjusted": 2.59,
+  "epsGaap": 0.09,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "JPM_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 5.57,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "KBH_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 1.05,
+  "revenue": null,
+  "unit": null,
+  "notes": [
+   "revenue: candidates disagree (1297101000, 1292350000, 4751000)"
+  ]
+ },
+ "KMX_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 1.16,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "KO_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 1.03,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "LEN_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 1.19,
+  "revenue": 8046119000,
+  "unit": 1000,
+  "notes": []
+ },
+ "LEVI_Aug2026.htm": {
+  "epsAdjusted": 0.48,
+  "epsGaap": 0.43,
+  "revenue": 1609700000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "LW_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 0.21,
+  "revenue": 1670300000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "MKC_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "MS_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 3.03,
+  "revenue": null,
+  "unit": null,
+  "notes": [
+   "revenue: candidates disagree (20338000000, 10029000000, 9065000000, 1459000000)"
+  ]
+ },
+ "MU_Aug2026.htm": {
+  "epsAdjusted": 33.42,
+  "epsGaap": 32.87,
+  "revenue": 54229000000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "NEE_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "NKE_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 0.48,
+  "revenue": 11213000000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "PAYX_Aug2026.htm": {
+  "epsAdjusted": 1.34,
+  "epsGaap": 1.21,
+  "revenue": 1630500000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "PGR_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "PLD_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "PSA_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 2.55,
+  "revenue": 1232881000,
+  "unit": 1000,
+  "notes": []
+ },
+ "SNX_Aug2026.htm": {
+  "epsAdjusted": 5.68,
+  "epsGaap": 5.18,
+  "revenue": 21558406000,
+  "unit": 1000,
+  "notes": []
+ },
+ "STT_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 3.69,
+  "revenue": 4004000000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "STZ_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": 2633000000,
+  "unit": 1000000,
+  "notes": []
+ },
+ "THO_Jul2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 0.78,
+  "revenue": 2311628000,
+  "unit": 1000,
+  "notes": []
+ },
+ "UNH_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "VTR_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ },
+ "WELL_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": 3544586000,
+  "unit": 1000,
+  "notes": []
+ },
+ "WFC_Sep2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": 1.87,
+  "revenue": null,
+  "unit": null,
+  "notes": [
+   "revenue: no unit stated for table",
+   "revenue: no unit stated for table"
+  ]
+ },
+ "WOR_Aug2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": 343886000,
+  "unit": 1000,
+  "notes": []
+ },
+ "XOM_Jun2026.htm": {
+  "epsAdjusted": null,
+  "epsGaap": null,
+  "revenue": null,
+  "unit": null,
+  "notes": []
+ }
+}

@@ -54,13 +54,15 @@ export function readHkRelease(html: string, period: { periodEnd: string; kind: H
   const currency = pickCurrency(statementCurrencies(html));
   if (!currency) return { revenue: null, revenueCurrency: null, eps: null, epsCurrency: null, epsBasis: null, notes: ['no currency stated in the income-statement headers'] };
   const r = readRelease(html, { periodEnd: period.periodEnd, span: SPAN[period.kind], profile: 'hk', currency });
-  const eps = r.epsShare ?? r.epsAds;
+  // Ruling 8: per share whenever per-share rows were stated (even if they disagreed → blank); per ADS only when none were.
+  const basis: 'share' | 'ads' | null = r.epsShareStated ? (r.epsShare !== null ? 'share' : null) : r.epsAds !== null ? 'ads' : null;
+  const eps = basis === 'share' ? r.epsShare : basis === 'ads' ? r.epsAds : null;
   return {
     revenue: r.revenue,
     revenueCurrency: r.revenue === null ? null : currency,
     eps,
     epsCurrency: eps === null ? null : currency,
-    epsBasis: r.epsShare !== null ? 'share' : r.epsAds !== null ? 'ads' : null,
+    epsBasis: basis,
     notes: r.notes,
   };
 }

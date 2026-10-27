@@ -137,6 +137,14 @@ describe('readHkRelease', () => {
     expect(v.notes.join(' ')).toMatch(/no unit/);
   });
 
+  it('per-share rows stated but disagreeing → eps null, never the agreeing per-ADS figure', () => {
+    const html = rmbUsd(row('Diluted earnings per share', '1.02', '1.10', '0.15') + row('Diluted earnings per ADS', '8.16', '8.80', '1.21'))
+      + rmbUsd(row('Diluted earnings per share', '1.02', '1.12', '0.15') + row('Diluted earnings per ADS', '8.16', '8.80', '1.21'));
+    const v = readHkRelease(html, Q3);
+    expect(v).toMatchObject({ eps: null, epsBasis: null, epsCurrency: null });
+    expect(v.notes.join(' ')).toMatch(/epsGaap: candidates disagree/);
+  });
+
   it('values whose candidates disagree are null', () => {
     const html = rmbUsd(row('Diluted earnings per share', '1.02', '1.10', '0.15')) + rmbUsd(row('Diluted earnings per share', '1.02', '1.12', '0.15'));
     const v = readHkRelease(html, Q3);
@@ -217,14 +225,18 @@ describe('readHkRelease', () => {
 });
 
 describe('readRelease', () => {
-  it('US reader unchanged: readUsRelease is the us profile of readRelease (whole US corpus)', () => {
+  it('US reader unchanged: output over the whole US corpus equals the pre-refactor snapshot', () => {
+    // reader-output.json was written by readUsRelease before readRelease existed (all fields, notes included).
     const dir = new URL('../fixtures/us/releases/', import.meta.url);
     const expected: Record<string, { quarterEnd: string }> = JSON.parse(readFileSync(new URL('expected.json', dir), 'utf8'));
-    for (const f of readdirSync(dir).filter((x) => x.endsWith('.htm'))) {
+    const snapshot: Record<string, unknown> = JSON.parse(readFileSync(new URL('reader-output.json', dir), 'utf8'));
+    const files = readdirSync(dir).filter((x) => x.endsWith('.htm')).sort();
+    expect(Object.keys(snapshot).sort()).toEqual(files);
+    for (const f of files) {
       const html = readFileSync(new URL(f, dir), 'utf8');
       const qe = expected[f]!.quarterEnd;
+      expect(readUsRelease(html, qe), f).toEqual(snapshot[f]);
       const r = readRelease(html, { periodEnd: qe, span: 'quarter', profile: 'us' });
-      expect(readUsRelease(html, qe), f).toEqual({ epsAdjusted: r.epsAdjusted, epsGaap: r.epsGaap, revenue: r.revenue, unit: r.unit, notes: r.notes });
       expect(r.epsAds, f).toBeNull();
       expect(r.epsShare, f).toBe(r.epsGaap);
     }
