@@ -226,6 +226,17 @@ describe('parseDateNotice', () => {
     expect(classifyHkExhibit(fx('tcom_date_notice_ex99.htm'))).toMatchObject({ kind: 'date-notice', date: '2026-09-16' });
   });
 
+  it('a dividend payment or record date is never the results date; a Rule 13.43 board meeting date is', () => {
+    // Live spot-check (Task 14): HSBC 6-K 0001654954-26-008935, filed 2026-10-14. Board meeting 27 October 2026 to consider the
+    // Q3 earnings release; the dividend is payable on 17 December 2026 to holders of record on 6 November 2026.
+    expect(classifyHkExhibit(fx('hsbc_3q26_board_meeting_6k.htm'))).toEqual({ kind: 'date-notice', date: '2026-10-27', timing: 'UNKNOWN' });
+    expect(parseDateNotice('The Board will consider the earnings release for the third quarter (the "Results") and a dividend. The dividend will be payable on 17 December 2026 to holders of record on 6 November 2026.'))
+      .toBeNull();
+    // An explicit announcement date still wins over the meeting date.
+    expect(parseDateNotice('A meeting of the Board will be held on 25 March 2026 to approve the annual results. The Company will announce the results on 26 March 2026.'))
+      .toEqual({ date: '2026-03-26', timing: 'UNKNOWN' });
+  });
+
   it('a conference-call time is not a release time', () => {
     expect(parseDateNotice('Acme will announce its quarterly results on November 5, 2026. A conference call will be held at 8:00 p.m. Hong Kong time on November 5, 2026.'))
       .toEqual({ date: '2026-11-05', timing: 'UNKNOWN' });
