@@ -1,9 +1,9 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from 'react';
 import {
   type AdminUser, bulkIds, bulkPreview, createUser, createUsersBulk, deleteUser, fetchKiteStatus, kiteBrowserLoginUrl, kiteLoginNow, listUsers,
-  MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
+  fetchHkAdmin, MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
 } from '../adminApi';
-import type { KiteStatusDto } from '../api';
+import type { HkAdminDto, KiteStatusDto } from '../api';
 import { useAccount } from '../lib/account';
 import '../admin.css';
 
@@ -319,6 +319,30 @@ function ZerodhaPanel() {
   );
 }
 
+/** Hong Kong coverage and SEC settings. Read-only. */
+function HongKongPanel() {
+  const [hk, setHk] = useState<HkAdminDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void fetchHkAdmin().then((r) => (r.ok ? setHk(r.data) : setError(r.error)));
+  }, []);
+  return (
+    <section className="admin-card" aria-label="Hong Kong">
+      <h2>Hong Kong</h2>
+      {error && <p role="alert" className="admin-msg admin-msg-error">Could not load Hong Kong status: {error}</p>}
+      {!hk && !error && <p className="admin-muted">Loading…</p>}
+      {hk && (
+        <>
+          <p>Full level {hk.full} · Basic level {hk.basic}</p>
+          <p>SEC access: {hk.secConfigured ? 'configured' : 'not configured (set SEC_USER_AGENT)'}</p>
+          <p>6-K reader: {hk.readerOn ? 'on' : 'off until 20 releases are read exactly right'}</p>
+          <p>Last 6-K seen: {when(hk.lastSixKAt)}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function AdminPage() {
   const account = useAccount();
   const isAdmin = account?.isAdmin === true;
@@ -408,6 +432,7 @@ export function AdminPage() {
             <AddUserForm onAdded={() => void load()} />
             <AddManyForm onAdded={() => void load()} />
             <ZerodhaPanel />
+            <HongKongPanel />
           </aside>
         </div>
       </main>

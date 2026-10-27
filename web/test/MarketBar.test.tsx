@@ -1,6 +1,25 @@
 import { render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { IndiaMarketBar, MarketBar } from '../src/components/MarketBar';
+import { HongKongMarketBar, IndiaMarketBar, MarketBar } from '../src/components/MarketBar';
+
+test('HK strip shows Hang Seng, HS China Enterprises, HS Tech with delayed label', async () => {
+  const polled = [
+    { index: 'Hang Seng', price: 25012.3, changePct: 0.5, asOf: 'x' },
+    { index: 'HS China Enterprises', price: 9000.1, changePct: -0.2, asOf: 'x' },
+    { index: 'HS Tech', price: 5500.55, changePct: 1.1, asOf: 'x' },
+  ];
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ indices: polled }), { status: 200 })));
+  const { rerender } = render(<HongKongMarketBar />);
+  expect(await screen.findByText('Hang Seng · delayed')).toBeTruthy();
+  expect(screen.getByText('HS China Enterprises · delayed')).toBeTruthy();
+  expect(screen.getByText('HS Tech · delayed')).toBeTruthy();
+  expect(screen.getAllByText('HKEX')).toHaveLength(3);
+  expect(screen.getByText('25,012.30')).toBeTruthy();
+  rerender(<HongKongMarketBar live={[{ index: 'Hang Seng', price: 25020, changePct: 0.53, asOf: 'y' }]} />);
+  expect(screen.getByText('25,020.00')).toBeTruthy();
+  expect(screen.getByText('5,500.55')).toBeTruthy();
+  vi.unstubAllGlobals();
+});
 
 const idx = (exchange: string, index: string, price: number | null, changePct: number | null) =>
   ({ exchange, index, symbol: index, price, changePct, asOf: '2026-10-14T20:36:08.000Z', currency: 'USD' });

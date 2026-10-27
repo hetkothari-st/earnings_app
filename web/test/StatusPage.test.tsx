@@ -12,8 +12,15 @@ const body = {
     { source: 'finnhub', lastSuccessAt: null, lastError: 'boom', lastErrorAt: '2026-10-21T09:00:00.000Z', state: 'backup', blockedUntil: null },
   ],
   counts: { reports: 10, withExpectedMove: 4, secVerified: 2 },
-  coverage: { US: [cov('epsEstimate', 9, 10, 85), cov('timing', 3, 10, 70)], IN: [cov('marketCap', 10, 10, 95)] },
+  coverage: { US: [cov('epsEstimate', 9, 10, 85), cov('timing', 3, 10, 70)], IN: [cov('marketCap', 10, 10, 95)], HK: [cov('adrTicker', 3, 4, 70)] },
 };
+
+test('Hong Kong coverage table renders', async () => {
+  mount();
+  const row = (await screen.findByText('adrTicker')).closest('tr')!;
+  expect(row.textContent).toContain('3/4');
+  expect(row.closest('table')!.querySelector('caption')!.textContent).toContain('Hong Kong');
+});
 
 afterEach(() => vi.unstubAllGlobals());
 

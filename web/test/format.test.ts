@@ -1,5 +1,27 @@
 import { describe, expect, test } from 'vitest';
-import { formatDateHeading, formatEps, formatPct, formatUsd, formatUsdFull } from '../src/lib/format';
+import { formatDateHeading, formatEps, formatHkEps, formatHkMoney, formatHkPrice, formatPct, formatUsd, formatUsdFull } from '../src/lib/format';
+
+describe('Hong Kong formats', () => {
+  test('formatHkMoney prefixes by currency and stays compact', () => {
+    expect(formatHkMoney(247_652_000_000, 'CNY')).toBe('RMB¥247.7B');
+    expect(formatHkMoney(3.2e12, 'HKD')).toBe('HK$3.20T');
+    expect(formatHkMoney(5_100_000, 'USD')).toBe('US$5.1M');
+    expect(formatHkMoney(-1.5e9, 'CNY')).toBe('-RMB¥1.5B');
+    expect(formatHkMoney(2e9, 'SGD')).toBe('SGD 2.0B');
+    expect(formatHkMoney(null, 'CNY')).toBe('—');
+  });
+  test('formatHkEps uses a true minus and the stated currency', () => {
+    expect(formatHkEps(1.1, 'CNY')).toBe('RMB¥1.10');
+    expect(formatHkEps(-0.05, 'USD')).toBe('−US$0.05');
+    expect(formatHkEps(0.3, 'HKD')).toBe('HK$0.30');
+    expect(formatHkEps(0.3, 'SGD')).toBe('SGD 0.30');
+    expect(formatHkEps(null, 'CNY')).toBe('—');
+  });
+  test('formatHkPrice is HK$ with two decimals', () => {
+    expect(formatHkPrice(612.5)).toBe('HK$612.50');
+    expect(formatHkPrice(1234.5)).toBe('HK$1,234.50');
+  });
+});
 
 describe('format', () => {
   test('formatUsd compact', () => {
