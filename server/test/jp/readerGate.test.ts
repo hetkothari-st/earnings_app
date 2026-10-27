@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { config } from '../../src/config.js';
+import { jpGateCounts, jpGatePasses } from '../../src/jp/domain/readerGate.js';
 import { readJpRelease, type JpReleaseValues } from '../../src/jp/sources/releaseJp.js';
 import { JP_FULL, jpIssuerFor } from '../../src/jp/universe.js';
 
@@ -26,16 +27,7 @@ function load(sub: string): Array<[string, JpExpected]> {
 const read = (sub: string, file: string, e: JpExpected): JpReleaseValues =>
   readJpRelease(readFileSync(dirOf(`${sub}${file}`), 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter, issuer: jpIssuerFor(e.adr) });
 
-function score(sub: string): { checked: number; exact: number; wrong: number } {
-  let checked = 0, exact = 0, wrong = 0;
-  for (const [file, e] of load(sub)) {
-    checked++;
-    const got = read(sub, file, e);
-    if (FIELDS.every((f) => got[f] === e[f])) exact++;
-    if (FIELDS.some((f) => got[f] !== null && got[f] !== e[f])) wrong++;
-  }
-  return { checked, exact, wrong };
-}
+const score = (sub: string) => jpGateCounts(load(sub).map(([file, e]) => ({ expected: e, got: read(sub, file, e) })));
 
 const main = load('');
 const heldout = load('heldout/');
@@ -53,11 +45,13 @@ describe('JP reader gate', () => {
   });
 
   it('flags are on only when the gate passes', () => {
-    // Gate (controller ruling): main >= 20 exact and 0 wrong; every held-out set 0 wrong (blanks acceptable). Passing
-    // the gate allows the flags; turning them on is the controller's decision, so off is always allowed.
+    // Gate (controller ruling): main >= 20 exact releases carrying a value (all-null entries do not count) and 0 wrong;
+    // every held-out set 0 wrong (blanks acceptable). Passing the gate allows the flags; turning them on is the
+    // controller's decision, so off is always allowed.
     const m = score('');
     const h = score('heldout/');
-    const passes = m.exact >= 20 && m.wrong === 0 && h.checked > 0 && h.wrong === 0;
+    expect(m.exactWithValues).toBeLessThanOrEqual(m.exact);
+    const passes = jpGatePasses(m, false) && jpGatePasses(h, true);
     if (config.fastFields.jpEps ?? false) expect(passes).toBe(true);
     if (config.fastFields.jpRevenue ?? false) expect(passes).toBe(true);
   });

@@ -18,6 +18,7 @@ import type { HkPeriodKind } from '../hk/domain/period.js';
 import { readHkRelease } from '../hk/sources/releaseHk.js';
 import { HK_UNIVERSE } from '../hk/universe.js';
 import { readInResultsPdf } from '../india/sources/resultsPdf.js';
+import { JP_GATE_FIELDS, jpGateCounts, jpGatePasses, jpMarks, jpVerdict } from '../jp/domain/readerGate.js';
 import { readJpRelease } from '../jp/sources/releaseJp.js';
 import { jpIssuerFor } from '../jp/universe.js';
 import { readUsRelease } from '../sources/releaseReader.js';
@@ -79,8 +80,9 @@ function runHk(): void {
  * JP (Global Constraints, reader gate): every hand-checked entry of test/fixtures/jp/releases/[heldout/]expected.json
  * is read with readJpRelease for its period. A field is exact when `===` the hand-read value (null === null counts),
  * blank when the reader returned null for a non-null value, wrong otherwise. A release is exact when all six fields
- * are. Gate (controller ruling): the main set needs >= 20 exact releases and none wrong; a held-out set needs none wrong
- * (blanks are acceptable in both). jpEps / jpRevenue may be on only when the main and every held-out set pass.
+ * are. Gate (controller ruling): the main set needs >= 20 exact releases that carry a value (an all-null expected
+ * entry never counts toward the floor) and none wrong; a held-out set needs none wrong (blanks are acceptable in both).
+ * jpEps / jpRevenue may be on only when the main and every held-out set pass. Scoring: jp/domain/readerGate.ts.
  */
 function runJp(sub: string, heldout: boolean): void {
   const dir = fileURLToPath(new URL(`../../test/fixtures/jp/releases/${sub}`, import.meta.url));
@@ -88,29 +90,29 @@ function runJp(sub: string, heldout: boolean): void {
     adr: string; periodEnd: string; fiscalQuarter: 1 | 2 | 3 | 4; checked: boolean; note: string;
     revenue: number | null; eps: number | null; epsDiluted: number | null; currency: string | null; span: string | null; ytdMonths: number | null;
   }
-  const FIELDS = ['revenue', 'eps', 'epsDiluted', 'currency', 'span', 'ytdMonths'] as const;
+  const FIELDS = JP_GATE_FIELDS;
   const expected: Record<string, JpExpected> = JSON.parse(readFileSync(`${dir}expected.json`, 'utf8'));
-  let checked = 0, exact = 0, wrong = 0, unchecked = 0;
+  let unchecked = 0;
   const adrs = new Set<string>();
+  const scored: { expected: JpExpected; got: ReturnType<typeof readJpRelease> }[] = [];
   for (const [file, e] of Object.entries(expected).sort(([a], [b]) => a.localeCompare(b))) {
     if (!e.checked) { unchecked++; continue; }
-    checked++;
     adrs.add(e.adr);
     const got = readJpRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter, issuer: jpIssuerFor(e.adr) });
-    const marks = FIELDS.map((f) => (got[f] === e[f] ? 'exact' : got[f] === null ? 'blank' : 'wrong'));
-    const verdict = marks.includes('wrong') ? 'wrong' : marks.includes('blank') ? 'blank' : 'exact';
-    if (verdict === 'exact') exact++;
-    if (verdict === 'wrong') wrong++;
+    scored.push({ expected: e, got });
+    const marks = jpMarks(e, got);
+    const verdict = jpVerdict(e, got);
     console.log(`${verdict.padEnd(5)} ${file} (Q${e.fiscalQuarter})`);
     FIELDS.forEach((f, i) => { if (marks[i] !== 'exact') console.log(`      ${f}: got ${got[f]}, expected ${e[f]} [${marks[i]}]`); });
     if (verdict !== 'exact' && got.notes.length) console.log(`      notes: ${got.notes.join('; ')}`);
   }
-  const gatePasses = wrong === 0 && (heldout ? checked > 0 : exact >= 20);
-  console.log(`${heldout ? 'held-out' : 'main'}: checked ${checked} (${adrs.size} issuers), exact ${exact}, wrong ${wrong}${unchecked ? `, not yet checked ${unchecked}` : ''}; gate ${gatePasses ? 'passes' : 'fails'}`);
+  const c = jpGateCounts(scored);
+  const gatePasses = jpGatePasses(c, heldout);
+  console.log(`${heldout ? 'held-out' : 'main'}: checked ${c.checked} (${adrs.size} issuers), exact ${c.exact} (${c.exactWithValues} carrying values), wrong ${c.wrong}${unchecked ? `, not yet checked ${unchecked}` : ''}; gate ${gatePasses ? 'passes' : 'fails'}`);
   for (const k of ['jpEps', 'jpRevenue'] as const) {
     const cfg = config.fastFields[k] ?? false;
     const note = !gatePasses && cfg ? '  <-- config on but this set fails' : '';
-    console.log(`${k}: config ${cfg} (may be on only when main >= 20 exact and 0 wrong, and every held-out set 0 wrong)${note}`);
+    console.log(`${k}: config ${cfg} (may be on only when main >= 20 exact carrying values and 0 wrong, and every held-out set 0 wrong)${note}`);
   }
 }
 
