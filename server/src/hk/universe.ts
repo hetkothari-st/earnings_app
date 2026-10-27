@@ -20,6 +20,8 @@ const full = (code: string, name: string, adr: string, adrRatio: number, cik: nu
 const basic = (code: string, name: string, cadence: 'Q' | 'H' = 'H', fyEndMonth = 12): HkUniverseEntry =>
   ({ code, name, cadence, fyEndMonth, adr: null, adrRatio: null, cik: null });
 
+// Cadence was checked against Yahoo earningsHistory on 2026-10-27 (quarter-spaced rows => 'Q'; empty => kept 'H').
+// 0011 Hang Seng Bank dropped: no Yahoo .HK quote.
 export const HK_UNIVERSE: readonly HkUniverseEntry[] = [
   // Full level: ADR listed, SEC filer, Cboe chain.
   full('9988', 'Alibaba', 'BABA', 8, 1577552, 'Q', 3),
@@ -43,16 +45,15 @@ export const HK_UNIVERSE: readonly HkUniverseEntry[] = [
   basic('1211', 'BYD', 'Q'), basic('0992', 'Lenovo', 'Q', 3),
   basic('1299', 'AIA'), basic('0941', 'China Mobile', 'Q'), basic('1398', 'ICBC', 'Q'), basic('0939', 'CCB', 'Q'),
   basic('3988', 'Bank of China', 'Q'), basic('1288', 'ABC', 'Q'), basic('3968', 'China Merchants Bank', 'Q'),
-  basic('2318', 'Ping An', 'Q'), basic('2628', 'China Life', 'Q'), basic('0388', 'HKEX'),
+  basic('2318', 'Ping An', 'Q'), basic('2628', 'China Life', 'Q'), basic('0388', 'HKEX', 'Q'),
   basic('0883', 'CNOOC', 'Q'), basic('0857', 'PetroChina', 'Q'), basic('0386', 'Sinopec', 'Q'),
   basic('0762', 'China Unicom', 'Q'), basic('0728', 'China Telecom', 'Q'),
   basic('0016', 'SHK Properties', 'H', 6), basic('0001', 'CK Hutchison'), basic('1113', 'CK Asset'),
-  basic('0002', 'CLP'), basic('0003', 'HK & China Gas'), basic('0006', 'Power Assets'),
-  basic('0011', 'Hang Seng Bank'), basic('0066', 'MTR'), basic('0027', 'Galaxy'), basic('1928', 'Sands China'),
+  basic('0002', 'CLP'), basic('0003', 'HK & China Gas'), basic('0006', 'Power Assets'), basic('0066', 'MTR'), basic('0027', 'Galaxy', 'Q'), basic('1928', 'Sands China', 'Q'),
   basic('0019', 'Swire Pacific'), basic('0823', 'Link REIT', 'H', 3), basic('0688', 'China Overseas Land'),
   basic('1109', 'China Resources Land'), basic('2020', 'Anta'), basic('2319', 'Mengniu'), basic('0291', 'CR Beer'),
-  basic('2269', 'WuXi Bio'), basic('1177', 'Sino Biopharm'), basic('1093', 'CSPC'), basic('2382', 'Sunny Optical'),
-  basic('0981', 'SMIC', 'Q'), basic('0285', 'BYD Electronic'), basic('0669', 'Techtronic'), basic('0175', 'Geely'),
+  basic('2269', 'WuXi Bio'), basic('1177', 'Sino Biopharm'), basic('1093', 'CSPC', 'Q'), basic('2382', 'Sunny Optical'),
+  basic('0981', 'SMIC', 'Q'), basic('0285', 'BYD Electronic', 'Q'), basic('0669', 'Techtronic'), basic('0175', 'Geely'),
   basic('2331', 'Li Ning'),
   basic('6618', 'JD Health'), basic('0241', 'Ali Health', 'H', 3), basic('1024', 'Kuaishou', 'Q'),
   basic('9633', 'Nongfu Spring'), basic('6862', 'Haidilao'), basic('0267', 'CITIC'), basic('0998', 'CITIC Bank', 'Q'),
@@ -60,7 +61,7 @@ export const HK_UNIVERSE: readonly HkUniverseEntry[] = [
   basic('6030', 'CITIC Securities', 'Q'), basic('2601', 'CPIC', 'Q'), basic('1339', 'PICC Group', 'Q'), basic('2328', 'PICC P&C', 'Q'),
   basic('0012', 'Henderson Land'), basic('0101', 'Hang Lung Properties'), basic('1038', 'CKI'),
   basic('0868', 'Xinyi Glass'), basic('0968', 'Xinyi Solar'), basic('1044', 'Hengan'),
-  basic('0322', 'Tingyi'), basic('1876', 'Budweiser APAC'), basic('0384', 'China Gas', 'H', 3),
+  basic('0322', 'Tingyi'), basic('1876', 'Budweiser APAC', 'Q'), basic('0384', 'China Gas', 'H', 3),
   basic('2688', 'ENN Energy'), basic('1088', 'China Shenhua', 'Q'), basic('2899', 'Zijin', 'Q'), basic('3993', 'CMOC', 'Q'),
   basic('0914', 'Anhui Conch', 'Q'), basic('2359', 'WuXi AppTec', 'Q'), basic('1801', 'Innovent'), basic('9992', 'Pop Mart'),
   basic('1929', 'Chow Tai Fook', 'H', 3),
