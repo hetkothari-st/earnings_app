@@ -1,7 +1,9 @@
 /**
  * Reads EPS and revenue from an earnings press release (HTML): US 8-K EX-99.1
- * (profile 'us', `readUsRelease`) or a foreign issuer's 6-K (profile 'hk':
- * RMB / US$ / HK$ columns, per-ADS rows, half-year and full-year columns).
+ * (profile 'us', `readUsRelease`), a foreign issuer's 6-K (profile 'hk':
+ * RMB / US$ / HK$ columns, per-ADS rows, half-year and full-year columns) or a
+ * Japanese issuer's 6-K (profile 'jp': yen only, basic and diluted EPS, quarter
+ * or year-to-date columns; see `readJp`).
  *
  * Rule of thumb: uncertain means blank. A value is returned only when its row
  * label, its column header (the period ending `periodEnd` with the expected span,
@@ -311,7 +313,8 @@ function units(text: string, re: RegExp = UNIT_RE): Set<number> {
 
 // ---------------------------------------------------------------- currencies (profile 'hk')
 
-export type Currency = 'CNY' | 'USD' | 'HKD';
+/** 'JPY' is only ever produced by profile 'jp'; the 'us' / 'hk' currency detection never names yen. */
+export type Currency = 'CNY' | 'USD' | 'HKD' | 'JPY';
 
 const CNY_RE = /\brmb\b|renminbi/i;
 const HKD_RE = /hk\$|\bhkd\b|\bhk dollars?\b|hong kong dollars?/i;
@@ -362,7 +365,7 @@ function spanKinds(text: string): Set<Span | 'nine'> {
  * name no span while the whole header block names only that span. A dated column must be within 15 days of
  * `pe`; an undated half needs "1H" / "interim" with the period-end year.
  */
-function isSpanColumn(over: string, block: string, labelCol: string, pe: Date, span: 'half' | 'year'): boolean {
+function isSpanColumn(over: string, block: string, labelCol: string, pe: Date, span: 'half' | 'nine' | 'year'): boolean {
   if (!over || NOT_PERIOD.test(over) || ADJUSTMENT_COL.test(over)) return false;
   const own = spanKinds(over);
   const kinds = own.size ? own : spanKinds(block);
@@ -413,8 +416,9 @@ const UNIT_ROW_CELL = /^\(?\s*(?:rmb|renminbi|us\$|hk\$|\$|usd|hkd)?\s*(?:'?000|
 
 export interface ReaderOptions {
   periodEnd: string;
-  span: 'quarter' | 'half' | 'year';
-  profile: 'us' | 'hk';
+  /** 'nine' (nine months year-to-date) is used by profile 'jp'. */
+  span: 'quarter' | 'half' | 'nine' | 'year';
+  profile: 'us' | 'hk' | 'jp';
   /** Profile 'hk': only columns in this currency are read. */
   currency?: Currency;
   /** Profile 'hk': one ADS is one share (ADR ratio 1), so a combined "per share/ADS" row is per share. */
@@ -431,6 +435,8 @@ export interface ReaderResult {
   /** Adjusted / non-GAAP EPS (profile 'us' only; never read for 'hk'). */
   epsAdjusted: number | null;
   epsGaap: number | null;
+  /** Basic EPS per share (profile 'jp' only; null for 'us' / 'hk'). */
+  epsBasic: number | null;
   revenue: number | null;
   unit: number | null; /* multiplier applied to revenue */
   notes: string[];
@@ -444,12 +450,13 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
 }
 
 export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
+  if (opts.profile === 'jp') return readJp(html, opts);
   const notes: string[] = [];
   const hk = opts.profile === 'hk';
   const qe = new Date(`${opts.periodEnd}T00:00:00Z`);
   const found: Record<Field, Candidate[]> = { epsAdjusted: [], epsGaap: [], epsAds: [], revenue: [] };
   if (Number.isNaN(qe.getTime())) {
-    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, revenue: null, unit: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
+    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
   }
 
   const tables = parseTables(html, { rowspan: hk });
@@ -630,6 +637,351 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     epsAds: ads?.value ?? null,
     epsAdjusted: adj?.value ?? null,
     epsGaap: gaap?.value ?? null,
+    epsBasic: null,
+    revenue: rev ? Math.round(rev.value) : null,
+    unit: rev?.unit ?? null,
+    notes,
+  };
+}
+
+// ---------------------------------------------------------------- profile 'jp'
+//
+// A separate pass, so the 'us' / 'hk' paths above are untouched. Japanese 6-Ks (Tanshin translations, IFRS / J-GAAP
+// statements) state yen figures "in millions of yen", give basic EPS as the headline per-share figure, and from the
+// 2nd quarter on often print only year-to-date (six / nine / twelve months) columns. One span is read per call; a
+// quarter is never derived from year-to-date figures.
+
+type JpSpan = 'quarter' | 'half' | 'nine' | 'year';
+type JpField = 'revenue' | 'basic' | 'diluted' | 'both';
+
+const JP_YEN = /¥|\byen\b|\bjpy\b/i;
+const JP_USD = /us\$|\busd\b|\bu\.\s?s\.\s?dollars?\b|\bus dollars?\b|\$/i;
+
+/** The currency a text names: 'JPY', 'USD', null for both, undefined for none. */
+function jpCurrency(text: string): 'JPY' | 'USD' | null | undefined {
+  const y = JP_YEN.test(text);
+  const u = JP_USD.test(text);
+  return y && u ? null : y ? 'JPY' : u ? 'USD' : undefined;
+}
+
+/**
+ * Allowlisted yen unit statements: "Millions of yen", "(Millions of yen)", "Yen in millions", "(¥ in millions)",
+ * "¥ million(s)", "in millions of yen", "Amounts in millions of yen", "Billions of yen", "Yen in billions" (and the
+ * Tanshin "Million yen"), each with an optional ", except per share amounts". Nothing else counts as a unit.
+ */
+const JP_UNIT_STATEMENT = /^(?:(?:amounts\s+)?in\s+(millions|billions)\s+of\s+yen|(millions?|billions?)\s+(?:of\s+)?yen|yen\s+in\s+(millions|billions)|¥\s*(?:in\s+)?(millions?|billions?))$/i;
+
+function jpUnit(text: string): number | null {
+  const core = text.trim().replace(/^\(\s*/, '').replace(/\s*\)$/, '').replace(EXCEPT_CLAUSE, '').trim();
+  const m = core.match(JP_UNIT_STATEMENT);
+  if (!m) return null;
+  return m.slice(1).find((g) => g !== undefined)!.toLowerCase().startsWith('million') ? 1e6 : 1e9;
+}
+
+/** A header cell that only states a unit or currency ("Yen", "Millions of yen", "Millions of U.S. dollars", "%"). */
+const JP_UNIT_CELL = /^\(?\s*(?:yen|¥|jpy|%|u\.?\s?s\.?\s*dollars?|us\$|\$|(?:thousands?|millions?|billions?)\s+of\s+u\.?\s?s\.?\s*dollars)\s*\)?$/i;
+const jpUnitCell = (t: string) => !t || jpUnit(t) !== null || JP_UNIT_CELL.test(t);
+
+/** An income-statement title ("- 3 - Condensed Quarterly Consolidated Statements of Income (Millions of yen)"). */
+const JP_TITLE = new RegExp(
+  String.raw`^(?:(?:unaudited|condensed|quarterly|interim|semi-annual|consolidated)\s+)*` +
+  String.raw`(?:statements?\s+of\s+(?:income|operations|earnings|profit\s+or\s+loss)|income\s+statements?)\s*(?:${PAREN_GROUP}\s*)*$`,
+  'i',
+);
+function jpStatementCaption(caption: string): boolean {
+  const c = caption.replace(/^\s*(?:-\s*\d{1,3}\s*-|\(\d{1,2}\)|\d{1,2}\.)\s*/, '').trim();
+  return !NOT_STATEMENT.test(c) && JP_TITLE.test(c);
+}
+
+/** Units a caption states: wholly a unit statement, or an income-statement title with a parenthesised one. */
+function jpCaptionUnits(caption: string): Set<number> {
+  const out = new Set<number>();
+  const whole = jpUnit(caption);
+  if (whole !== null) out.add(whole);
+  else if (jpStatementCaption(caption)) {
+    for (const m of caption.matchAll(new RegExp(PAREN_GROUP, 'g'))) {
+      const u = jpUnit(m[0]);
+      if (u !== null) out.add(u);
+    }
+  }
+  return out;
+}
+
+const JP_REVENUE = /^(?:total\s+)?(?:net\s+)?(?:sales|revenues?|sales\s+revenues?|operating\s+revenues?|sales\s+and\s+financial\s+services\s+revenues?)$/;
+const JP_EPS_WORDS = /per (?:common |ordinary )?share|earnings per|\beps\b/;
+const JP_EPS_EXCLUDE = /\bads\b|american depositary|adjusted|forecast|non[\s-]?gaap|dividend|book value|net assets|equity per share|weighted|outstanding|number of shares|continuing|discontinued|\bcore\b|underlying|cash flow/;
+
+function jpLabel(raw: string): string {
+  return normLabel(raw)
+    .replace(/\(\s*(?:in\s+)?(?:yen|¥|jpy)\s*\)/g, ' ')
+    .replace(/^[-–—•・·\s]+/, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s:,.]+$/, '')
+    .trim();
+}
+
+/**
+ * Revenue: "(Total) (net) sales / revenue(s)", "sales revenues", "operating revenues", "net revenue", "sales and
+ * financial services revenues" — never ordinary income, operating income, gross profit, interest income or fees.
+ * EPS: "diluted" → diluted; "basic", "net income per share", "profit attributable to owners of parent per share"
+ * → basic. Per ADS, adjusted and forecast rows are never read. `perShare`: the row sits in a per-share block.
+ */
+function jpField(label: string, perShare: boolean): JpField | null {
+  if (JP_REVENUE.test(label)) return 'revenue';
+  if (JP_EPS_EXCLUDE.test(label)) return null;
+  const epsWords = JP_EPS_WORDS.test(label);
+  if (!epsWords && !perShare) return null;
+  const dil = /dilut/.test(label);
+  const basic = /\bbasic\b/.test(label);
+  if (dil && basic) return 'both';
+  if (dil) return 'diluted';
+  if (basic) return 'basic';
+  if (epsWords && /\b(net income|earnings|profits?|income)\b/.test(label)) return 'basic';
+  return null;
+}
+
+// Month ranges: "Jul.-Sep. 2026", "July–September 2026", "April 1, 2026 through June 30, 2026", "(2026/4-6)", "('25/4-'26/3)".
+const JP_NAMED_RANGE = new RegExp(
+  String.raw`\b${MONTH_RE}\.?\s*(?:(\d{1,2})(?!\d))?\s*,?\s*(\d{4})?\s*(?:-|–|—|~|through|to)\s*${MONTH_RE}\.?\s*(?:(\d{1,2})(?!\d))?\s*,?\s*(\d{4})\b`,
+  'gi',
+);
+const JP_NUMERIC_RANGE = /'?(\d{4}|\d{2})\/(\d{1,2})\s*[-–~]\s*(?:'?(\d{4}|\d{2})\/)?(\d{1,2})\b/g;
+
+interface JpRange { span: JpSpan | null; end: [number, number, number] }
+
+const lastDay = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const MONTHS_SPAN: Record<number, JpSpan> = { 3: 'quarter', 6: 'half', 9: 'nine', 12: 'year' };
+
+function jpRanges(text: string): { ranges: JpRange[]; rest: string } {
+  const ranges: JpRange[] = [];
+  const range = (sy: number | null, sm: number, ey: number, em: number, ed: number | null) => {
+    const y0 = sy ?? (em >= sm ? ey : ey - 1);
+    const n = ey * 12 + em - (y0 * 12 + sm) + 1;
+    ranges.push({ span: MONTHS_SPAN[n] ?? null, end: [ey, em, ed ?? lastDay(ey, em)] });
+  };
+  let rest = text.replace(JP_NAMED_RANGE, (_m, m1: string, _d1: string | undefined, y1: string | undefined, m2: string, d2: string | undefined, y2: string) => {
+    range(y1 ? Number(y1) : null, month(m1), Number(y2), month(m2), d2 ? Number(d2) : null);
+    return ' ';
+  });
+  rest = rest.replace(JP_NUMERIC_RANGE, (all: string, y1: string, m1: string, y2: string | undefined, m2: string) => {
+    const sm = Number(m1);
+    const em = Number(m2);
+    if (sm < 1 || sm > 12 || em < 1 || em > 12) return all;
+    const sy = fullYear(y1);
+    range(sy, sm, y2 ? fullYear(y2) : em >= sm ? sy : sy + 1, em, null);
+    return ' ';
+  });
+  return { ranges, rest };
+}
+
+const JP_HALF = /\b(six|6)[\s-]*months?\b|\bfirst half\b|\bhalf[\s-]*year\b|\b(1h|h1)\b|\binterim\b/i;
+const JP_NINE = /\b(nine|9)[\s-]*months?\b/i;
+const JP_QUARTER = /\b(three|3)[\s-]*months?\b|\b(first|1st) quarter\b|\bq[1-4]\b|\b[1-4]q\b/i;
+/** "Second quarter ended …" may mean the quarter or the six months to date: never read. */
+const JP_AMBIGUOUS_QUARTER = /\b(second|third|fourth|2nd|3rd|4th) quarter\b(?!\s*-?\s*end)/i;
+const JP_YEAR = /\b(twelve|12)[\s-]*months?\b|\bfiscal years?\b|\byears? ended\b|\bfull[\s-]*year\b|\bannual\b/i;
+const JP_FY = /\bfy\s?'?(\d{4}|\d{2})\b/gi;
+const JP_QUARTER_TOKEN = /\bq[1-4]\b|\b[1-4]q\b/i;
+const JP_FORECAST = /forecast|outlook|guidance|projection|estimate|\bplan(ned)?\b|target|prospect/i;
+
+function jpKinds(text: string): Set<JpSpan | 'ambiguous'> {
+  const { ranges, rest } = jpRanges(text);
+  const out = new Set<JpSpan | 'ambiguous'>();
+  for (const r of ranges) out.add(r.span ?? 'ambiguous');
+  if (JP_HALF.test(rest)) out.add('half');
+  if (JP_NINE.test(rest)) out.add('nine');
+  if (JP_QUARTER.test(rest)) out.add('quarter');
+  if (JP_AMBIGUOUS_QUARTER.test(rest)) out.add('ambiguous');
+  if (JP_YEAR.test(rest)) out.add('year');
+  if (!out.size && rest.match(JP_FY)) out.add('year');
+  return out;
+}
+
+function jpDates(text: string): Array<[number, number, number]> {
+  const { ranges, rest } = jpRanges(text);
+  return [...ranges.map((r) => r.end), ...headDates(rest, true)];
+}
+
+/**
+ * Does a column (its own header `own`; the label column and the whole header block as fallbacks for the span)
+ * name `span` ending `pe`? A dated column must be within 15 days of `pe`. An undated "2Q" / "Q2" (quarter) or
+ * "FY2027" (year, named by the calendar year it ends in) column counts only inside a block dated `pe`.
+ */
+function jpColumn(own: string, labelCol: string, block: string, pe: Date, span: JpSpan): boolean {
+  if (!own && !labelCol) return false;
+  if (NOT_PERIOD.test(own) || ADJUSTMENT_COL.test(own) || JP_FORECAST.test(`${labelCol} ${own}`)) return false;
+  let kinds = jpKinds(own);
+  if (!kinds.size) kinds = jpKinds(labelCol);
+  if (!kinds.size) kinds = jpKinds(block);
+  if (kinds.size !== 1 || !kinds.has(span)) return false;
+  const near = ([y, m, d]: [number, number, number]) => m > 0 && daysApart(y, m, d, pe) <= 15;
+  let dates = jpDates(own);
+  if (!dates.length) dates = jpDates(labelCol);
+  if (dates.length) return dates.every(near);
+  const token = span === 'quarter'
+    ? JP_QUARTER_TOKEN.test(own)
+    : span === 'year' && [...own.matchAll(JP_FY)].some((m) => fullYear(m[1]!) === pe.getUTCFullYear());
+  return token && jpDates(block).some(near);
+}
+
+interface JpRow {
+  /** 'row': the label names the field, the columns the period; 'cross': the label names the period, the columns the field. */
+  kind: 'row' | 'cross';
+  field: JpField | null;
+  nums: Num[];
+  headers: Cell[][];
+  label: string;
+  rawLabel: string;
+  /** 'cross' rows: the period text (section title above + row label). */
+  period: string;
+}
+
+interface JpCandidate { value: number; unit: number | null; net?: boolean }
+
+function readJp(html: string, opts: ReaderOptions): ReaderResult {
+  const notes: string[] = [];
+  const pe = new Date(`${opts.periodEnd}T00:00:00Z`);
+  if (Number.isNaN(pe.getTime())) {
+    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, notes: ['bad periodEnd'] };
+  }
+  const span = opts.span;
+  const found: Record<'revenue' | 'basic' | 'diluted', JpCandidate[]> = { revenue: [], basic: [], diluted: [] };
+  const isEpsField = (f: JpField | null) => f === 'basic' || f === 'diluted' || f === 'both';
+
+  for (const table of parseTables(html, { rowspan: true })) {
+    const caption = tableCaption(table, true);
+    if (JP_FORECAST.test(caption)) continue;
+    const nonData: string[] = [];
+    let headers: Cell[][] = [];
+    let titles: Cell[][] = [];
+    let lastWasData = false;
+    let section = '';
+    let sectionRaw = '';
+    let perShare = false;
+    let hasEps = false;
+    const rowsOut: JpRow[] = [];
+
+    for (const cells of table.rows) {
+      const li = cells.findIndex((c) => c.text);
+      const first = cells[li]!;
+      const hasLabel = /[a-z]/i.test(first.text) && !/^\(?\s*\d/.test(first.text);
+      const nums = rowNumbers(cells, hasLabel ? li + 1 : li);
+      const yearRow = nums.length > 0 && nums.every((n) => isYear(n) && !n.dollar && !n.pct);
+      const otherText = cells.slice(li + 1).some((c) => c.text);
+
+      if (hasLabel && nums.length && !yearRow) {
+        lastWasData = true;
+        titles = [];
+        let label = jpLabel(first.text);
+        // "Basic" / "Diluted" under "Earnings per share attributable to …" takes the parent's label.
+        if (/^(basic|diluted|basic and diluted|diluted and basic)$/.test(label) && section) label = `${section} ${label}`;
+        const field = jpField(label, perShare);
+        if (isEpsField(field)) hasEps = true;
+        const vals = nums.filter((n) => !n.pct);
+        if (vals.length) {
+          if (field) rowsOut.push({ kind: 'row', field, nums: vals, headers, label, rawLabel: first.text, period: '' });
+          else rowsOut.push({ kind: 'cross', field: null, nums: vals, headers, label, rawLabel: first.text, period: `${sectionRaw} ${first.text}`.trim() });
+        }
+        if (/:\s*$/.test(first.text)) { section = jpLabel(first.text); sectionRaw = first.text; }
+        continue;
+      }
+      nonData.push(cells.map((c) => c.text).join(' '));
+      if (cells.some((c) => c.text && isEpsField(jpField(jpLabel(c.text), false)))) hasEps = true;
+      if (!otherText) {
+        // Label-only row: a section ("Earnings per share attributable to …", "For the three months ended") or a title.
+        section = jpLabel(first.text);
+        sectionRaw = first.text;
+        if (JP_EPS_WORDS.test(section) && !JP_EPS_EXCLUDE.test(section)) perShare = true;
+        if (lastWasData) titles = [...titles, cells];
+        else headers = [...headers, cells];
+        continue;
+      }
+      // A "Yen | Yen | U.S. dollars" row between data rows restates the columns' units: it does not start a new block.
+      if (lastWasData && cells.every((c) => jpUnitCell(c.text))) {
+        headers = [...headers.filter((r) => !r.every((c) => jpUnitCell(c.text))), cells];
+        continue;
+      }
+      if (lastWasData) headers = titles;
+      headers = [...headers, cells];
+      lastWasData = false;
+      section = '';
+      sectionRaw = '';
+    }
+    if (!rowsOut.length) continue;
+
+    const tableText = `${nonData.join(' ')} ${caption}`;
+    const inTable = new Set<number>();
+    for (const r of table.rows) for (const c of r) { const u = jpUnit(c.text); if (u !== null) inTable.add(u); }
+    const near = jpCaptionUnits(caption);
+    const tableUnit = inTable.size === 1 ? [...inTable][0]! : inTable.size === 0 && near.size === 1 ? [...near][0]! : null;
+    // Revenue only from an income statement: a table with a per-share line, or one captioned as the statement
+    // (Sony prints its per-share lines in the next table). Segment / KPI tables are neither.
+    const statement = hasEps || jpStatementCaption(caption);
+
+    for (const row of rowsOut) {
+      const blockText = row.headers.flat().map((c) => c.text).join(' ');
+      const labelCol = row.headers.map((r) => r.filter((c) => c.text && c.start === 0 && c.span === 1).map((c) => c.text).join(' ')).join(' ').trim();
+      for (const n of row.nums) {
+        const overCells = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && !(c.start === 0 && c.span === 1)));
+        const over = overCells.map((c) => c.text).join(' ').trim();
+        let field = row.field;
+        if (row.kind === 'row') {
+          if (!jpColumn(over, labelCol, blockText, pe, span)) continue;
+        } else {
+          // Summary layout: the column header names the field ("Basic earnings per share | yen"), the row the period
+          // ("For the three months ended" | "June 30, 2026").
+          if (overCells.some((c) => /%/.test(c.text) && jpUnitCell(c.text))) continue;
+          const fieldText = overCells.filter((c) => !jpUnitCell(c.text) && !/%/.test(c.text)).map((c) => c.text).join(' ');
+          field = fieldText ? jpField(jpLabel(fieldText), false) : null;
+          if (!field || NOT_PERIOD.test(fieldText) || JP_FORECAST.test(fieldText)) continue;
+          if (!jpColumn(row.period, labelCol, `${labelCol} ${row.period}`, pe, span)) continue;
+        }
+        if (!field) continue;
+        // Currency: the column's own header, else the row label, else the table's text and caption. US$ is skipped.
+        const curOwn = jpCurrency(over);
+        const curLabel = jpCurrency(row.rawLabel);
+        if (curOwn === 'USD' || curOwn === null || curLabel === 'USD' || curLabel === null) continue;
+        if ((curOwn ?? curLabel ?? jpCurrency(tableText)) !== 'JPY') continue;
+
+        if (field === 'revenue') {
+          if (n.value <= 0 || n.decimals > 2 || !statement) continue;
+          const colUnits = new Set(overCells.map((c) => jpUnit(c.text)).filter((u): u is number => u !== null));
+          const unit = colUnits.size === 1 ? [...colUnits][0]! : colUnits.size === 0 ? tableUnit : null;
+          if (unit === null) { notes.push('revenue: no unit stated for table'); continue; }
+          found.revenue.push({ value: n.value * unit, unit, net: row.kind === 'row' && /\bnet revenues?\b/.test(row.label) });
+        } else {
+          // EPS is in yen and never scaled.
+          if (n.decimals < 2 || n.decimals > 3 || Math.abs(n.value) >= 100_000) continue;
+          if (field === 'basic' || field === 'both') found.basic.push({ value: n.value, unit: null });
+          if (field === 'diluted' || field === 'both') found.diluted.push({ value: n.value, unit: null });
+        }
+      }
+    }
+  }
+
+  const settle = (field: 'revenue' | 'basic' | 'diluted'): JpCandidate | null => {
+    let c = found[field];
+    // Brokers (Nomura) print both "Total revenues" and "Net revenue": net revenue is the one read.
+    if (field === 'revenue' && c.some((x) => x.net)) c = c.filter((x) => x.net);
+    if (!c.length) return null;
+    const same = (a: number, b: number) => (field === 'revenue' ? Math.abs(a - b) <= 0.001 * Math.abs(b) : Math.abs(a - b) < 1e-6);
+    const distinct = c.filter((x, i) => c.findIndex((y) => same(x.value, y.value)) === i);
+    if (distinct.length > 1) {
+      notes.push(`${field}: candidates disagree (${distinct.map((d) => d.value).join(', ')})`);
+      return null;
+    }
+    return c.reduce((a, b) => ((b.unit ?? Infinity) < (a.unit ?? Infinity) ? b : a));
+  };
+  const rev = settle('revenue');
+  const basic = settle('basic');
+  const diluted = settle('diluted');
+  return {
+    epsShare: diluted?.value ?? null,
+    epsShareStated: found.diluted.length > 0,
+    epsAds: null,
+    epsAdjusted: null,
+    epsGaap: diluted?.value ?? null,
+    epsBasic: basic?.value ?? null,
     revenue: rev ? Math.round(rev.value) : null,
     unit: rev?.unit ?? null,
     notes,
