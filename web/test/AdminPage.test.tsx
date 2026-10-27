@@ -83,6 +83,19 @@ describe('admin page', () => {
     expect(calls).toEqual([]);
   });
 
+  test('Hong Kong panel shows reader off and SEC configured', async () => {
+    reply = (url) => (url === '/api/admin/hk'
+      ? json(200, { full: 14, basic: 6, secConfigured: true, readerOn: false, lastSixKAt: '2026-10-26T04:00:00.000Z' })
+      : undefined);
+    renderPage();
+    const panel = (await screen.findByRole('region', { name: 'Hong Kong' }));
+    await waitFor(() => expect(panel.textContent).toContain('Full level 14 · Basic level 6'));
+    expect(panel.textContent).toContain('SEC access: configured');
+    expect(panel.textContent).toContain('6-K reader: off until 20 releases are read exactly right');
+    expect(panel.textContent).toContain('Last 6-K seen:');
+    expect(panel.textContent).not.toContain('Never');
+  });
+
   test('lists users with role, created and last sign-in', async () => {
     renderPage();
     const one = await row('1A');

@@ -1,9 +1,9 @@
-import type { BeatMiss } from '../../../server/src/api/types';
 import type { InReportDto } from '../../../server/src/india/api/types';
 import type { InLivePriceDto, Note } from '../api';
-import { changeClass, formatChange, formatDateHeading, formatEpsInr, formatInrCr, formatPct } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatEpsInr, formatInrCr } from '../lib/format';
 import { liveCap, todayIst } from '../lib/liveCap';
-import { type SortKey, sortRows } from '../lib/sort';
+import type { SortKey } from '../lib/sort';
+import { byDate, Result } from './listParts';
 import { NoteEditor } from './NoteEditor';
 import { Star } from './Star';
 import { Tags } from './Tags';
@@ -33,27 +33,6 @@ const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionD
 
 function clock(iso: string, zone: string): string {
   return new Date(iso).toLocaleTimeString('en-IN', { timeZone: zone, hour: 'numeric', minute: '2-digit' });
-}
-
-function byDate(rows: InReportDto[], sort: SortKey): [string, InReportDto[]][] {
-  const groups = new Map<string, InReportDto[]>();
-  for (const r of rows) groups.set(r.reportDate, [...(groups.get(r.reportDate) ?? []), r]);
-  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([d, list]) => [d, sortRows(list, sort)]);
-}
-
-function Result({ estimate, actual, result, surprisePct, format, analysts, preliminary, corrected }: {
-  estimate: number | null; actual: number | null; result: BeatMiss | null; surprisePct: number | null;
-  format: (n: number | null) => string; analysts: number | null; preliminary: boolean; corrected: boolean;
-}) {
-  const arrow = result === 'beat' ? ' ▲' : result === 'miss' ? ' ▼' : '';
-  return (
-    <>
-      {format(estimate)} / <span className={`act ${result ?? ''}`}>{actual == null ? '—' : `${format(actual)}${arrow}`}</span>
-      <Tags preliminary={preliminary} corrected={corrected} />
-      {surprisePct != null && <span className="muted"> ({formatPct(surprisePct)})</span>}
-      {analysts != null && estimate != null && <span className="muted"> · {analysts} analyst{analysts === 1 ? '' : 's'}</span>}
-    </>
-  );
 }
 
 export function InStockList({ rows, zone, expanded, sort, onToggle, notes, onSaveNote, highlight, prices = {}, watched, onWatch }: Props) {

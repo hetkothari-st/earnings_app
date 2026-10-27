@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MarketIndexDto, MarketsResponse } from '../../../server/src/api/types';
-import { apiFetch, type InMarket } from '../api';
+import { apiFetch, type HkMarketDto, type InMarket } from '../api';
 import { changeClass, formatChange } from '../lib/format';
 
 const level = (n: number | null) =>
@@ -38,7 +38,40 @@ export function LiveMarketBar() {
   return indices ? <MarketBar indices={indices} /> : null;
 }
 
-const IN_EXCHANGE: Record<string, string> = { SENSEX: 'BSE' };
+/**
+ * Hang Seng, HS China Enterprises, HS Tech. Yahoo only, so every index is delayed. `live` carries pushes over the
+ * live stream; /api/hk/markets (every 15 s) fills the rest.
+ */
+export function HongKongMarketBar({ live = [] }: { live?: HkMarketDto[] }) {
+  const [polled, setIndices] = useState<HkMarketDto[] | null>(null);
+  const byName = new Map(live.map((m) => [m.index, m]));
+  const indices = polled?.map((m) => byName.get(m.index) ?? m) ?? null;
+  useEffect(() => {
+    let alive = true;
+    const load = () => apiFetch('/api/hk/markets')
+      .then((r) => (r.ok ? (r.json() as Promise<{ indices: HkMarketDto[] }>) : null))
+      .then((b) => { if (alive && b) setIndices(b.indices); })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  if (!indices) return null;
+  return (
+    <section className="markets markets-hk" aria-label="Hong Kong markets">
+      {indices.map((m) => (
+        <div key={m.index} className="market">
+          <span className="market-exchange">HKEX</span>
+          <span className="market-index">{m.index} · delayed</span>
+          <span className="market-level">{level(m.price)}</span>
+          <span className={`market-change ${changeClass(m.changePct)}`}>{formatChange(m.changePct)}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+const IN_EXCHANGE:Record<string, string> = { SENSEX: 'BSE' };
 const inLevel = (n: number | null) =>
   n == null ? '—' : n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

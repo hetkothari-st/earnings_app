@@ -17,7 +17,8 @@ import type { SortKey } from '../lib/sort';
 import { todayEt, zoneLabel } from '../lib/time';
 import { DayStrip } from './DayStrip';
 import { Header } from './Header';
-import { IndiaMarketBar, LiveMarketBar } from './MarketBar';
+import { HongKongMarketBar, IndiaMarketBar, LiveMarketBar } from './MarketBar';
+import { HkStockList } from './HkStockList';
 import { SessionBand } from './SessionBand';
 import { StaleBanner } from './StaleBanner';
 import { StockList } from './StockList';
@@ -123,7 +124,7 @@ export function Calendar() {
       setWatchKey((k) => k + 1);
       fetchPrices().then(setPrices).catch(() => {});
       fetchInPrices().then(setInPrices).catch(() => {});
-      fetchHkPrices().then(setHkPrices).catch(() => {});
+      if (market === 'HK') fetchHkPrices().then(setHkPrices).catch(() => {});
     },
     {
       onIds: flash('HK'),
@@ -216,7 +217,7 @@ export function Calendar() {
 
   return (
     <div className="app">
-      {market === 'IN' ? <IndiaMarketBar live={inIndices} /> : <LiveMarketBar />}
+      {market === 'IN' ? <IndiaMarketBar live={inIndices} /> : market === 'HK' ? <HongKongMarketBar live={hkIndices} /> : <LiveMarketBar />}
       <Header
         view={view} onView={setView} range={range} custom={custom} onCustom={setCustom}
         onShift={(dir) => setAnchor((a) => shiftAnchor(view, a, dir))} onToday={() => setAnchor(todayFor(market))}
@@ -261,11 +262,13 @@ export function Calendar() {
             watched={watch.symbols} onWatch={onWatch} />
         )}
 
-        {/* Hong Kong loading/error. The list (HkStockList) arrives with Task 13; until then a plain line. */}
+        {/* Hong Kong loading/error */}
         {!showWatch && market === 'HK' && !customInvalid && hkLoad.status === 'loading' && <p className="muted">Loading Hong Kong earnings…</p>}
         {!showWatch && market === 'HK' && hkLoad.status === 'error' && <p className="warn-text">Could not load data: {hkLoad.error}</p>}
         {!showWatch && market === 'HK' && hkLoad.status === 'ok' && (
-          <p className="muted" data-testid="hk-rows">{hkRows.length} Hong Kong {hkRows.length === 1 ? 'report' : 'reports'} in this range.</p>
+          <HkStockList rows={hkRows} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
+            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={hkPrices}
+            watched={watch.symbols} onWatch={onWatch} />
         )}
       </main>
 
