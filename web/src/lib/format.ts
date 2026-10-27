@@ -66,7 +66,8 @@ export function formatEpsInr(eps: number | null): string {
 }
 
 const HK_PREFIX: Record<string, string> = { CNY: 'RMB¥', USD: 'US$', HKD: 'HK$' };
-const hkPrefix = (currency: string | null | undefined) => HK_PREFIX[currency ?? 'HKD'] ?? `${currency} `;
+/** No currency on record: no prefix (uncertain means blank, never a guessed HK$). */
+const hkPrefix = (currency: string | null | undefined) => (currency == null ? '' : HK_PREFIX[currency] ?? `${currency} `);
 
 /** A Hong Kong share price in HK$: "HK$512.50". */
 export function formatHkPrice(n: number | null): string {

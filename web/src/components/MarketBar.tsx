@@ -71,7 +71,7 @@ export function HongKongMarketBar({ live = [] }: { live?: HkMarketDto[] }) {
   );
 }
 
-const IN_EXCHANGE:Record<string, string> = { SENSEX: 'BSE' };
+const IN_EXCHANGE: Record<string, string> = { SENSEX: 'BSE' };
 const inLevel = (n: number | null) =>
   n == null ? '—' : n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

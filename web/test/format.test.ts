@@ -9,6 +9,10 @@ describe('Hong Kong formats', () => {
     expect(formatHkMoney(-1.5e9, 'CNY')).toBe('-RMB¥1.5B');
     expect(formatHkMoney(2e9, 'SGD')).toBe('SGD 2.0B');
     expect(formatHkMoney(null, 'CNY')).toBe('—');
+    // No currency on record: no prefix (never a guessed HK$).
+    expect(formatHkMoney(2e9, null)).toBe('2.0B');
+    expect(formatHkEps(-0.5, null)).toBe('−0.50');
+    expect(formatHkEps(1.1, undefined)).toBe('1.10');
   });
   test('formatHkEps uses a true minus and the stated currency', () => {
     expect(formatHkEps(1.1, 'CNY')).toBe('RMB¥1.10');

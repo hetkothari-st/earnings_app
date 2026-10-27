@@ -80,7 +80,12 @@ export function Calendar() {
   const flushTimer = useRef<number | null>(null);
   const shown = useRef<Record<Market, Set<number>>>({ US: new Set(), IN: new Set(), HK: new Set() });
   const reload = () => setReloadKey((k) => k + 1);
+  const visibleMarket = useRef(market);
+  visibleMarket.current = market;
   const patch = async (m: Market, ids: number[]) => {
+    // HK / India rows are not on screen off their own tab: never reload the visible market for them (the tab
+    // loads fresh data when opened; the watchlist view refreshes through watchKey).
+    if (m !== 'US' && m !== visibleMarket.current) return;
     if (ids.length > MAX_PATCH || ids.some((id) => !shown.current[m].has(id))) return reload();
     try {
       const got = new Map((await Promise.all(ids.map((id) => fetchReport(m, id)))).filter((r) => r != null).map((r) => [r.id, r]));

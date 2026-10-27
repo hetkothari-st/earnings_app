@@ -64,3 +64,12 @@ test('after the live stream drops and comes back, the list reloads', async () =>
   act(() => { FakeSource.last!.emit('error'); FakeSource.last!.emit('open'); });
   await waitFor(() => expect(listLoads()).toBe(2));
 });
+
+test('HK and India live events on the US tab do not reload the US list', async () => {
+  render(<Calendar />);
+  await waitFor(() => expect(listLoads()).toBe(1));
+  act(() => { FakeSource.last!.emit('hk-results', { ids: [2_000_000_001] }); FakeSource.last!.emit('in-results', { ids: [1_000_000_001] }); });
+  await act(() => new Promise((r) => setTimeout(r, 400))); // past the 250 ms gathering delay
+  expect(listLoads()).toBe(1);
+  expect(paths.some((p) => p.startsWith('/api/hk/') || p.startsWith('/api/in/earnings'))).toBe(false);
+});

@@ -137,11 +137,12 @@ function HkDetails({ r, zone, note, onSaveNote, price }: {
         <dt>Release</dt>
         <dd>
           {r.releasedAt ? (
+            // SEC acceptance is an upper bound on the release time, not the release time itself.
             <>
-              {TIMING_SHORT[r.timing]}, {clock(r.releasedAt, HKT)} HKT
+              {r.timing !== 'UNKNOWN' && `${TIMING_SHORT[r.timing]}, `}Filed with SEC by {clock(r.releasedAt, HKT)} HKT
               {zone !== HKT && <span className="muted"> ({clock(r.releasedAt, zone)} your time)</span>}
             </>
-          ) : 'Time not announced'}
+          ) : TIMING_SHORT[r.timing]}
           {r.secDocUrl && <span className="muted"> · <a href={r.secDocUrl} target="_blank" rel="noreferrer">SEC 6-K</a></span>}
         </dd>
 
@@ -191,7 +192,7 @@ function HkDetails({ r, zone, note, onSaveNote, price }: {
             <>
               <span className={changeClass(r.previousMove.pct)}>{formatChange(r.previousMove.pct, 1)}</span>
               <span className="muted"> after the {formatDateHeading(r.previousMove.reportDate)} report</span>
-              {r.previousMove.basis === 'assumed' && <span className="basis"> * release time not on record, assumed same as this period</span>}
+              {r.previousMove.basis === 'assumed' && <span className="basis"> * release time not on record, assumed after the close</span>}
             </>
           ) : '—'}
         </dd>

@@ -92,6 +92,28 @@ describe('HkStockList', () => {
     expect(screen.getByText('HK$3.20T', { exact: false })).toBeTruthy();
   });
 
+  test('release line: stated timing before release; after release the SEC acceptance is an upper bound', () => {
+    mount([dto({ releasedAt: null, timing: 'AMC' }), dto({ id: 2_000_000_002, symbol: '9618', releasedAt: null, timing: 'UNKNOWN' })], ['HK:9988', 'HK:9618']);
+    const [a, b] = screen.getAllByText('Release').map((e) => e.nextElementSibling!.textContent!);
+    expect(a).toContain('After close');
+    expect(b).toContain('Time not announced');
+  });
+
+  test('released: "filed with SEC by <time> HKT"', () => {
+    // 2026-11-13T10:30Z = 6:30 PM HKT.
+    mount([dto({ releasedAt: '2026-11-13T10:30:00.000Z', timing: 'UNKNOWN' })], ['HK:9988']);
+    const text = screen.getByText('Release').nextElementSibling!.textContent!;
+    expect(text).toContain('Filed with SEC by 6:30 PM HKT');
+    expect(text).not.toContain('Time not announced');
+  });
+
+  test('previous-move footnote says the unknown release time was assumed after the close', () => {
+    mount([dto({ previousMove: { pct: 3.2, reportDate: '2026-08-20', basis: 'assumed' } })], ['HK:9988']);
+    const text = screen.getByText('Previous move').nextElementSibling!.textContent!;
+    expect(text).toContain('assumed after the close');
+    expect(text).not.toContain('same as this period');
+  });
+
   test('expanded key is HK:<code>', () => {
     const onToggle = vi.fn();
     mount([dto({})], [], { onToggle });
