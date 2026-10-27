@@ -562,6 +562,29 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
     expect(readJpRelease(`<p>Mizuho Bank, Ltd. Consolidated Results</p>${sumT}`, mfg)).toMatchObject(blank);
   });
 
+  it('S1d (probe9 A, C): a bare name right above an unnumbered generic heading makes it that entity\'s; B and controls unchanged', () => {
+    const sumT = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`;
+    const blank = { eps: null, epsDiluted: null };
+    const read = { eps: 31.62, epsDiluted: 31.59 };
+    const kpi = `<table>${tr('Branches', '120')}</table>`;
+    const cases: Array<[string, string]> = [
+      ['A1', '<p>Mizuho Financial Group, Inc.</p><p>Mizuho Bank</p><p>Consolidated Results</p>' + sumT],
+      ['A2', '<p><b>MUFG Bank, Ltd.</b><br>Consolidated</p>' + sumT],
+      ['A3', '<h3>みずほ銀行</h3><p>連結</p>' + sumT],
+      ['B1', '<p>Consolidated Results</p>' + kpi + '<p><b>Mizuho Bank</b></p><p>Consolidated basis</p>' + sumT],
+      ['B2', '<p>Consolidated Results</p>' + kpi + '<p><b>Mizuho Bank</b></p>' + sumT],
+      ['C1', '<p>Consolidated Results</p><table><tr><td colspan="3">MUFG Bank</td></tr></table><table><tr><td colspan="3">Consolidated</td></tr></table>' + sumT],
+    ];
+    for (const ad of [undefined, 'MFG', 'MUFG']) {
+      for (const [name, html] of cases) expect(readJpRelease(html, { ...Q1, issuer: ad ? jpIssuerFor(ad) : undefined }), `${name} ${ad}`).toMatchObject(blank);
+      expect(readJpRelease('<p>Consolidated Results</p>' + sumT, { ...Q1, issuer: ad ? jpIssuerFor(ad) : undefined }), `ctl ${ad}`).toMatchObject(read);
+    }
+    // Above an unnumbered heading: a numbered heading, the issuer's own name or another generic heading vouch for it.
+    expect(readJpRelease('<p>1. Financial Highlights</p><p>Consolidated Results</p>' + sumT, Q1)).toMatchObject(read);
+    expect(readJpRelease('<p>Mizuho Financial Group, Inc.</p><p>Consolidated Results</p>' + sumT, { ...Q1, issuer: jpIssuerFor('MFG') })).toMatchObject(read);
+    expect(readJpRelease('<p>Financial Highlights</p><p>Consolidated Results</p>' + sumT, Q1)).toMatchObject(read);
+  });
+
   it('S1c (probe6–8): issuer from the caller only; whole chain generic; whole-word note parentheticals; lead region only', () => {
     const sumT = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`;
     const blank = { eps: null, epsDiluted: null };
@@ -620,7 +643,9 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
     for (const [name, html, p] of cases) expect(readJpRelease(html, p), name).toMatchObject(blank);
     // Controls.
     expect(readJpRelease('<p>Consolidated Results</p>' + sumT, Q1), 'ctl').toMatchObject(read);
-    expect(readJpRelease('<p>Toyota Motor Corporation</p>' + sep + '<p>Toyota Motor Corporation Consolidated Results</p>' + sumT, tm), 'i6').toMatchObject(read);
+    // i6: prose right above an unnumbered heading is not a vouching heading: fail-safe blank.
+    expect(readJpRelease('<p>Toyota Motor Corporation</p>' + sep + '<p>Toyota Motor Corporation Consolidated Results</p>' + sumT, tm), 'i6').toMatchObject(blank);
+    expect(readJpRelease('<p>Toyota Motor Corporation Consolidated Results</p>' + sumT, tm), 'i6 alone').toMatchObject(read);
     expect(readJpRelease('<p>Consolidated Results (Millions of yen, except per share data)</p>' + sumT, Q1), 'unit paren').toMatchObject(read);
     expect(readJpRelease('<p>Consolidated Results (Note: amounts rounded down)</p>' + sumT, Q1), 'note paren').toMatchObject(read);
     expect(readJpRelease('<p>1. Consolidated financial results</p><p>(1) Operating results</p>' + sumT, Q1), 'chain').toMatchObject(read);

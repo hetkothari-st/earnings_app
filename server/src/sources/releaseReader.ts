@@ -1118,7 +1118,21 @@ function jpGroupTitle(blocks: string[], issuer: JpIssuer | undefined): boolean {
     any = true;
     if (!jpGenericHeading(b, issuer)) return false;
     if (JP_GROUP_TITLE.test(b)) group = true;
-    if (!JP_SUB_NUMBER.test(b)) break;
+    if (JP_SUB_NUMBER.test(b)) continue;
+    // An unnumbered top heading ("Consolidated Results", 連結): the block right above it (unit / notes skipped) must
+    // not be a bare entity name ("Mizuho Bank", "MUFG Bank"). Numbered, the issuer's own name / ticker, or itself
+    // generic → the chain is complete; anything else → not the group.
+    if (!JP_ANY_NUMBER.test(b)) {
+      for (let j = i - 1; j >= 0; j--) {
+        const a = blocks[j]!.trim();
+        if (jpUnitOrNote(a)) continue;
+        const bare = (s: string) => s.replace(/[\s.:：。]+$/, '').toLowerCase();
+        const own = [...(issuer?.names ?? []), ...(issuer?.ticker ? [issuer.ticker] : [])].some((n) => bare(n) === bare(a));
+        if (!(JP_ANY_NUMBER.test(a) || own || jpGenericHeading(a, issuer))) return false;
+        break;
+      }
+    }
+    break;
   }
   return any && group;
 }
