@@ -302,6 +302,38 @@ describe('review round 1', () => {
     expect(readJpRelease(html, Q2)).toMatchObject({ revenue: 12_377_000_000, eps: 239.1, span: 'quarter' });
   });
 
+  const parentNull = { revenue: null, eps: null, span: null };
+
+  it('P1: prose mentioning "consolidated" never ends a non-consolidated section', () => {
+    const p1 = `<p>Non-consolidated results. Net sales decreased compared with the consolidated figures. (Millions of yen)</p><table>${ncBody}</table>`;
+    expect(readJpRelease(p1, Q4)).toMatchObject(parentNull);
+    expect(readJpRelease(cons + p1, Q4)).toMatchObject({ revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 });
+  });
+
+  it('P2: "Dividends from consolidated subsidiaries" prose after a non-consolidated heading', () => {
+    const html = `<p>2. Summary of Non-consolidated Financial Results</p><p>Dividends from consolidated subsidiaries increased.</p><p>(1) Operating Results</p><table>${ncBody}</table>`;
+    expect(readJpRelease(html, Q4)).toMatchObject(parentNull);
+  });
+
+  it('P3: a Japanese 個別 / 非連結 heading opens a non-consolidated section', () => {
+    expect(readJpRelease(`<p>2. 個別業績の概要（非連結）</p><table>${ncBody}</table>`, Q4)).toMatchObject(parentNull);
+  });
+
+  it('P4: 単体 heading, then 連結子会社 prose: still non-consolidated', () => {
+    expect(readJpRelease(`<p>単体業績</p><p>連結子会社からの配当金が増加しました。</p><table>${ncBody}</table>`, Q4)).toMatchObject(parentNull);
+  });
+
+  it('P5 / P6: a non-consolidated section covers the tables that follow it', () => {
+    expect(readJpRelease(`<p>Non-consolidated Financial Results</p><table>${ncBody}</table><table>${ncBody}</table>`, Q4)).toMatchObject(parentNull);
+    const p6 = cons + `<p>(Reference) Summary of Non-consolidated Financial Results</p><table>${ncBody}</table>`;
+    expect(readJpRelease(p6, Q4)).toMatchObject({ revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 });
+  });
+
+  it('P7: a note "on a consolidated basis" does not end the section', () => {
+    const html = `<p>Non-consolidated Financial Results</p><p>Note: Figures on a consolidated basis are shown above.</p><table>${ncBody}</table>`;
+    expect(readJpRelease(html, Q4)).toMatchObject(parentNull);
+  });
+
   it('X4: a "(Reference)" note row does not make a consolidated table non-consolidated', () => {
     const html = table('(Millions of yen, except per share amounts)',
       tr('', 'Fiscal year ended March 31, 2026') + tr('Net sales', '48,000,000') + tr('Basic earnings per share', '250.00') +
