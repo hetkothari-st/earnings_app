@@ -13,6 +13,7 @@
     "verify-hk-universe": "tsx src/cli/verifyHkUniverse.ts",
     "verify-jp-universe": "tsx src/cli/verifyJpUniverse.ts",
     "collect-hk-corpus": "tsx src/cli/collectHkCorpus.ts",
+    "collect-jp-corpus": "tsx src/cli/collectJpCorpus.ts",
     "hk-spot-check": "tsx src/cli/hkSpotCheck.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
