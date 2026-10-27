@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readJpRelease } from '../../src/jp/sources/releaseJp.js';
+import { jpFiscalYear, readJpRelease } from '../../src/jp/sources/releaseJp.js';
 import { readRelease } from '../../src/sources/releaseReader.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/jp/releases/${n}`, import.meta.url), 'utf8');
@@ -66,8 +66,8 @@ describe('readJpRelease', () => {
       tr('', '2Q FY2026', '2Q FY2027') +
       tr('Net sales', '11,444', '12,377') +
       tr('Basic earnings per share', '248.25', '239.10'));
-    // Both columns are quarter tokens in a block dated periodEnd: they disagree → blank, never a guess.
-    expect(readJpRelease(dated, Q2)).toMatchObject({ revenue: null, eps: null });
+    // Only the column whose token names this release's quarter and fiscal year (2Q FY2027) is read.
+    expect(readJpRelease(dated, Q2)).toMatchObject({ revenue: 12_377_000_000, eps: 239.1, span: 'quarter' });
     const undated = table('(Millions of yen)',
       tr('', '2Q FY2027') +
       tr('Net sales', '12,377') +
@@ -175,6 +175,79 @@ describe('readJpRelease', () => {
       tr('June 30, 2026', '71.77', '71.59') +
       tr('June 30, 2025', '47.55', '47.45'));
     expect(readJpRelease(html, { periodEnd: '2026-06-30', fiscalQuarter: 1 })).toMatchObject({ eps: 71.77, epsDiluted: 71.59, revenue: null, span: 'quarter' });
+  });
+});
+
+describe('review round 1', () => {
+  const span = (n: number, t: string) => `<td colspan="${n}">${t}</td>`;
+  const Q1 = { periodEnd: '2026-06-30', fiscalQuarter: 1 as const };
+  const Q4 = { periodEnd: '2026-03-31', fiscalQuarter: 4 as const };
+
+  it('E1: a 1Q token column in a block dated periodEnd is not the 2nd quarter', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      `<tr><td></td>${span(2, 'September 30, 2026')}</tr>` + tr('', '1Q FY2027', '1H FY2027') +
+      tr('Net sales', '11,000,000', '24,560,124') + tr('Basic earnings per share', '211.02', '450.12'));
+    expect(readJpRelease(html, Q2)).toMatchObject({ revenue: 24_560_124_000_000, eps: 450.12, span: 'ytd', ytdMonths: 6 });
+  });
+
+  it('E5: a dated quarter header over a Q2 FY2025 token is not the 3rd quarter', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      `<tr><td></td>${span(1, 'Three months ended December 31, 2025')}</tr>` + tr('', 'Q2 FY2025') +
+      tr('Sales', '3,500,000') + tr('Basic earnings per share', '60.00'));
+    expect(readJpRelease(html, { periodEnd: '2025-12-31', fiscalQuarter: 3 })).toMatchObject({ revenue: null, eps: null, span: null });
+  });
+
+  it('E3: an FY token is read only when it names the fiscal year ending at periodEnd', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      `<tr><td></td>${span(2, 'Year ended March 31, 2026')}</tr>` + tr('', 'FY2025', 'FY2026') +
+      tr('Sales', '12,000,000', '12,500,000') + tr('Basic earnings per share', '180.00', '190.00'));
+    expect(readJpRelease(html, Q4)).toMatchObject({ revenue: 12_500_000_000_000, eps: 190, span: 'ytd', ytdMonths: 12 });
+  });
+
+  it('jpFiscalYear: named by the calendar year the fiscal year ends in', () => {
+    expect(jpFiscalYear('2026-09-30', 2)).toBe(2027);
+    expect(jpFiscalYear('2026-06-30', 1)).toBe(2027);
+    expect(jpFiscalYear('2025-12-31', 3)).toBe(2026);
+    expect(jpFiscalYear('2026-03-31', 4)).toBe(2026);
+    expect(jpFiscalYear('2026-12-31', 4)).toBe(2026);
+  });
+
+  it('G1b: a segment row in the summary layout never inherits the label-column header period', () => {
+    const html = table('(Millions of yen)',
+      tr('Three months ended June 30, 2026', 'Net sales', 'Basic earnings per share') + tr('Automotive', '9,000', '10.00'));
+    expect(readJpRelease(html, Q1)).toMatchObject({ revenue: null, eps: null, span: null });
+  });
+
+  it('C3: "$" figures are never yen', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      tr('', 'Three months ended June 30, 2026') + tr('Net sales', '$7') + tr('Basic earnings per share', '$0.07'));
+    expect(readJpRelease(html, Q1)).toMatchObject({ revenue: null, eps: null, span: null });
+  });
+
+  const cons = table('',
+    tr('', 'Net sales', '', 'Basic earnings per share') + tr('', 'Million yen', '%', 'Yen') +
+    tr('Fiscal year ended March 31, 2026', '48,000,000', '4.1', '250.00'));
+  const nonc = table('(Reference) Summary of Non-consolidated Financial Results',
+    tr('', 'Net sales', '', 'Basic earnings per share') + tr('', 'Million yen', '%', 'Yen') +
+    tr('Fiscal year ended March 31, 2026', '15,000,000', '2.0', '300.00'));
+
+  it('N2: non-consolidated figures do not blank the consolidated ones', () => {
+    expect(readJpRelease(cons + nonc, Q4)).toMatchObject({ revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 });
+  });
+
+  it('N3: non-consolidated figures alone are never read as the company', () => {
+    expect(readJpRelease(nonc, Q4)).toMatchObject({ revenue: null, eps: null, span: null });
+    const section = table('(Millions of yen, except per share amounts)',
+      tr('Non-consolidated') + tr('', 'Fiscal year ended March 31, 2026') + tr('Net sales', '15,000,000') + tr('Basic earnings per share', '300.00'));
+    expect(readJpRelease(section, Q4)).toMatchObject({ revenue: null, eps: null });
+  });
+
+  it('notes of the YTD read are kept when the quarter read found nothing', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      tr('', 'Six months ended September 30, 2026', 'Six months ended September 30, 2026') + tr('Basic earnings per share', '450.12', '451.00'));
+    const v = readJpRelease(html, Q2);
+    expect(v).toMatchObject({ eps: null, span: null });
+    expect(v.notes).toContain('basic: candidates disagree (450.12, 451)');
   });
 });
 
