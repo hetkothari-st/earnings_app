@@ -27,6 +27,7 @@ async function main(): Promise<void> {
   let bad = 0;
   for (const e of HK_UNIVERSE.filter((x) => hkLevel(x) === 'full')) {
     const problems: string[] = [];
+    const warnings: string[] = [];
     const secCik = cikByTicker.get(e.adr!.toUpperCase()) ?? null;
     if (secCik !== e.cik) problems.push(`cik ${e.cik} != SEC ${secCik}`);
 
@@ -45,34 +46,38 @@ async function main(): Promise<void> {
         filings: { recent: { form: string[]; accessionNumber: string[]; primaryDocument: string[] } };
       };
       const r = sub.filings.recent;
-      const i = r.form.indexOf('20-F');
+      // 20-F for foreign private issuers; domestic filers (YUMC, ONC) file 10-Ks instead.
+      let form = '20-F';
+      let i = r.form.indexOf(form);
+      if (i < 0) { form = '10-K'; i = r.form.indexOf(form); }
       if (i < 0) {
-        // 10-K filer (domestic): common stock
-        ratioText = 'common stock (1:1)';
-        if (e.adrRatio !== 1 && e.code !== '6160') problems.push(`no 20-F; ratio ${e.adrRatio} unverified`);
+        ratioText = '(no 20-F or 10-K found)';
+        problems.push(ratioText);
       } else {
         const url = `https://www.sec.gov/Archives/edgar/data/${cik}/${r.accessionNumber[i]!.replace(/-/g, '')}/${r.primaryDocument[i]}`;
         const text = (await http.text(url)).replace(/<[^>]+>/g, ' ').replace(/&#160;|&nbsp;|&#8203;|&#8217;/g, ' ').replace(/\s+/g, ' ');
         const m = RATIO_RE.exec(text);
         const alt = m ? null : RATIO_RE_ALT.exec(text);
-        if (alt) {
-          ratioText = alt[0];
-          const n = WORDS[alt[1]!.toLowerCase()] ?? Number(alt[1]);
-          if (n !== e.adrRatio) problems.push(`ratio ${e.adrRatio} != 20-F ${n}`);
-        } else if (!m) {
-          ratioText = '(no ratio sentence found)';
-          problems.push('no ratio sentence in latest 20-F');
+        const hit = alt ?? m;
+        if (hit) {
+          ratioText = hit[0];
+          const word = alt ? alt[1]! : m![2]!;
+          const n = WORDS[word.toLowerCase()] ?? Number(word);
+          if (!Number.isFinite(n)) problems.push(`unparsed ratio word "${word}"`);
+          else if (n !== e.adrRatio) problems.push(`ratio ${e.adrRatio} != ${form} ${n}`);
+        } else if (form === '10-K' && e.adrRatio === 1) {
+          // Common stock, no ADS sentence to read. Visible warning, not silent.
+          ratioText = 'common stock (1:1)';
+          warnings.push('ratio not machine-verified (10-K, common stock)');
         } else {
-          ratioText = m[0];
-          const n = WORDS[m[2]!.toLowerCase()] ?? Number(m[2]);
-          if (!Number.isFinite(n)) problems.push(`unparsed ratio word "${m[2]}"`);
-          else if (n !== e.adrRatio) problems.push(`ratio ${e.adrRatio} != 20-F ${n}`);
+          ratioText = '(no ratio sentence found)';
+          problems.push(`no ratio sentence in latest ${form}`);
         }
       }
     } catch (err) {
-      problems.push(`20-F lookup failed: ${(err as Error).message}`);
+      problems.push(`SEC filing lookup failed: ${(err as Error).message}`);
     }
-    console.log(`${e.code} ${e.adr} cik=${e.cik} sec=${secCik} cboe=${cboeStatus} ratio=${e.adrRatio} | ${ratioText} | ${problems.length ? 'MISMATCH: ' + problems.join('; ') : 'ok'}`);
+    console.log(`${e.code} ${e.adr} cik=${e.cik} sec=${secCik} cboe=${cboeStatus} ratio=${e.adrRatio} | ${ratioText} | ${problems.length ? 'MISMATCH: ' + problems.join('; ') : 'ok'}${warnings.length ? ' WARNING: ' + warnings.join('; ') : ''}`);
     if (problems.length) bad++;
   }
   console.log(bad ? `${bad} mismatch(es)` : 'all ok');
