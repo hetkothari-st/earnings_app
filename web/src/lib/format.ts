@@ -85,3 +85,27 @@ export function formatHkEps(n: number | null, currency: string | null | undefine
   if (n == null) return '—';
   return `${n < 0 ? '−' : ''}${hkPrefix(currency)}${Math.abs(n).toFixed(2)}`;
 }
+
+/** A Japanese share price in yen: "¥2,845.5", "¥3,120". */
+export function formatJpPrice(n: number | null): string {
+  return n == null ? '—' : `¥${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+const jpPrefix = (currency: string | null | undefined) => (currency == null ? '' : currency === 'JPY' ? '¥' : `${currency} `);
+
+/** Compact amount in its stated currency: "¥48.04T", "¥12.4B". Never converted. */
+export function formatJpMoney(n: number | null, currency: string | null | undefined): string {
+  if (n == null) return '—';
+  return formatUsd(n).replace('$', jpPrefix(currency));
+}
+
+/** EPS in its stated currency: "¥239.10", "−¥5.00". */
+export function formatJpEps(n: number | null, currency: string | null | undefined): string {
+  if (n == null) return '—';
+  return `${n < 0 ? '−' : ''}${jpPrefix(currency)}${Math.abs(n).toFixed(2)}`;
+}
+
+/** Cumulative-span label: "YTD (9 months)". */
+export function ytdLabel(months: number | null): string | null {
+  return months == null ? null : `YTD (${months} months)`;
+}

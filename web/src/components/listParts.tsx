@@ -18,10 +18,12 @@ export function byDate<T extends Dated>(rows: T[], sort: SortKey): [string, T[]]
 }
 
 /** "estimate / actual" with beat/miss colour, tags, surprise and analyst count. `source` marks a Yahoo-sourced actual. */
-export function Result({ estimate, actual, result, surprisePct, format, analysts, preliminary, corrected, source, formatActual }: {
+export function Result({ estimate, actual, result, surprisePct, format, analysts, preliminary, corrected, source, formatActual, spanLabel }: {
   estimate: number | null; actual: number | null; result: BeatMiss | null; surprisePct: number | null;
   format: (n: number | null) => string; analysts: number | null; preliminary: boolean; corrected: boolean;
-  source?: 'Yahoo' | null;
+  source?: 'Yahoo' | 'EDINET' | null;
+  /** Cumulative-span note right after the actual, e.g. "YTD (9 months)". */
+  spanLabel?: string | null;
   /** Formatter for the actual when it differs from the estimate's (HK: each side has its own currency). */
   formatActual?: (n: number | null) => string;
 }) {
@@ -29,6 +31,7 @@ export function Result({ estimate, actual, result, surprisePct, format, analysts
   return (
     <>
       {format(estimate)} / <span className={`act ${result ?? ''}`}>{actual == null ? '—' : `${(formatActual ?? format)(actual)}${arrow}`}</span>
+      {spanLabel && <span className="muted"> · {spanLabel}</span>}
       <Tags preliminary={preliminary} corrected={corrected} />
       {source && <span className="muted"> · from {source}</span>}
       {surprisePct != null && <span className="muted"> ({formatPct(surprisePct)})</span>}

@@ -1,5 +1,23 @@
 import { describe, expect, test } from 'vitest';
-import { formatDateHeading, formatEps, formatHkEps, formatHkMoney, formatHkPrice, formatPct, formatUsd, formatUsdFull } from '../src/lib/format';
+import { formatDateHeading, formatEps, formatHkEps, formatHkMoney, formatHkPrice, formatJpEps, formatJpMoney, formatJpPrice, formatPct, formatUsd, formatUsdFull, ytdLabel } from '../src/lib/format';
+
+describe('Japan formats', () => {
+  test('yen price, money, EPS and ytdLabel', () => {
+    expect(formatJpPrice(2845.5)).toBe('¥2,845.5');
+    expect(formatJpPrice(3120)).toBe('¥3,120');
+    expect(formatJpPrice(null)).toBe('—');
+    expect(formatJpMoney(48_036_704_000_000, 'JPY')).toBe('¥48.04T');
+    expect(formatJpMoney(12.4e9, 'JPY')).toBe('¥12.4B');
+    expect(formatJpMoney(null, 'JPY')).toBe('—');
+    expect(formatJpMoney(2e9, 'USD')).toBe('USD 2.0B');
+    expect(formatJpMoney(2e9, null)).toBe('2.0B');
+    expect(formatJpEps(239.1, 'JPY')).toBe('¥239.10');
+    expect(formatJpEps(-5, 'JPY')).toBe('−¥5.00');
+    expect(formatJpEps(1, null)).toBe('1.00');
+    expect(ytdLabel(9)).toBe('YTD (9 months)');
+    expect(ytdLabel(null)).toBeNull();
+  });
+});
 
 describe('Hong Kong formats', () => {
   test('formatHkMoney prefixes by currency and stays compact', () => {

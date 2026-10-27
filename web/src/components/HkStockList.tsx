@@ -1,8 +1,9 @@
-import type { HkFigureDto, HkLivePriceDto, HkReportDto } from '../../../server/src/hk/api/types';
+import type { HkLivePriceDto, HkReportDto } from '../../../server/src/hk/api/types';
 import type { Note } from '../api';
 import { changeClass, formatChange, formatDateHeading, formatHkEps, formatHkMoney, formatHkPrice } from '../lib/format';
 import type { SortKey } from '../lib/sort';
-import { byDate, Result } from './listParts';
+import { clock, CurrencyFigure, ExpectedMoveLine, LiveMoveLine, PreviousMoveLine, TIMING_SHORT } from './foreignParts';
+import { byDate } from './listParts';
 import { NoteEditor } from './NoteEditor';
 import { Star } from './Star';
 
@@ -24,14 +25,8 @@ interface Props {
   onWatch?: (symbol: string, on: boolean) => void;
 }
 
-const TIMING_SHORT = { BMO: 'Before open', AMC: 'After close', DMH: 'During market', UNKNOWN: 'Time not announced' } as const;
 const HKT = 'Asia/Hong_Kong';
 const BASIC_TITLE = 'Only Yahoo data is available for this stock: no SEC results or option data';
-const pct1 = (n: number) => (Math.round(n * 10 + 1e-9) / 10).toFixed(1);
-
-function clock(iso: string, zone: string): string {
-  return new Date(iso).toLocaleTimeString('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' });
-}
 
 export function HkStockList({ rows, zone, expanded, sort, onToggle, notes, onSaveNote, highlight, prices = {}, watched, onWatch }: Props) {
   if (rows.length === 0) return <p className="empty">No Hong Kong results match this range and search.</p>;
@@ -92,27 +87,11 @@ function HkStock({ r, zone, open, isNew, onToggle, note, onSaveNote, price, watc
   );
 }
 
-/** EPS or revenue: each side in its own currency, and no colour when they cannot be compared. */
-function Figure({ f, kind, r }: { f: HkFigureDto; kind: 'eps' | 'revenue'; r: HkReportDto }) {
-  const fmt = kind === 'eps' ? formatHkEps : formatHkMoney;
-  const notCompared = f.estimate != null && f.actual != null && f.result == null;
-  return (
-    <>
-      <Result estimate={f.estimate} actual={f.actual} result={f.result} surprisePct={f.surprisePct} analysts={f.analysts}
-        format={(n) => fmt(n, f.estimateCurrency)} formatActual={(n) => fmt(n, f.actualCurrency)}
-        preliminary={false} corrected={false} source={f.actual != null && r.actualSource === 'yahoo' ? 'Yahoo' : null} />
-      {kind === 'eps' && r.epsBasis === 'ads' && <span className="muted"> · per ADS</span>}
-      {notCompared && <span className="basis"> * different currency or basis from the estimate: not compared</span>}
-    </>
-  );
-}
-
 function HkDetails({ r, zone, note, onSaveNote, price }: {
   r: HkReportDto; zone: string; note: Note | undefined;
   onSaveNote: (reportId: number, text: string) => Promise<void>; price: HkLivePriceDto | undefined;
 }) {
-  const em = r.expectedMove;
-  const live = r.liveMove;
+  const yahoo = r.actualSource === 'yahoo' ? 'Yahoo' : null;
   return (
     <div className="stock-body">
       <dl className="lines">
@@ -156,46 +135,23 @@ function HkDetails({ r, zone, note, onSaveNote, price }: {
         </dd>
 
         <dt>EPS estimate / actual</dt>
-        <dd><Figure f={r.eps} kind="eps" r={r} /></dd>
+        <dd>
+          <CurrencyFigure f={r.eps} fmt={formatHkEps} source={yahoo} extra={r.epsBasis === 'ads' ? <span className="muted"> · per ADS</span> : null} />
+        </dd>
 
         <dt>Revenue estimate / actual</dt>
-        <dd><Figure f={r.revenue} kind="revenue" r={r} /></dd>
+        <dd><CurrencyFigure f={r.revenue} fmt={formatHkMoney} source={yahoo} /></dd>
 
         <dt>Expected move</dt>
         <dd>
-          {em ? (
-            <>
-              <span className="muted">{em.adr} </span>
-              <span className={em.final ? undefined : 'provisional'}>{em.final ? '' : '≈'}±{pct1(em.movePct)}%</span>
-              <span className="muted"> · from ADR options, US$ straddle at {em.strike}, expiry {formatDateHeading(em.expiry)} (delayed)</span>
-              {em.illiquid && <span className="warn" title="Wide or one-sided option quotes" aria-label="Wide or one-sided option quotes" role="img">⚠</span>}
-            </>
-          ) : r.level === 'basic' ? '— (no options data)' : '—'}
+          <ExpectedMoveLine em={r.expectedMove} level={r.level} />
         </dd>
 
         <dt>Live expected move</dt>
-        <dd>
-          {live ? (
-            <>
-              ±{pct1(live.movePct)}%
-              {live.changePp != null && live.changePp !== 0 && (
-                <span className={`live-change ${changeClass(live.changePp)}`}>{live.changePp > 0 ? '+' : '−'}{Math.abs(live.changePp).toFixed(1)}</span>
-              )}
-              {live.quoteTime && <span className="muted"> as of {live.quoteTime.slice(11, 16)} ET, 15-minute delay</span>}
-            </>
-          ) : '—'}
-        </dd>
+        <dd><LiveMoveLine live={r.liveMove} /></dd>
 
         <dt>Previous move</dt>
-        <dd>
-          {r.previousMove ? (
-            <>
-              <span className={changeClass(r.previousMove.pct)}>{formatChange(r.previousMove.pct, 1)}</span>
-              <span className="muted"> after the {formatDateHeading(r.previousMove.reportDate)} report</span>
-              {r.previousMove.basis === 'assumed' && <span className="basis"> * release time not on record, assumed after the close</span>}
-            </>
-          ) : '—'}
-        </dd>
+        <dd><PreviousMoveLine pm={r.previousMove} /></dd>
 
         <dt>Price</dt>
         <dd>
