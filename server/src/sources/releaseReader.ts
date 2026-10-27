@@ -231,11 +231,13 @@ const MULT: Record<string, number> = {
  * Statements of Comprehensive Profit/(Loss) (Continued) (All amounts in thousands…)", "Income Statements
  * (in millions)". Prose that mentions a statement, and highlight / segment / key-figure tables, are not titles.
  */
+/** A parenthesised group, one level of nesting allowed: "(Amounts in …, American Depositary Shares (ADSs), …)". */
+const PAREN_GROUP = String.raw`\((?:[^()]|\([^()]*\))*\)`;
 const STATEMENT_TITLE = new RegExp(
   String.raw`^\s*(?:\d{1,3}\s+)?(?:(?:unaudited|condensed|consolidated|interim)\s+)*` +
   String.raw`(?:statements?\s+of\s+(?:comprehensive\s+)?(?:income|operations|earnings|profit|loss|\(loss\))` +
   String.raw`(?:\s*(?:\/|and|or)\s*(?:comprehensive\s+)?\(?(?:income|loss|profit)\)?)*|income\s+statements?)` +
-  String.raw`\s*(?:\(\s*continued\s*\)\s*)?(?:\([^()]*\)\s*)*$`,
+  String.raw`\s*(?:\(\s*continued\s*\)\s*)?(?:${PAREN_GROUP}\s*)*$`,
   'i',
 );
 const NOT_STATEMENT = /highlight|summary|selected|\bkey\b|segment|pro forma|outlook|guidance/i;
@@ -243,47 +245,43 @@ const NOT_STATEMENT = /highlight|summary|selected|\bkey\b|segment|pro forma|outl
 /** The income-statement title of a caption, normalised for comparison ("(continued)" and units dropped), else null. */
 function statementTitle(caption: string): string | null {
   if (NOT_STATEMENT.test(caption) || !STATEMENT_TITLE.test(caption)) return null;
-  return caption.toLowerCase().replace(/\([^()]*\)/g, ' ').replace(/^\s*\d+\s+/, '').replace(/\s+/g, ' ').trim();
+  return caption.toLowerCase().replace(new RegExp(PAREN_GROUP, 'g'), ' ').replace(/^\s*\d+\s+/, '').replace(/\s+/g, ' ').trim();
 }
 
-/**
- * Unit phrases that name a currency: "in thousands of U.S. dollars", "in millions of RMB", "RMB in millions",
- * "(US$ in thousands", "in US$ million", "RMB (million)", "RMB'000", "US$m". A currency named in passing in prose
- * ("deposits denominated in US$") is not one.
- */
+/** Currencies of a unit statement ("in thousands of U.S. dollars", "RMB in millions", "in US$ million"). */
 const UNIT_CUR = String.raw`(?:rmb|renminbi|u\.?\s?s\.?\s*dollars|us\$|usd|hk\$|hkd|hk dollars|hong kong dollars)`;
 /** "RMB and US$", "RMB/US$": every currency of a list is kept, so a two-currency unit phrase stays ambiguous. */
 const UNIT_CURS = String.raw`${UNIT_CUR}(?:\s*(?:and|or|\/|,)\s*${UNIT_CUR})*`;
-const CURRENCY_UNIT_RE = new RegExp(
-  String.raw`\bin\s+(?:thousands|millions|billions)\s+of\s+${UNIT_CURS}` +
-  String.raw`|(?:\brmb|renminbi|us\$|hk\$|\busd|\bhkd)(?:\s*'\s*000\b|\s?(?:m|mn|bn)\b|\s+(?:in\s+)?(?:thousands|millions|billions)\b|\s*\(\s*(?:thousand|million|billion)s?\s*\))` +
-  String.raw`|\bin\s+${UNIT_CURS}\s*(?:thousand|million|billion)s?\b`,
-  'gi',
+const UNIT_WORD = String.raw`(?:thousands?|millions?|billions?)`;
+/** The unit statement itself: "in thousands of U.S. dollars", "in US$ million", "RMB in millions", "RMB (million)", "RMB'000", "in RMB". */
+const UNIT_CORE = String.raw`(?:in\s+${UNIT_WORD}\s+of\s+${UNIT_CURS}|in\s+${UNIT_CURS}(?:\s*(?:${UNIT_WORD}|'\s*000))?|${UNIT_CURS}\s*(?:in\s+)?(?:${UNIT_WORD}|'\s*000|m|mn|bn)|${UNIT_CURS}\s*\(\s*${UNIT_WORD}\s*\))`;
+/** "except per share data" / ", except for US$ amounts": a trailing clause that is not part of the unit statement. */
+const EXCEPT_CLAUSE = /\s*,?\s*except\b[\s\S]*$/i;
+/**
+ * A text that is wholly a unit statement (allowlist): optional parentheses, optional "(All) amounts (are)
+ * (stated / expressed)", the unit statement, an optional trailing "except …" clause — and nothing else.
+ */
+const UNIT_STATEMENT = new RegExp(
+  String.raw`^\(?\s*(?:(?:all\s+)?amounts?\s+(?:are\s+)?(?:stated\s+|expressed\s+)?)?${UNIT_CORE}\s*\)?\s*$`,
+  'i',
 );
-function currencyUnitPhrases(text: string): string {
-  return [...text.matchAll(CURRENCY_UNIT_RE)].map((m) => m[0]).join(' ; ');
-}
-
-/** A caption that is prose, not a table title: a note, a sentence, or a convenience-translation remark. */
-const PROSE_CAPTION = /^\s*(?:note\b|the\b)|translated|convenience/i;
-const VERBISH = /\b(?:is|are|was|were|be|been|has|have|had|held|holds|remained|remains|includes?|included|presented|denominated|represents?|reflects?|amounted)\b/i;
-/** A caption that starts with its unit statement: "Amounts in …", "All amounts in …", "In thousands of …", "(in …". */
-const UNIT_FIRST_CAPTION = /^\s*(?:\(\s*)?(?:(?:all\s+)?amounts\s+(?:are\s+)?in\b|in\s+(?:thousands|millions|billions)\s+of\b|\(\s*in\b)/i;
-/** A parenthesised unit statement: "(in thousands of U.S. dollars, …)", "(RMB in millions …)", "(in US$ million, except …)". */
-const UNIT_PAREN = /^\s*(?:all\s+)?(?:amounts\s+)?(?:(?:expressed\s+)?in\b|rmb\b|renminbi\b|us\$|hk\$|usd\b|hkd\b)/i;
+const unitStatement = (text: string): string | null => {
+  const core = text.trim().replace(/^\(|\)$/g, '').replace(EXCEPT_CLAUSE, '').trim();
+  return UNIT_STATEMENT.test(core) ? core : null;
+};
 
 /**
- * Profile 'hk': the currency-bearing unit phrases a table caption states for the table, or '' when it states none.
- * A caption counts only when it is a title (a statement title, or a short title line without verbs), when it
- * starts with its unit statement, or through a parenthesised unit statement. Prose never counts: a note, a
- * sentence starting "The", or a convenience-translation remark ("in thousands of U.S. dollars are translated…").
+ * Profile 'hk': the unit statement through which a table caption names the table's currency, or '' when it names
+ * none. Allowlist only: (1) the caption is an income-statement title, and one of its parenthesised groups is a unit
+ * statement ("… Statements of Operations (in thousands of RMB, except for US$ amounts)" → "in thousands of RMB");
+ * or (2) the whole caption is a unit statement ("Amounts in thousands of U.S. dollars", "(RMB in millions)").
+ * Prose of any kind ("Our revenue in US$ millions grew strongly", notes, convenience remarks) names nothing.
  */
 export function captionCurrencyText(caption: string): string {
-  if (PROSE_CAPTION.test(caption)) return '';
-  const words = caption.replace(/\([^()]*\)/g, ' ').trim().split(/\s+/).filter(Boolean);
-  const title = STATEMENT_TITLE.test(caption) || (words.length <= 12 && !VERBISH.test(caption.replace(/\([^()]*\)/g, ' ')));
-  if (title || UNIT_FIRST_CAPTION.test(caption)) return currencyUnitPhrases(caption);
-  return [...caption.matchAll(/\(([^()]*)\)/g)].map((m) => m[1]!).filter((g) => UNIT_PAREN.test(g)).map(currencyUnitPhrases).filter(Boolean).join(' ; ');
+  if (statementTitle(caption) != null) {
+    return [...caption.matchAll(new RegExp(PAREN_GROUP, 'g'))].map((m) => unitStatement(m[0].slice(1, -1))).filter((x): x is string => x != null).join(' ; ');
+  }
+  return unitStatement(caption) ?? '';
 }
 
 /** A figure cell: "1,234", "(0.29)", "$ 0.87", "12%". A lone footnote mark "(2)" and header text are not. */
@@ -293,9 +291,13 @@ export function isFigure(text: string): boolean {
   return FIGURE_RE.test(s) && !/^\(\d{1,2}\)$/.test(s);
 }
 
-/** The caption of a table: the last sentence above it ("… Statements of Income (in millions)"). */
-export function tableCaption(table: Table): string {
-  return table.before.split(/[.!?;]\s+(?=[A-Z0-9(])/).pop() ?? '';
+/**
+ * The caption of a table: the last sentence above it ("… Statements of Income (in millions)"). Profile 'hk' does not
+ * end a sentence at "U.S." / "U.K." ("Statements of Operations (U.S. GAAP) (Amounts in thousands of U.S. dollars …)").
+ */
+export function tableCaption(table: Table, hk = false): string {
+  const end = hk ? /(?<!\bU\.[SK])[.!?;]\s+(?=[A-Z0-9(])/ : /[.!?;]\s+(?=[A-Z0-9(])/;
+  return table.before.split(end).pop() ?? '';
 }
 
 function units(text: string, re: RegExp = UNIT_RE): Set<number> {
@@ -460,7 +462,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     : /per (diluted |common |basic )?share|\beps\b|earnings per/i;
 
   const epsTables = tables.map((t) => t.rows.some((r) => epsRow.test(r.find((c) => c.text)?.text ?? '')));
-  const statementTitles = hk ? tables.map((t) => statementTitle(tableCaption(t))) : [];
+  const statementTitles = hk ? tables.map((t) => statementTitle(tableCaption(t, true))) : [];
 
   for (const [ti, table] of tables.entries()) {
     // Table unit: stated in its non-data rows, else just above the table.
@@ -530,7 +532,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     const nonDataText = nonData.join(' ');
     const inTable = units(nonDataText);
     // Caption: the last sentence above the table ("… Reconciliation of Non-GAAP Measures (in millions)").
-    const caption = tableCaption(table);
+    const caption = tableCaption(table, hk);
     const near = units(caption, CAPTION_RE);
     if (hk) {
       for (const u of units(nonDataText, HK_UNIT_RE)) inTable.add(u);

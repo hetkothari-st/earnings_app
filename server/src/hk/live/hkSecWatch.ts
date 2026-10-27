@@ -61,8 +61,8 @@ export async function handleHkFiling(
     return out;
   }
   const html = await http.text(docUrl);
-  const ex = classifyHkExhibit(html);
   const hktDate = DateTime.fromISO(f.acceptedAt, { zone: 'utc' }).setZone(HKT).toISODate()!;
+  const ex = classifyHkExhibit(html, { filedOn: hktDate }); // a release cannot report a period ending after acceptance
 
   if (ex.kind === 'results') {
     let id = findHkReportId(ctx.db, stock.code, ex.periodEnd);

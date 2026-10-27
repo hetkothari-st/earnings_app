@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readHkRelease, statementCurrencies } from '../../src/hk/sources/releaseHk.js';
 import { HK_UNIVERSE } from '../../src/hk/universe.js';
-import { isFigure, readRelease, readUsRelease } from '../../src/sources/releaseReader.js';
+import { captionCurrencyText, isFigure, readRelease, readUsRelease } from '../../src/sources/releaseReader.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/hk/${n}`, import.meta.url), 'utf8');
 const Q3 = { periodEnd: '2026-09-30', kind: 'Q' as const };
@@ -355,6 +355,23 @@ describe('readHkRelease: captions and prose never widen what is read (review rou
   it('convNote: a convenience-translation note naming "thousands of U.S. dollars" → blank', () => {
     const html = `<p>Note: amounts in thousands of U.S. dollars are translated solely for convenience at RMB7.1 to US$1.00</p>${plain('(in thousands)', '19,000', '1.10')}`;
     expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
+  });
+
+  it('growProse: "Our revenue in US$ millions grew strongly" → blank (caption currency is allowlist-only)', () => {
+    const html = `<p>Our revenue in US$ millions grew strongly</p>${plain('(in millions)', '1,200', '0.60')}`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
+  });
+
+  it('captionCurrencyText: statement-title unit groups and whole unit statements only', () => {
+    expect(captionCurrencyText('Unaudited Condensed Consolidated Statements of Operations (in thousands of RMB, except for US$ amounts)')).toBe('in thousands of RMB');
+    expect(captionCurrencyText('Condensed Consolidated Statements of Operations (U.S. GAAP) (Amounts in thousands of U.S. dollars, except for shares, American Depositary Shares (ADSs), per share and per ADS data)'))
+      .toBe('Amounts in thousands of U.S. dollars');
+    expect(captionCurrencyText('Amounts in thousands of U.S. dollars')).toBe('Amounts in thousands of U.S. dollars');
+    expect(captionCurrencyText('(RMB in millions, except per share data)')).toBe('RMB in millions');
+    for (const prose of ['Our revenue in US$ millions grew strongly', 'Key figures in US$ millions, unaudited', 'Selected financial data (in thousands of U.S. dollars)',
+      'US$ amounts are presented for convenience only (in US$ millions)', 'Income statement highlights (in RMB billions)']) {
+      expect(captionCurrencyText(prose), prose).toBe('');
+    }
   });
 
   it('proseUnitHK: "Note: the Group held HK$ millions in deposits" → blank', () => {

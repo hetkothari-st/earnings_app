@@ -204,6 +204,18 @@ describe('handleHkFiling gates', () => {
     expect(getHkReport(db, id)).toMatchObject({ epsActual: 0.46, epsCurrency: 'CNY', revenueActual: null, revenueCurrency: null });
   });
 
+  it('the acceptance date reaches the classifier: a period ending after acceptance is never the release period', async () => {
+    // Served behind the BABA index page; the release names the FY and, in passing, a quarter ending after filing.
+    const doc = '<p>Alibaba FY25 Results. For the year ended 31 December 2025. Our plan covers the quarter ended 31 March 2026.</p>'
+      + '<table><tr><td>Revenue</td><td>1</td></tr></table>';
+    const { db, ctx } = setup({ docs: { [BABA_EX99]: doc } });
+    const fy = row(db, '9988', '2025-12-31', '2026-03-20', 'FY25', 'FY');
+    const q1 = row(db, '9988', '2026-03-31', '2026-05-15', 'Q1 26');
+    await handleHkFiling(ctx, { ...filing, acceptedAt: '2026-03-20T10:30:00.000Z' }, GATES_CLOSED);
+    expect(getHkReport(db, fy)!.releasedAt).toBe('2026-03-20T10:30:00.000Z');
+    expect(getHkReport(db, q1)!.releasedAt).toBeNull();
+  });
+
   it("the stock's ADR ratio reaches the reader: NIO's combined per share/ADS row is per share only at ratio 1", async () => {
     // NIO Q2 2026 EX-99.1 (corpus fixture, 0001104659-26-104110): the only EPS row is "Net loss per share/ADS".
     // Served behind the BABA index page, whose EX-99.1 link is replaced by the NIO release.

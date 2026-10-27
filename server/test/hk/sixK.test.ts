@@ -5,6 +5,30 @@ import { parseFilingDocs } from '../../src/sources/secFeed.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/hk/${n}`, import.meta.url), 'utf8');
 
+/**
+ * Filing dates of the release fixtures. From the saved SEC filing index ("Accepted") where one is in the repo or
+ * scratch: BABA_2026-06-30 / baba_results_ex99 (2026-08-20), HSBC_2026-06-30 / hsbc_interim_6k (2026-08-04),
+ * JD_2026-06-30 (2026-08-13). The rest: the release's own dateline (e.g. "BEIJING, China, May 18, 2026",
+ * HSBC "Group CEO 30 July 2025", Alibaba "Hong Kong, May 13, 2026"); SEC acceptance is that day or later, so the
+ * dateline is the stricter bound. No SEC index was fetched for this (no SEC_USER_AGENT in the build environment).
+ */
+const FILED_ON: Record<string, string> = {
+  'BABA_2026-03-31.htm': '2026-05-13', 'BABA_2026-06-30.htm': '2026-08-20',
+  'BIDU_2026-03-31.htm': '2026-05-18', 'BIDU_2026-06-30.htm': '2026-08-18',
+  'BILI_2026-03-31.htm': '2026-05-19', 'BILI_2026-06-30.htm': '2026-08-27',
+  'HSBC_2025-06-30.htm': '2025-07-30', 'HSBC_2026-06-30.htm': '2026-08-04',
+  'JD_2026-03-31.htm': '2026-05-12', 'JD_2026-06-30.htm': '2026-08-13',
+  'LI_2026-03-31.htm': '2026-05-28', 'LI_2026-06-30.htm': '2026-08-26',
+  'NIO_2026-03-31.htm': '2026-05-21', 'NIO_2026-06-30.htm': '2026-09-01',
+  'NTES_2026-03-31.htm': '2026-05-21', 'NTES_2026-06-30.htm': '2026-08-20',
+  'ONC_2026-03-31.htm': '2026-05-06', 'ONC_2026-06-30.htm': '2026-08-05',
+  'TCOM_2026-03-31.htm': '2026-06-24', 'TCOM_2026-06-30.htm': '2026-09-15',
+  'XPEV_2026-03-31.htm': '2026-05-28', 'XPEV_2026-06-30.htm': '2026-08-24',
+  'YUMC_2025-03-31.htm': '2025-04-30', 'YUMC_2026-03-31.htm': '2026-04-29',
+  'hsbc_3q25_earnings_release_6k.htm': '2025-10-28',
+  'puk_2026_half_year_results_6k.htm': '2026-08-27', 'puk_fy25_results_6k.htm': '2026-03-18',
+};
+
 describe('classifyHkExhibit: period from table headers split across cells', () => {
   const corpus = (n: string) => readFileSync(new URL(`../fixtures/hk/releases/${n}`, import.meta.url), 'utf8');
 
@@ -23,6 +47,8 @@ describe('classifyHkExhibit: period from table headers split across cells', () =
     const SPAN = { Q: 'quarter', H: 'half', FY: 'year' } as const;
     for (const [file, e] of Object.entries(expected)) {
       expect(classifyHkExhibit(corpus(file)), file).toEqual({ kind: 'results', periodEnd: e.periodEnd, span: SPAN[e.kind] });
+      expect(FILED_ON[file], file).toBeDefined();
+      expect(classifyHkExhibit(corpus(file), { filedOn: FILED_ON[file] }), file).toEqual({ kind: 'results', periodEnd: e.periodEnd, span: SPAN[e.kind] });
     }
   });
 
@@ -43,12 +69,37 @@ describe('classifyHkExhibit: period from table headers split across cells', () =
 describe('classifyHkExhibit: results titles without "announces … results" (HSBC, Prudential)', () => {
   // Real 6-K documents from the review's held-out set (not part of the reader corpus).
   it('HSBC "Earnings Release 3Q25" is the quarter ended 2025-09-30, not the dividend\'s financial year ended 2025-12-31', () => {
-    expect(classifyHkExhibit(fx('hsbc_3q25_earnings_release_6k.htm'))).toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
+    const f = 'hsbc_3q25_earnings_release_6k.htm';
+    expect(classifyHkExhibit(fx(f), { filedOn: FILED_ON[f] })).toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
+    expect(classifyHkExhibit(fx(f))).toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
   });
 
   it('Prudential "2026 HALF YEAR RESULTS" and "FY25 RESULTS"', () => {
-    expect(classifyHkExhibit(fx('puk_2026_half_year_results_6k.htm'))).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'half' });
-    expect(classifyHkExhibit(fx('puk_fy25_results_6k.htm'))).toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
+    const h = 'puk_2026_half_year_results_6k.htm';
+    const y = 'puk_fy25_results_6k.htm';
+    expect(classifyHkExhibit(fx(h), { filedOn: FILED_ON[h] })).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'half' });
+    expect(classifyHkExhibit(fx(y), { filedOn: FILED_ON[y] })).toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
+  });
+
+  it('a results release cannot report a period ending after it was filed', () => {
+    const table = '<table><tr><td>Revenue</td><td>1</td></tr></table>';
+    const html = `<p>Acme FY25 Results. For the year ended 31 December 2025. Our 2026 plan covers the quarter ended 31 March 2026.</p>${table}`;
+    expect(classifyHkExhibit(html, { filedOn: '2026-03-20' })).toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
+    expect(classifyHkExhibit(html)).toEqual({ kind: 'results', periodEnd: '2026-03-31', span: 'quarter' }); // without filedOn
+  });
+
+  it('a "1Q26 outlook" in the title is not a period; "Earnings Release 3Q25 will be published on …" is not results', () => {
+    const table = '<table><tr><td>Revenue</td><td>1</td></tr></table>';
+    expect(classifyHkExhibit(`<p>Acme FY25 Results and 1Q26 outlook. For the year ended 31 December 2025.</p>${table}`, { filedOn: '2026-03-20' }))
+      .toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
+    expect(classifyHkExhibit(`<p>HSBC Holdings plc Earnings Release 3Q25 will be published on 28 October 2025.</p>${table}`, { filedOn: '2025-10-14' }).kind)
+      .not.toBe('results');
+  });
+
+  it('"dividend income for investments, for the three months ended …" keeps the quarter', () => {
+    const html = '<p>Acme Announces Third Quarter 2025 Results. Excluding the dividend income for investments, for the three months ended September 30, 2025, revenue grew.</p>'
+      + '<table><tr><td>Revenue</td><td>1</td></tr></table>';
+    expect(classifyHkExhibit(html, { filedOn: '2025-11-12' })).toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
   });
 
   it('new title forms still need a results table row; notices stay notices', () => {
@@ -61,15 +112,14 @@ describe('classifyHkExhibit: results titles without "announces … results" (HSB
     expect(classifyHkExhibit(notice)).toEqual({ kind: 'date-notice', date: '2025-10-28', timing: 'UNKNOWN' });
   });
 
-  it('dividend context is "dividend … for / in respect of" in the same sentence; other mentions are kept', () => {
+  it('dividend context is "dividend … for / in respect of the (financial) year ended" in the same sentence; other mentions are kept', () => {
     const table = '<table><tr><td>Revenue</td><td>1</td></tr></table>';
     // "Dividends declared." is its own sentence: the following year-ended mention counts.
     expect(classifyHkExhibit(`<p>Acme 2025 Annual Results. Dividends declared. Year ended 31 December 2025 results summary.</p>${table}`))
       .toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
-    // The dividend's period is ignored; the release's own mention is kept.
-    expect(classifyHkExhibit(`<p>Acme 2026 Interim Results. The interim dividend in respect of the six months ended 30 June 2026 is US$0.1. For the six months ended 30 June 2026, revenue grew.</p>${table}`))
+    // Only a dividend's *year* is dropped: a six-month or quarter period named for a dividend still counts.
+    expect(classifyHkExhibit(`<p>Acme 2026 Interim Results. The interim dividend in respect of the six months ended 30 June 2026 is US$0.1.</p>${table}`))
       .toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'half' });
-    // A quarter named in the title is the release's, even when the prose only names it for a dividend.
     expect(classifyHkExhibit(`<p>Acme Earnings Release 3Q25. Dividends: the third interim dividend for the quarter ended 30 September 2025 is $0.10. Comparative: year ended 31 December 2024.</p>${table}`))
       .toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
   });

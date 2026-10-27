@@ -56,7 +56,7 @@ for (const e of issuers) {
       if (!url || !/\.html?$/i.test(url)) continue;
       const html = await http.text(url);
       if (Buffer.byteLength(html) > MAX_BYTES) { console.log(`skip ${adr} ${f.accession}: over 3 MB`); continue; }
-      const c = classifyHkExhibit(html);
+      const c = classifyHkExhibit(html, { filedOn: f.filingDate });
       if (c.kind !== 'results') continue;
       const file = `${adr}_${c.periodEnd}.htm`;
       if (existsSync(`${dir}${file}`) || expected[file]) continue;

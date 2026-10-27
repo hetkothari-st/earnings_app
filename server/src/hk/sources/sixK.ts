@@ -141,10 +141,10 @@ const SPAN_ORDER: Record<HkSpan, number> = { quarter: 0, half: 1, year: 2 };
  * 2025", paid mid-year) is not the period the release reports, and may even end after it.
  */
 function dividendContext(text: string, at: number): boolean {
-  // The current sentence up to the mention: "… dividend … for / in respect of <the mention>".
+  // Only "… dividend … for / in respect of the (financial) year ended <the mention>", within one sentence.
   const before = text.slice(Math.max(0, at - 300), at);
   const sentence = before.split(/[.!?;:]\s+(?=[A-Z0-9(])/).pop() ?? '';
-  return /\bdividends?\b[\s\S]*\b(?:for|in respect of)\b/i.test(sentence); // "$0.10" may sit in between
+  return /\bdividends?\b[\s\S]*\b(?:for|in respect of)\s+the\s+(?:financial\s+)?$/i.test(sentence); // "$0.10" may sit in between
 }
 
 /** All period ends the document states, as (end date, span). */
@@ -152,14 +152,14 @@ function periodMentions(text: string): { end: string; span: HkSpan }[] {
   const out: { end: string; span: HkSpan }[] = [];
   const words = '(?:three|six|nine|twelve)';
   for (const m of text.matchAll(new RegExp(`\\b(${words}(?:\\s+and\\s+${words})?)\\s+months\\s+ended\\s+`, 'gi'))) {
-    const d = dividendContext(text, m.index!) ? null : dateAt(text, m.index! + m[0].length);
+    const d = dateAt(text, m.index! + m[0].length);
     if (!d) continue;
     const w = m[1]!.toLowerCase();
     const span: HkSpan | null = w.includes('three') ? 'quarter' : w.includes('six') ? 'half' : w.includes('twelve') ? 'year' : null;
     if (span) out.push({ end: d.date, span });
   }
   for (const m of text.matchAll(/\bquarter\s+ended\s+/gi)) {
-    const d = dividendContext(text, m.index!) ? null : dateAt(text, m.index! + m[0].length);
+    const d = dateAt(text, m.index! + m[0].length);
     if (d) out.push({ end: d.date, span: 'quarter' });
   }
   for (const m of text.matchAll(/\byear\s+ended\s+/gi)) {
@@ -236,18 +236,12 @@ function hasResultsTable(html: string): boolean {
 }
 
 /** Classify an exhibit (or 6-K main document) as an earnings release, a results-date notice, or something else. */
-export function classifyHkExhibit(html: string): HkExhibit {
+export function classifyHkExhibit(html: string, opts: { filedOn?: string } = {}): HkExhibit {
   const text = htmlToText(html);
 
-  const title = text.slice(0, 5000).match(RESULTS_PHRASE);
-  if (title) {
-    const periods = [...periodMentions(text), ...tableHeaderMentions(html)];
-    // A calendar quarter named in the title itself ("Earnings Release 3Q25", "3Q 2025 Results") is the release's.
-    const tq = text.slice(title.index!, title.index! + title[0].length + 20).match(/\b([1-4])q\s?'?(\d{4}|\d{2})\b/i);
-    if (tq) {
-      const end = DateTime.utc(tq[2]!.length === 2 ? 2000 + Number(tq[2]) : Number(tq[2]), Number(tq[1]) * 3, 1).endOf('month').toISODate();
-      if (end) periods.push({ end, span: 'quarter' });
-    }
+  if (RESULTS_PHRASE.test(text.slice(0, 5000))) {
+    // A results release cannot report a period ending after it was filed (`filedOn`: the acceptance date).
+    const periods = [...periodMentions(text), ...tableHeaderMentions(html)].filter((p) => !opts.filedOn || p.end <= opts.filedOn);
     if (periods.length > 0 && hasResultsTable(html)) {
       // The latest period end is this release's; at that end the most specific span wins.
       const latest = periods.reduce((a, b) => (b.end > a ? b.end : a), '');
