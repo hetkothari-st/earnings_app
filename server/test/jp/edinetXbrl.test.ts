@@ -151,6 +151,21 @@ describe('parseEdinetXbrl', () => {
     expect(got.epsBasic).toBe(5.5);
   });
 
+  it('US GAAP: net revenue wins when present; a filer with only Revenues still reads Revenues', () => {
+    const contexts = ctx('C', '2025-04-01', '2026-03-31');
+    const revenues = `<jpcrp_cor:RevenuesUSGAAPSummaryOfBusinessResults contextRef="C" unitRef="JPY" decimals="-6">4758486000000</jpcrp_cor:RevenuesUSGAAPSummaryOfBusinessResults>`;
+    const net = `<jpcrp030000-asr_E99999-000:NetRevenueSummaryOfBusinessResults contextRef="C" unitRef="JPY" decimals="-6">2167713000000</jpcrp030000-asr_E99999-000:NetRevenueSummaryOfBusinessResults>`;
+    const eps = `<jpcrp_cor:BasicEarningsLossPerShareUSGAAPSummaryOfBusinessResults contextRef="C" unitRef="JPYPerShares" decimals="2">123.08</jpcrp_cor:BasicEarningsLossPerShareUSGAAPSummaryOfBusinessResults>`;
+
+    const both = parseEdinetXbrl(mini({ standard: 'US GAAP', contexts, body: revenues + net + eps }), FY);
+    expect(both.revenue).toBe(2167713000000);
+    expect(both.standard).toBe('usgaap');
+
+    const onlyRevenues = parseEdinetXbrl(mini({ standard: 'US GAAP', contexts, body: revenues + eps }), FY);
+    expect(onlyRevenues.revenue).toBe(4758486000000);
+    expect(onlyRevenues.epsBasic).toBe(123.08);
+  });
+
   it('half-year document whose context spans 3 months → all blank', () => {
     const xml = mini({
       start: '2025-07-01',

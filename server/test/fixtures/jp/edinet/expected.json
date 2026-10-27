@@ -70,11 +70,11 @@
       "consolidated": true,
       "docTypeCode": "120",
       "periodEnd": "2026-03-31",
-      "revenue": null,
+      "revenue": 2167713000000,
       "epsBasic": 123.08,
       "epsDiluted": 118.99,
       "ytdMonths": 12,
-      "note": "US GAAP 有報 (broker). The table shows 収益合計 4,758,486 百万円 and 収益合計（金融費用控除後）2,167,713 百万円 (net revenue, the headline the 6-K reader uses). Two revenue lines that disagree, so revenue is blank. 1株当たり当社株主に帰属する当期純利益 123.08 円; 希薄化後 118.99 円."
+      "note": "US GAAP 有報 (broker). The table shows 収益合計 4,758,486 百万円 and 収益合計（金融費用控除後）2,167,713 百万円 (net revenue, the headline the 6-K reader uses). Revenue is the net figure (controller ruling: a US GAAP NetRevenue line wins over Revenues), confirmed by hand in the table for 第122期 (2026年3月). 1株当たり当社株主に帰属する当期純利益 123.08 円; 希薄化後 118.99 円."
     },
     {
       "file": "mufg_yuho.xbrl.gz",

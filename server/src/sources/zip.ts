@@ -63,7 +63,8 @@ export function unzipEntries(buf: Uint8Array, want: (name: string) => boolean): 
     const raw = buf.subarray(start, start + compSize);
     let data: Uint8Array;
     try {
-      data = method === 0 ? raw.slice() : new Uint8Array(inflateRawSync(raw));
+      // maxOutputLength: a hostile entry cannot inflate past its declared size (zlib throws instead).
+      data = method === 0 ? raw.slice() : new Uint8Array(inflateRawSync(raw, { maxOutputLength: Math.max(size, 1) }));
     } catch {
       throw new SourceFormatError(`zip: entry ${name} does not inflate`);
     }
