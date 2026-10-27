@@ -39,14 +39,25 @@ const values = (r: ReaderResult, span: 'quarter' | 'ytd', ytdMonths: 6 | 9 | 12 
 
 const any = (r: ReaderResult) => r.revenue !== null || r.epsBasic !== null || r.epsGaap !== null;
 
+/** The fiscal-year label: the calendar year in which the fiscal year ends (quarter end + the quarters left). */
+export function jpFiscalYear(periodEnd: string, fiscalQuarter: 1 | 2 | 3 | 4): number | undefined {
+  const m = periodEnd.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (!m) return undefined;
+  const months = Number(m[1]) * 12 + (Number(m[2]) - 1) + (4 - fiscalQuarter) * 3;
+  return Math.floor(months / 12);
+}
+
 export function readJpRelease(html: string, period: { periodEnd: string; fiscalQuarter: 1 | 2 | 3 | 4 }): JpReleaseValues {
-  const q = readRelease(html, { periodEnd: period.periodEnd, span: 'quarter', profile: 'jp' });
+  const base = { periodEnd: period.periodEnd, profile: 'jp' as const, fiscalQuarter: period.fiscalQuarter, fiscalYear: jpFiscalYear(period.periodEnd, period.fiscalQuarter) };
+  const q = readRelease(html, { ...base, span: 'quarter' });
   if (q.revenue !== null || q.epsBasic !== null) return values(q, 'quarter', null);
+  let notes = q.notes;
   if (period.fiscalQuarter > 1) {
     const ytd = YTD[period.fiscalQuarter as 2 | 3 | 4];
-    const y = readRelease(html, { periodEnd: period.periodEnd, span: ytd.span, profile: 'jp' });
-    if (any(y)) return values(y, 'ytd', ytd.months);
+    const y = readRelease(html, { ...base, span: ytd.span });
+    notes = [...q.notes, ...y.notes];
+    if (any(y)) return { ...values(y, 'ytd', ytd.months), notes };
   }
-  if (any(q)) return values(q, 'quarter', null);
-  return { revenue: null, eps: null, epsDiluted: null, currency: null, span: null, ytdMonths: null, notes: q.notes };
+  if (any(q)) return { ...values(q, 'quarter', null), notes };
+  return { revenue: null, eps: null, epsDiluted: null, currency: null, span: null, ytdMonths: null, notes };
 }
