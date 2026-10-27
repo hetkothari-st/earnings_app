@@ -1,5 +1,4 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { normalizeTicker } from '../../domain/ticker.js';
 import type { ExpectedMove } from '../../types.js';
 import type { HkTiming } from '../domain/hkCalendar.js';
 import type { HkPeriodKind } from '../domain/period.js';
@@ -507,14 +506,8 @@ export function priorHkReleased(db: DatabaseSync, code: string, before: string):
   return r ? { reportDate: r.report_date, timing: r.timing as HkTiming, known: r.released_at != null && r.timing !== 'UNKNOWN' } : null;
 }
 
-/** The ADR's rows in the US `reports` table (read-only), for converting to HK dates. */
-export function usAdrRows(
-  db: DatabaseSync, adr: string, from: string, to: string,
-): { reportDate: string; timing: 'BMO' | 'AMC' | 'DMH' | 'UNKNOWN' }[] {
-  return db.prepare(`SELECT report_date AS reportDate, timing FROM reports
-    WHERE symbol_key = ? AND report_date BETWEEN ? AND ? ORDER BY report_date`)
-    .all(normalizeTicker(adr), from, to) as unknown as { reportDate: string; timing: 'BMO' | 'AMC' | 'DMH' | 'UNKNOWN' }[];
-}
+/** The ADR's rows in the US `reports` table (shared with Japan; kept exported here for the HK callers). */
+export { usAdrRows } from '../../db/adrRows.js';
 
 // ---------- SEC bookkeeping ----------
 

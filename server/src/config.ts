@@ -16,6 +16,8 @@ export const config = {
   dbPath: process.env.DB_PATH ?? fileURLToPath(new URL('../../data/earnings.db', import.meta.url)),
   finnhubToken: process.env.FINNHUB_TOKEN ?? '',
   secUserAgent: process.env.SEC_USER_AGENT ?? '',
+  /** EDINET API v2 subscription key (Japan). Never logged, stored or sent anywhere but EDINET. Empty: EDINET off. */
+  edinetApiKey: process.env.EDINET_API_KEY ?? '',
   /** Investing.com scraper (needs Chrome; ToS forbids scraping): off unless INVESTING_SCRAPER=1. */
   investingScraper: process.env.INVESTING_SCRAPER === '1',
   // Kite credentials (India). All optional — India features degrade gracefully without them.
@@ -33,9 +35,15 @@ export const config = {
    * HK (Ruling 10, exact match on all five fields; npm run reader-corpus -w server -- --hk): 24 hand-checked
    * 6-K/8-K releases, 24 exact, 0 wrong, 0 blank (HK reader 24/24 exact, 0 wrong) => gate open,
    * hkEps / hkRevenue on.
+   * JP reader gate: not yet run. jpEps / jpRevenue stay off until the 'jp' profile reads >= 20 hand-checked 6-K
+   * releases all exact with 0 wrong, and the held-out set is all exact with 0 wrong.
    */
-  fastFields: { usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false, hkEps: true, hkRevenue: true } as {
+  fastFields: {
+    usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false, hkEps: true, hkRevenue: true,
+    jpEps: false, jpRevenue: false,
+  } as {
     usEpsAdjusted: boolean; usEpsGaap: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean; hkEps?: boolean; hkRevenue?: boolean;
+    jpEps?: boolean; jpRevenue?: boolean;
   },
 };
 

@@ -7,6 +7,7 @@ import { registerNotes } from '../notes/routes.js';
 import { registerWatchlist, type WatchlistOptions } from '../watchlist/routes.js';
 import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
 import { type HkServerOptions, registerHkRoutes } from '../hk/api/routes.js';
+import { type JpServerOptions, registerJpRoutes } from '../jp/api/routes.js';
 import { todayET } from '../domain/marketCalendar.js';
 import { todayHKT } from '../hk/domain/hkCalendar.js';
 import { todayIST } from '../india/domain/nseCalendar.js';
@@ -48,6 +49,8 @@ export interface ServerOptions {
   india?: InServerOptions;
   /** Hong Kong live data. */
   hk?: HkServerOptions;
+  /** Japan live data. */
+  jp?: JpServerOptions;
   /** Symbol index for the watchlist (search and validation). */
   watchlist?: WatchlistOptions;
 }
@@ -68,6 +71,7 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   registerAdmin(app, db, currentUser, opts.now ?? Date.now);
   registerInRoutes(app, db, currentUser, opts.now ?? Date.now, opts.india);
   registerHkRoutes(app, db, currentUser, opts.now ?? Date.now, opts.hk);
+  registerJpRoutes(app, db, currentUser, opts.now ?? Date.now, opts.jp);
   let marketsCache: { at: number; body: MarketsResponse } | null = null;
 
   app.get('/api/markets', async () => {
