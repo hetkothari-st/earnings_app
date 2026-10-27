@@ -848,9 +848,11 @@ const JP_BLOCK_END = /<\/p\s*>|<\/div\s*>|<\/h[1-6]\s*>|<br\s*\/?>|<\/tr\s*>|<\/
  * - OFF: only a block that, after leading numbering / brackets, STARTS with a group-results heading
  *   (`JP_CONSOLIDATED_HEADING`), is at most 120 characters and names no subsidiaries / basis / comparison / note /
  *   子会社. Everything else ("Consolidated subsidiaries", 連結子会社数, prose) never ends a non-consolidated section.
+ *   A bare "<TOKEN> Consolidated" heading ends it only when the token is the caller's issuer ticker ("MUFG
+ *   Consolidated" for MUFG): a subsidiary's own "BK Consolidated" / "SMBC Consolidated" never does.
  * Tables are found with the same pattern as `parseTables`, so the flags line up with its tables.
  */
-function jpNonConsolidatedSections(html: string): boolean[] {
+function jpNonConsolidatedSections(html: string, issuer: JpIssuer | undefined): boolean[] {
   const between = html.split(/<table\b[\s\S]*?<\/table>/gi);
   const out: boolean[] = [];
   let state = false;
@@ -859,7 +861,11 @@ function jpNonConsolidatedSections(html: string): boolean[] {
       const text = decode(block);
       if (!text) continue;
       if (JP_NON_CONSOLIDATED.test(text)) state = true;
-      else if (text.length <= 120 && !JP_NOT_HEADING.test(text) && JP_CONSOLIDATED_HEADING.test(text.replace(JP_HEADING_PREFIX, ''))) state = false;
+      else if (text.length <= 120 && !JP_NOT_HEADING.test(text)) {
+        const heading = text.replace(JP_HEADING_PREFIX, '');
+        const prefix = /^([A-Z]{2,6})\s+Consolidated\b/.exec(heading)?.[1];
+        if (JP_CONSOLIDATED_HEADING.test(heading) && (prefix == null || prefix === issuer?.ticker)) state = false;
+      }
     }
     out.push(state);
   }
@@ -1243,7 +1249,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
   const found: Record<'revenue' | 'basic' | 'diluted', JpCandidate[]> = { revenue: [], basic: [], diluted: [] };
   const isEpsField = (f: JpField | null) => f === 'basic' || f === 'diluted' || f === 'both';
 
-  const nonConsolidated = jpNonConsolidatedSections(html);
+  const nonConsolidated = jpNonConsolidatedSections(html, opts.issuer);
   const docText = decode(html);
   const docDefs = jpPeriodDefinitions(docText);
   const naming = jpFiscalNaming(docText);

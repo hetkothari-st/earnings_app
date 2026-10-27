@@ -366,8 +366,31 @@ describe('review round 1', () => {
     const consTable = `<table>${tr('', 'Fiscal year ended March 31, 2026') + tr('', 'Millions of yen') +
       tr('Net sales', '48,000,000') + tr('Basic earnings per share', '250.00')}</table>`;
     const group = { revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 };
-    for (const heading of ['MUFG Consolidated', '[ MUFG Consolidated ]', '(2) Consolidated Statements of Income', 'Ⅱ. Consolidated Financial Results', '連結業績']) {
+    for (const heading of ['(2) Consolidated Statements of Income', 'Ⅱ. Consolidated Financial Results', '連結業績']) {
       expect(readJpRelease(`<p>BK Non-consolidated</p><table>${ncBody}</table><p>${heading}</p>${consTable}`, Q4), heading).toMatchObject(group);
+    }
+    // "<TICKER> Consolidated" ends it only when the prefix is the caller's issuer ticker.
+    const mufg = { ...Q4, issuer: jpIssuerFor('MUFG') };
+    for (const heading of ['MUFG Consolidated', '[ MUFG Consolidated ]']) {
+      expect(readJpRelease(`<p>BK Non-consolidated</p><table>${ncBody}</table><p>${heading}</p>${consTable}`, mufg), heading).toMatchObject(group);
+    }
+  });
+
+  it("a subsidiary's own BK / SMBC Consolidated heading after a non-consolidated section never ends it", () => {
+    const consTable = `<table>${tr('', 'Fiscal year ended March 31, 2026') + tr('', 'Millions of yen') +
+      tr('Net sales', '48,000,000') + tr('Basic earnings per share', '250.00')}</table>`;
+    const cases: [string, string, Parameters<typeof readJpRelease>[1]][] = [
+      ['BK Consolidated', 'BK Non-consolidated', { ...Q4, issuer: jpIssuerFor('MUFG') }],
+      ['[ BK Consolidated ]', 'Non-consolidated', { ...Q4, issuer: jpIssuerFor('MUFG') }],
+      ['SMBC Consolidated', 'SMBC Non-consolidated', { ...Q4, issuer: jpIssuerFor('SMFG') }],
+      ['SMBC Consolidated', 'Non-consolidated', { ...Q4, issuer: jpIssuerFor('SMFG') }],
+      // No issuer from the caller: a ticker-prefixed heading never ends the section.
+      ['MUFG Consolidated', 'Non-consolidated', Q4],
+      // Another issuer's ticker.
+      ['MUFG Consolidated', 'Non-consolidated', { ...Q4, issuer: jpIssuerFor('SMFG') }],
+    ];
+    for (const [heading, nc, opts] of cases) {
+      expect(readJpRelease(`<p>${nc}</p><table>${ncBody}</table><p>${heading}</p>${consTable}`, opts), `${heading} after ${nc}`).toMatchObject(parentNull);
     }
   });
 
