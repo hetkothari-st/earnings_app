@@ -268,6 +268,47 @@ describe('review round 1', () => {
     expect(readJpRelease(section, Q4)).toMatchObject({ revenue: null, eps: null });
   });
 
+  const ncBody = tr('', 'Net sales', '', 'Basic earnings per share') + tr('', 'Million yen', '%', 'Yen') +
+    tr('Fiscal year ended March 31, 2026', '15,000,000', '2.0', '300.00');
+  const ncSection = `<p>2. Summary of Non-consolidated Financial Results for FY2026. (1) Operating Results</p><table>${ncBody}</table>`;
+
+  it('X1: a non-consolidated section heading above the caption sentence is never read as the group', () => {
+    expect(readJpRelease(ncSection, Q4)).toMatchObject({ revenue: null, eps: null, span: null });
+    const twoParas = `<p>2. Non-consolidated Financial Results</p><p>(1) Operating Results</p><table>${ncBody}</table>`;
+    expect(readJpRelease(twoParas, Q4)).toMatchObject({ revenue: null, eps: null, span: null });
+  });
+
+  it('X1: consolidated first, then the non-consolidated section → the consolidated values', () => {
+    expect(readJpRelease(cons + ncSection, Q4)).toMatchObject({ revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 });
+  });
+
+  it('X1: a consolidated heading after a non-consolidated section reopens the group figures', () => {
+    const html = ncSection + `<p>3. Consolidated Financial Statements.</p>` +
+      table('(Millions of yen, except per share amounts)', tr('', 'Fiscal year ended March 31, 2026') + tr('Net sales', '48,000,000') + tr('Basic earnings per share', '250.00'));
+    expect(readJpRelease(html, Q4)).toMatchObject({ revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 });
+  });
+
+  it('X2: token columns under a shared date are read through their own explicit span word', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      `<tr><td></td>${span(2, 'September 30, 2026')}</tr>` + tr('', '2Q FY2026 three months', '2Q FY2027 three months') +
+      tr('Net sales', '—', '12,377') + tr('Basic earnings per share', '—', '239.10'));
+    expect(readJpRelease(html, Q2)).toMatchObject({ revenue: 12_377_000_000, eps: 239.1, span: 'quarter' });
+  });
+
+  it('X3: under a shared date, "2Q (three months)" is the quarter, "2Q (six months)" is not', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      `<tr><td></td>${span(2, 'Ended September 30, 2026')}</tr>` + tr('', '2Q (three months)', '2Q (six months)') +
+      tr('Net sales', '12,377', '24,560') + tr('Basic earnings per share', '239.10', '450.12'));
+    expect(readJpRelease(html, Q2)).toMatchObject({ revenue: 12_377_000_000, eps: 239.1, span: 'quarter' });
+  });
+
+  it('X4: a "(Reference)" note row does not make a consolidated table non-consolidated', () => {
+    const html = table('(Millions of yen, except per share amounts)',
+      tr('', 'Fiscal year ended March 31, 2026') + tr('Net sales', '48,000,000') + tr('Basic earnings per share', '250.00') +
+      tr('(Reference) Comprehensive income: 1,000 million yen'));
+    expect(readJpRelease(html, Q4)).toMatchObject({ revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 });
+  });
+
   it('notes of the YTD read are kept when the quarter read found nothing', () => {
     const html = table('(Millions of yen, except per share amounts)',
       tr('', 'Six months ended September 30, 2026', 'Six months ended September 30, 2026') + tr('Basic earnings per share', '450.12', '451.00'));
