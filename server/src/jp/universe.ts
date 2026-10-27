@@ -24,19 +24,27 @@ export interface JpFullEntry {
   adr: string;
   adrRatio: number;
   cik: number;
+  /** English name variants as the issuer's releases print them (the 6-K reader allows only these in group headings). */
+  names?: readonly string[];
 }
 
 /** Live-verified by `npm run verify-jp-universe` (SEC company_tickers.json, Cboe chain, latest 20-F). */
 export const JP_FULL: readonly JpFullEntry[] = [
-  { code: '7203', adr: 'TM', adrRatio: 10, cik: 1094517 },
-  { code: '6758', adr: 'SONY', adrRatio: 1, cik: 313838 },
-  { code: '8306', adr: 'MUFG', adrRatio: 1, cik: 67088 },
-  { code: '8316', adr: 'SMFG', adrRatio: 0.6, cik: 1022837 },
-  { code: '8411', adr: 'MFG', adrRatio: 2, cik: 1335730 },
-  { code: '7267', adr: 'HMC', adrRatio: 3, cik: 715153 },
-  { code: '8604', adr: 'NMR', adrRatio: 1, cik: 1163653 },
-  { code: '4502', adr: 'TAK', adrRatio: 0.5, cik: 1395064 },
+  { code: '7203', adr: 'TM', adrRatio: 10, cik: 1094517, names: ['Toyota Motor Corporation'] },
+  { code: '6758', adr: 'SONY', adrRatio: 1, cik: 313838, names: ['Sony Group Corporation'] },
+  { code: '8306', adr: 'MUFG', adrRatio: 1, cik: 67088, names: ['Mitsubishi UFJ Financial Group, Inc.', 'Mitsubishi UFJ Financial Group'] },
+  { code: '8316', adr: 'SMFG', adrRatio: 0.6, cik: 1022837, names: ['Sumitomo Mitsui Financial Group, Inc.', 'Sumitomo Mitsui Financial Group'] },
+  { code: '8411', adr: 'MFG', adrRatio: 2, cik: 1335730, names: ['Mizuho Financial Group, Inc.', 'Mizuho Financial Group'] },
+  { code: '7267', adr: 'HMC', adrRatio: 3, cik: 715153, names: ['Honda Motor Co., Ltd.'] },
+  { code: '8604', adr: 'NMR', adrRatio: 1, cik: 1163653, names: ['Nomura Holdings, Inc.', 'Nomura Holdings'] },
+  { code: '4502', adr: 'TAK', adrRatio: 0.5, cik: 1395064, names: ['Takeda Pharmaceutical Company Limited', 'Takeda Pharmaceutical Co., Ltd.'] },
 ];
+
+/** The 6-K reader's issuer identity for a full-level name (by TSE code or ADR ticker): its names and ADR ticker. */
+export function jpIssuerFor(codeOrAdr: string): { names: readonly string[]; ticker: string } | undefined {
+  const e = JP_FULL.find((f) => f.code === codeOrAdr || f.adr === codeOrAdr);
+  return e ? { names: e.names ?? [], ticker: e.adr } : undefined;
+}
 
 const HEADER =
   'ＥＤＩＮＥＴコード,提出者種別,上場区分,連結の有無,資本金,決算日,提出者名,提出者名（英字）,提出者名（ヨミ）,所在地,提出者業種,証券コード,提出者法人番号';

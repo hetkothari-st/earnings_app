@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { config } from '../../src/config.js';
 import { readJpRelease, type JpReleaseValues } from '../../src/jp/sources/releaseJp.js';
-import { JP_FULL } from '../../src/jp/universe.js';
+import { JP_FULL, jpIssuerFor } from '../../src/jp/universe.js';
 
 /**
  * JP reader gate (controller ruling): of the hand-checked 6-K releases (all 8 issuers), >= 20 must be exact with 0
@@ -24,7 +24,7 @@ function load(sub: string): Array<[string, JpExpected]> {
   return Object.entries(JSON.parse(readFileSync(path, 'utf8')) as Record<string, JpExpected>).filter(([, e]) => e.checked);
 }
 const read = (sub: string, file: string, e: JpExpected): JpReleaseValues =>
-  readJpRelease(readFileSync(dirOf(`${sub}${file}`), 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter });
+  readJpRelease(readFileSync(dirOf(`${sub}${file}`), 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter, issuer: jpIssuerFor(e.adr) });
 
 function score(sub: string): { checked: number; exact: number; wrong: number } {
   let checked = 0, exact = 0, wrong = 0;

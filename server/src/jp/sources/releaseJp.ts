@@ -8,7 +8,9 @@
  *   document is quarter-only. One span per release; nothing is ever computed from another span.
  * - Uncertain means blank: no unit, disagreeing candidates, ambiguous headers → null.
  */
-import { readRelease, type ReaderOptions, type ReaderResult } from '../../sources/releaseReader.js';
+import { readRelease, type JpIssuer, type ReaderOptions, type ReaderResult } from '../../sources/releaseReader.js';
+
+export type { JpIssuer };
 
 export interface JpReleaseValues {
   revenue: number | null;
@@ -47,8 +49,15 @@ export function jpFiscalYear(periodEnd: string, fiscalQuarter: 1 | 2 | 3 | 4): n
   return Math.floor(months / 12);
 }
 
-export function readJpRelease(html: string, period: { periodEnd: string; fiscalQuarter: 1 | 2 | 3 | 4 }): JpReleaseValues {
-  const base = { periodEnd: period.periodEnd, profile: 'jp' as const, fiscalQuarter: period.fiscalQuarter, fiscalYear: jpFiscalYear(period.periodEnd, period.fiscalQuarter) };
+/**
+ * `issuer`: the issuer's identity from the universe (`jpIssuerFor`) — the only names a group heading may carry besides
+ * generic words. Without it a summary headed by any company name is not read as the group.
+ */
+export function readJpRelease(html: string, period: { periodEnd: string; fiscalQuarter: 1 | 2 | 3 | 4; issuer?: JpIssuer }): JpReleaseValues {
+  const base = {
+    periodEnd: period.periodEnd, profile: 'jp' as const, fiscalQuarter: period.fiscalQuarter,
+    fiscalYear: jpFiscalYear(period.periodEnd, period.fiscalQuarter), issuer: period.issuer,
+  };
   const q = readRelease(html, { ...base, span: 'quarter' });
   if (q.revenue !== null || q.epsBasic !== null) return values(q, 'quarter', null);
   let notes = q.notes;

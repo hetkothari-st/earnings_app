@@ -19,6 +19,7 @@ import { readHkRelease } from '../hk/sources/releaseHk.js';
 import { HK_UNIVERSE } from '../hk/universe.js';
 import { readInResultsPdf } from '../india/sources/resultsPdf.js';
 import { readJpRelease } from '../jp/sources/releaseJp.js';
+import { jpIssuerFor } from '../jp/universe.js';
 import { readUsRelease } from '../sources/releaseReader.js';
 
 const write = process.argv.includes('--write');
@@ -95,7 +96,7 @@ function runJp(sub: string, heldout: boolean): void {
     if (!e.checked) { unchecked++; continue; }
     checked++;
     adrs.add(e.adr);
-    const got = readJpRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter });
+    const got = readJpRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter, issuer: jpIssuerFor(e.adr) });
     const marks = FIELDS.map((f) => (got[f] === e[f] ? 'exact' : got[f] === null ? 'blank' : 'wrong'));
     const verdict = marks.includes('wrong') ? 'wrong' : marks.includes('blank') ? 'blank' : 'exact';
     if (verdict === 'exact') exact++;

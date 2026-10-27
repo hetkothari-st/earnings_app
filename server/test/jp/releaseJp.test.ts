@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { jpFiscalYear, readJpRelease } from '../../src/jp/sources/releaseJp.js';
 import { readRelease } from '../../src/sources/releaseReader.js';
+import { jpIssuerFor } from '../../src/jp/universe.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/jp/releases/${n}`, import.meta.url), 'utf8');
 
@@ -422,7 +423,7 @@ describe('real 6-K releases', () => {
 
 /** The six gate fields of a real release, read for its period. */
 const six = (file: string, periodEnd: string, fiscalQuarter: 1 | 2 | 3 | 4) => {
-  const { revenue, eps, epsDiluted, currency, span, ytdMonths } = readJpRelease(fx(file), { periodEnd, fiscalQuarter });
+  const { revenue, eps, epsDiluted, currency, span, ytdMonths } = readJpRelease(fx(file), { periodEnd, fiscalQuarter, issuer: jpIssuerFor(file.split('_')[0]!) });
   return { revenue, eps, epsDiluted, currency, span, ytdMonths };
 };
 
@@ -503,7 +504,9 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
     // The nearest heading is the table's own title: a group heading right above a subsidiary's does not count.
     expect(readJpRelease('<p>Consolidated Financial Results</p><p>Summary of results of Mizuho Bank</p>' + sumT, Q1)).toMatchObject(blank);
     // Controls: the table's own heading names the group, or is a numbered sub-heading under the group heading.
-    expect(readJpRelease(doc + '<p>(1) Consolidated Results of Operations</p>' + sumT, Q1)).toMatchObject({ eps: 31.62, epsDiluted: 31.59 });
+    // (Prose between a heading and its sub-heading breaks the chain: fail-safe blank.)
+    expect(readJpRelease(doc + '<p>(1) Consolidated Results of Operations</p>' + sumT, Q1)).toMatchObject(blank);
+    expect(readJpRelease('<p>Consolidated Financial Results for the First Quarter of Fiscal 2026</p><p>(1) Consolidated Results of Operations</p>' + sumT, Q1)).toMatchObject({ eps: 31.62, epsDiluted: 31.59 });
     expect(readJpRelease('<p>1. Consolidated financial results</p><p>(1) Operating results</p><p>(Yen)</p>' + sumT, Q1)).toMatchObject({ eps: 31.62, epsDiluted: 31.59 });
   });
 
@@ -540,20 +543,87 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
     expect(readJpRelease(G + `<table><tr><td colspan="3">(% represents the change from the same period)</td></tr>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`, Q1)).toMatchObject(read);
   });
 
-  it('S1b: a "Consolidated" heading names the group only when it is otherwise generic (ticker / own issuer name allowed)', () => {
+  it('S1b: a "Consolidated" heading names the group only when it is otherwise generic (the issuer\'s own names / ticker allowed)', () => {
     const sumT = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`;
     const blank = { eps: null, epsDiluted: null };
     const read = { eps: 31.62, epsDiluted: 31.59 };
     for (const h of ['Consolidated results of Mizuho Bank', 'Mizuho Bank Consolidated', 'みずほ銀行 連結業績', '(2) Mizuho Securities Consolidated Results', 'Consolidated Financial Results of Mizuho Bank, Ltd. (for the three months ended June 30, 2026)']) {
       expect(readJpRelease(`<p>${h}</p>${sumT}`, Q1), h).toMatchObject(blank);
     }
-    for (const h of ['(1) Consolidated Results of Operations', 'MUFG Consolidated', '1. Consolidated financial results (for the three months ended June 30, 2026)', '連結業績', '(1) Consolidated Results of Operations (Accumulated Period)']) {
+    // The issuer's ADR ticker only with the caller's issuer identity.
+    expect(readJpRelease('<p>MUFG Consolidated</p>' + sumT, { ...Q1, issuer: jpIssuerFor('MUFG') })).toMatchObject(read);
+    expect(readJpRelease('<p>MUFG Consolidated</p>' + sumT, Q1)).toMatchObject(blank);
+    for (const h of ['(1) Consolidated Results of Operations', '1. Consolidated financial results (for the three months ended June 30, 2026)', '連結業績', '(1) Consolidated Results of Operations (Accumulated Period)']) {
       expect(readJpRelease(`<p>${h}</p>${sumT}`, Q1), h).toMatchObject(read);
     }
-    // The document's own issuer name (its first title) is allowed; another company's name is not.
-    const doc = '<p>Mizuho Financial Group, Inc.</p><p>Consolidated Financial Statements for the First Quarter of Fiscal 2026</p>';
-    expect(readJpRelease(`${doc}<table>${tr('Code', '8411')}</table><p>Mizuho Financial Group, Inc. Consolidated Results</p>${sumT}`, Q1)).toMatchObject(read);
-    expect(readJpRelease(`${doc}<table>${tr('Code', '8411')}</table><p>Mizuho Bank, Ltd. Consolidated Results</p>${sumT}`, Q1)).toMatchObject(blank);
+    // The issuer's own name (from the universe, passed by the caller) is allowed; another company's name is not.
+    const mfg = { ...Q1, issuer: jpIssuerFor('MFG') };
+    expect(readJpRelease(`<p>Mizuho Financial Group, Inc. Consolidated Results</p>${sumT}`, mfg)).toMatchObject(read);
+    expect(readJpRelease(`<p>Mizuho Bank, Ltd. Consolidated Results</p>${sumT}`, mfg)).toMatchObject(blank);
+  });
+
+  it('S1c (probe6–8): issuer from the caller only; whole chain generic; whole-word note parentheticals; lead region only', () => {
+    const sumT = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`;
+    const blank = { eps: null, epsDiluted: null };
+    const read = { eps: 31.62, epsDiluted: 31.59 };
+    const MFGp = '<p>Mizuho Financial Group, Inc.</p>';
+    const sep = '<p>this report is furnished.</p>';
+    const mfg = { ...Q1, issuer: jpIssuerFor('MFG') };
+    const mufg = { ...Q1, issuer: jpIssuerFor('MUFG') };
+    const tm = { ...Q1, issuer: jpIssuerFor('TM') };
+    const cases: Array<[string, string, typeof Q1 | typeof mfg]> = [
+      // probe6 — issuer hatch
+      ['i1', '<p>Mizuho Bank, Ltd. is a subsidiary of</p>' + MFGp + '<p>Mizuho Bank, Ltd. Consolidated Financial Results</p>' + sumT, mfg],
+      ['i1b', '<p>Mizuho Bank, Ltd.</p><p>Mizuho Bank, Ltd. Consolidated Results</p>' + sumT, mfg],
+      ['i2', '<p>The Bank of New York Mellon Corporation, Depositary</p>' + MFGp + '<p>The Bank of New York Mellon Corporation Consolidated Results</p>' + sumT, mfg],
+      ['i3', MFGp + '<p>Mizuho Financial Group, Inc. Bank Consolidated</p>' + sumT, mfg],
+      ['i4', '<p>Mizuho Bank Limited</p><p>Mizuho Bank Limited Consolidated Results</p>' + sumT, mfg],
+      ['i5', '<p>Toyota Motor Corporation</p><p>Toyota Motor Corporation Consolidated</p>' + sumT, Q1],
+      // probe6 — ticker hatch
+      ...['SMBC', 'BK', 'TB', 'MHBK', 'MUFG Bank', 'SC', 'MS', 'NRI'].map((t): [string, string, typeof mufg] => [`t ${t}`, `<p>MUFG Financial Results</p><p>${t} Consolidated Results</p>` + sumT, mufg]),
+      ['t2', '<p>1. Consolidated financial results</p><p>(2) BK Consolidated</p>' + sumT, mufg],
+      ['t3', '<p>1. Consolidated financial results</p><p>(2) BK</p>' + sumT, mufg],
+      ['t4', `<p>Consolidated Results</p><table><tr><td colspan="3">BK Consolidated</td></tr>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`, mufg],
+      ['t5', `<p>Consolidated Results</p><table><tr><td colspan="3">BK</td></tr>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`, mufg],
+      // probe6 — period words, parentheticals, chains
+      ['p1', '<p>Consolidated results for the first quarter</p><p>(2) Results for the Trust</p>' + sumT, Q1],
+      ['p2', '<p>Consolidated Results of May</p>' + sumT, Q1],
+      ['p3', '<p>Consolidated Results to the Parent</p>' + sumT, Q1],
+      ['p4', '<p>Consolidated - The Trust</p>' + sumT, Q1],
+      ['p5', '<p>Consolidated Results (Mizuho Bank)</p>' + sumT, mfg],
+      ['p6', '<p>Consolidated Results (Units of Mizuho Bank)</p>' + sumT, mfg],
+      ['p7', '<p>Consolidated Results (Notes: Mizuho Bank)</p>' + sumT, mfg],
+      ['p8', '<p>2. Mizuho Bank</p><p>(1) Consolidated results</p>' + sumT, mfg],
+      ['p9', '<p>2. BK and TB</p><p>(1) Consolidated results</p>' + sumT, mufg],
+      ['p10', '<p>銀行連結業績</p>' + sumT, Q1],
+      ['p11', '<p>みずほ銀行 連結業績</p>' + sumT, mfg],
+      ['p12', '<p>Bank Consolidated Results</p>' + sumT, Q1],
+      ['p13', '<p>Consolidated results, first quarter</p><p>(a) Securities</p>' + sumT, Q1],
+      // probe7 / probe8
+      ['7-i1', '<p>Depositary: The Bank of New York Mellon Corporation</p>' + sep + MFGp + sep + '<p>The Bank of New York Mellon Corporation Consolidated Results</p>' + sumT, mfg],
+      ['7-i2', '<p>Regarding Toyota Financial Services Corporation</p>' + sep + '<p>Toyota Motor Corporation</p>' + sep + '<p>Toyota Financial Services Corporation Consolidated Results</p>' + sumT, tm],
+      ['7-i3', '<p>Mizuho Bank Limited</p>' + sep + MFGp + sep + '<p>Mizuho Bank Limited Consolidated Financial Results</p>' + sumT, mfg],
+      ['7-i4', '<p>Mizuho Trust &amp; Banking Co., Ltd.</p>' + sep + MFGp + sep + '<p>Mizuho Trust &amp; Banking Co., Ltd. Consolidated</p>' + sumT, mfg],
+      ['7-i5', '<p>Toyota Motor Corporation</p>' + sep + '<p>Toyota Motor Corporation Finance Consolidated</p>' + sumT, tm],
+      ['7-i7', '<p>Mitsubishi UFJ Trust and Banking Corporation</p>' + sep + '<p>Mitsubishi UFJ Financial Group, Inc.</p>' + sep + '<p>Mitsubishi UFJ Trust and Banking Corporation Consolidated</p>' + sumT, mufg],
+      ['7-i8', '<p>Toyota Corporation</p>' + sep + '<p>Toyota CorporationX Consolidated</p>' + sumT, tm],
+      ['8-j1', '<p>Toyota Financial Services Corporation</p>' + sep + '<p>Toyota Motor Corporation</p>' + sep + '<p>Toyota Financial Services Corporation Consolidated Results</p>' + sumT, tm],
+      ['8-j2', '<p>BNY Mellon Corporation</p>' + sep + MFGp + sep + '<p>BNY Mellon Corporation Consolidated Results</p>' + sumT, mfg],
+      ['8-j3', '<p>MUFG Bank Limited</p>' + sep + '<p>Mitsubishi UFJ Financial Group, Inc.</p>' + sep + '<p>MUFG Bank Limited Consolidated</p>' + sumT, mufg],
+      ['8-j4', '<p>Consolidated Results</p><p>SMBC Consolidated</p>' + sumT, Q1],
+      // Lead region: a summary after a later top-level section is never read.
+      ['lead 2.', '<p>1. Consolidated financial results</p><p>2. Supplementary information</p><p>Consolidated Results</p>' + sumT, Q1],
+      ['lead Appendix', '<p>Appendix</p><p>Consolidated Results</p>' + sumT, Q1],
+      ['lead II.', '<p>II. Business segments</p><p>(1) Consolidated results</p>' + sumT, Q1],
+      ['lead Reference', '<p>(Reference) Mizuho Bank</p><table>' + tr('Branches', '120') + '</table><p>Consolidated Results</p>' + sumT, mfg],
+    ];
+    for (const [name, html, p] of cases) expect(readJpRelease(html, p), name).toMatchObject(blank);
+    // Controls.
+    expect(readJpRelease('<p>Consolidated Results</p>' + sumT, Q1), 'ctl').toMatchObject(read);
+    expect(readJpRelease('<p>Toyota Motor Corporation</p>' + sep + '<p>Toyota Motor Corporation Consolidated Results</p>' + sumT, tm), 'i6').toMatchObject(read);
+    expect(readJpRelease('<p>Consolidated Results (Millions of yen, except per share data)</p>' + sumT, Q1), 'unit paren').toMatchObject(read);
+    expect(readJpRelease('<p>Consolidated Results (Note: amounts rounded down)</p>' + sumT, Q1), 'note paren').toMatchObject(read);
+    expect(readJpRelease('<p>1. Consolidated financial results</p><p>(1) Operating results</p>' + sumT, Q1), 'chain').toMatchObject(read);
   });
 
   it('S2: a "3Q F2025" row is dated only by the definition in its own table\'s heading block', () => {
@@ -754,7 +824,7 @@ describe('Task 12b: financial appendix ("Billion JPY, except EPS", "FY2024 Q4 (J
     expect(section).toContain('125.29');
     expect(readJpRelease(section, { periodEnd: '2026-03-31', fiscalQuarter: 4 })).toMatchObject({ revenue: null, eps: null, epsDiluted: null });
     // Titled "Consolidated" instead, the same tables would be read: the exclusion is what blanks them.
-    expect(readJpRelease(`<p>Summary of Consolidated Results</p>${section.replace(/Unconsolidated/g, 'Consolidated')}`, { periodEnd: '2026-03-31', fiscalQuarter: 4 }).eps).toBe(125.29);
+    expect(readJpRelease(`<p>Summary of Consolidated Results</p>${section.replace(/Unconsolidated/g, 'Consolidated').replace(/\(Reference\) /g, '')}`, { periodEnd: '2026-03-31', fiscalQuarter: 4 }).eps).toBe(125.29);
     expect(six('TAK_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 4_505_720_000_000, eps: 121.75, epsDiluted: 119.64, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
   });
 });

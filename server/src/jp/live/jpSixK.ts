@@ -11,6 +11,7 @@ import { addDaysJST, JST } from '../domain/jpCalendar.js';
 import { jpPeriodFor, jpPeriodLabel } from '../domain/period.js';
 import type { JpJobContext } from '../jobs/context.js';
 import { readJpRelease } from '../sources/releaseJp.js';
+import { jpIssuerFor } from '../universe.js';
 
 /** A row moves to the acceptance's JST date only within this many days. */
 const MOVE_WINDOW_DAYS = 3;
@@ -96,7 +97,7 @@ export async function handleJpFiling(
       const laterFiling = rep.releasedAt != null && Date.parse(rep.releasedAt) < Date.parse(f.acceptedAt);
       let changed = recordJpRelease(ctx.db, id, f.acceptedAt, null);
       if (!laterFiling && (gates.jpEps || gates.jpRevenue)) {
-        const v = readJpRelease(html, { periodEnd: rep.periodEnd, fiscalQuarter: rep.fiscalQuarter });
+        const v = readJpRelease(html, { periodEnd: rep.periodEnd, fiscalQuarter: rep.fiscalQuarter, issuer: jpIssuerFor(stock.code) });
         const currency = v.currency;
         const span = v.span;
         if (currency && span) {

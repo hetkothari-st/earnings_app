@@ -427,7 +427,15 @@ export interface ReaderOptions {
   fiscalQuarter?: 1 | 2 | 3 | 4;
   /** Profile 'jp': the fiscal-year label (calendar year the fiscal year ends in); an "FY2027" column must match it. */
   fiscalYear?: number;
+  /**
+   * Profile 'jp': the issuer as the universe knows it (English name variants, ADR ticker). Besides generic words these
+   * are the only names a group heading may carry; without it, a heading naming any company is not the group.
+   */
+  issuer?: JpIssuer;
 }
+
+/** A Japanese issuer's identity from the universe: English name variants and the ADR ticker. */
+export interface JpIssuer { names: readonly string[]; ticker: string }
 
 export interface ReaderResult {
   /** Diluted GAAP EPS per share (US: per common share; HK: per ordinary share). Same as `epsGaap`. */
@@ -1009,29 +1017,57 @@ function jpHeadingTableText(t: Table): string | null {
  * Each table's heading block: the text between it and the table before it, or — when nothing stands between them —
  * the heading block of that run of adjacent tables (the text before the run's first table) plus the heading-only
  * tables of the run above it. Splits with the same pattern as `parseTables`, so the indexes line up.
+ * `group`: the table's own title names the issuer's group (`jpGroupTitle`). `lead`: the table stands in the document's
+ * lead region, before the first later top-level section ("2.", "II.", "Attachment", "Appendix", "Supplementary",
+ * "Reference") — subsidiary sections of bank releases come after it.
  */
-function jpHeadingBlocks(html: string, tables: Table[], issuer: string | null): { block: string[]; heading: string[]; group: boolean[] } {
+function jpHeadingBlocks(html: string, tables: Table[], issuer: JpIssuer | undefined): { block: string[]; heading: string[]; group: boolean[]; lead: boolean[] } {
   // Title-like blocks of the text between tables: short (<= 200 characters) and not a footnote ("*1 Please refer …",
   // "※", "Note:"). Long prose and footnotes title nothing.
-  const between = html.split(/<table\b[\s\S]*?<\/table>/gi).slice(0, tables.length).map((seg) =>
-    seg.split(JP_BLOCK_END).map((b) => decode(b)).filter((t) => t && t.length <= 200 && !JP_FOOTNOTE.test(t)));
-  const empty = html.split(/<table\b[\s\S]*?<\/table>/gi).slice(0, tables.length).map((seg) => !decode(seg));
+  const segs = html.split(/<table\b[\s\S]*?<\/table>/gi).slice(0, tables.length);
+  const between = segs.map((seg) => seg.split(JP_BLOCK_END).map((b) => decode(b)).filter((t) => t && t.length <= 200 && !JP_FOOTNOTE.test(t)));
+  const empty = segs.map((seg) => !decode(seg));
   const lists: string[][] = [];
   const heading: string[] = [];
+  const lead: boolean[] = [];
+  let inLead = true;
   for (let i = 0; i < tables.length; i++) {
     // `heading`: the heading-only table right above, with nothing between the two.
     const head = i > 0 && empty[i] ? jpHeadingTableText(tables[i - 1]!) ?? '' : '';
     heading.push(head);
     // A heading table's rows are blocks of their own (footnote rows such as "Note: Amounts … rounded down." dropped).
     const headRows = head ? tables[i - 1]!.rows.map((r) => r.filter((c) => c.text && !JP_PAGE_NUMBER.test(c.text)).map((c) => c.text).join(' ')).filter((t) => t && !JP_FOOTNOTE.test(t)) : [];
-    lists.push(i > 0 && empty[i] ? [...lists[i - 1]!, ...headRows] : between[i] ?? []);
+    const own = i > 0 && empty[i] ? headRows : between[i] ?? [];
+    if (own.some((b) => JP_LATER_SECTION.test(b))) inLead = false;
+    lead.push(inLead);
+    lists.push(i > 0 && empty[i] ? [...lists[i - 1]!, ...headRows] : own);
   }
-  return { block: lists.map((l) => l.join(' ')), heading, group: lists.map((l) => jpGroupTitle(l, issuer)) };
+  return { block: lists.map((l) => l.join(' ')), heading, group: lists.map((l) => jpGroupTitle(l, issuer)), lead };
 }
 
-/** A unit / notes block or parenthetical: "(Yen)", "(Millions of yen, except …)", "(Note …)", "(Percentages …)", "(% …)". */
-const JP_NOTE_PAREN = /^[(（]\s*(?:%|¥|(?:notes?|percent(?:ages?)?|amounts?|units?|yen|jpy|millions?|billions?|thousands?|rounded)\b)[^]*[)）]$/i;
-const jpUnitOrNote = (t: string) => jpUnit(t) !== null || JP_NOTE_PAREN.test(t.trim());
+/** A later top-level section: "2." … "19.", "II." …, "Attachment", "Appendix", "Supplementary", "Reference", 【参考】. */
+const JP_LATER_SECTION = /^\s*(?:(?:[2-9]|1\d|[２-９])\s*[.．)）]\s*\S|(?:II|III|IV|V|VI|VII|VIII|IX|X|Ⅱ|Ⅲ|Ⅳ|Ⅴ|Ⅵ|Ⅶ|Ⅷ|Ⅸ|Ⅹ)\s*[.．]\s*\S|[(（【［\[]?\s*(?:attachments?|appendix|appendices|supplementary|reference)\b|[【［〔（(]\s*参考)/i;
+
+/**
+ * Words a unit / notes parenthetical may consist of: "(Yen)", "(Millions of yen, except per share data and
+ * percentages)", "(Note: amounts rounded down)", "(% represents the change from the same period in the previous fiscal
+ * year)", "(Percentage figures represent changes over the previous fiscal year)", "(Rounded to nearest million)".
+ */
+const JP_NOTE_WORDS = new Set(['yen', 'jpy', 'million', 'millions', 'billion', 'billions', 'thousand', 'thousands', 'of', 'in',
+  'except', 'per', 'share', 'shares', 'data', 'amount', 'amounts', 'and', 'percentage', 'percentages', 'percent', 'figures',
+  'note', 'notes', 'rounded', 'down', 'up', 'to', 'the', 'nearest', 'represents', 'represent', 'change', 'changes', 'from',
+  'over', 'same', 'period', 'previous', 'prior', 'corresponding', 'fiscal', 'year', 'unit', 'units', 'are', 'is', 'less',
+  'than', 'one', 'a', 'an']);
+
+/** A parenthetical made wholly of unit / notes words (anchored), never "(Units of Mizuho Bank)". */
+function jpNoteParen(text: string): boolean {
+  const m = text.trim().match(/^[(（]([^()（）]*)[)）]$/);
+  if (!m) return false;
+  const inner = m[1]!.replace(/[%¥:：,，.\d\s-]/g, ' ');
+  const words = inner.match(/[a-z]+/gi) ?? [];
+  return !inner.replace(/[a-z]+/gi, '').trim() && (words.length === 0 ? /[%¥]/.test(m[1]!) : words.every((w) => JP_NOTE_WORDS.has(w.toLowerCase())));
+}
+const jpUnitOrNote = (t: string) => jpUnit(t) !== null || jpNoteParen(t);
 /** Sub-heading numbering: "(1)", "（２）", "(a)", "(ii)". */
 const JP_SUB_NUMBER = /^\s*[(（]\s*(?:\d{1,2}|[０-９]{1,2}|[a-z]|[ivx]+)\s*[)）]\s*/i;
 /** Heading numbering of any level: a sub-heading's, or "1." / "2)". */
@@ -1040,53 +1076,51 @@ const JP_ANY_NUMBER = /^\s*(?:[(（]\s*(?:\d{1,2}|[０-９]{1,2}|[a-z]|[ivx]+)\s
 const JP_GENERIC_WORDS = new Set(['operating', 'results', 'result', 'of', 'operations', 'financial', 'position', 'condition',
   'cash', 'flows', 'flow', 'dividends', 'dividend', 'earnings', 'per', 'share', 'data', 'summary', 'highlights', 'overview',
   'key', 'figures', 'consolidated', 'and']);
+/** Period words a generic heading may carry: "(for the three months ended June 30, 2026)", "(Accumulated Period)". */
+const JP_PERIOD_WORDS = new Set(['for', 'the', 'fy', 'three', 'six', 'nine', 'twelve', 'months', 'month', 'ended', 'fiscal', 'year',
+  'quarter', 'first', 'second', 'third', 'fourth', 'accumulated', 'period', 'under', 'japanese', 'gaap', 'ifrs',
+  'january', 'february', 'march', 'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december']);
 const JP_GENERIC_JA = /経営成績|業績|財政状態|キャッシュ・フロー|キャッシュフロー|配当|１株当たり|1株当たり|概要|連結|の|及び|[・、\s]/g;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Is a heading generic — after its numbering, unit / note parentheticals and a trailing colon or full stop, nothing
- * but the allowlisted words (English or Japanese)? A name ("Mizuho Bank", "Ltd.", みずほ銀行) makes it specific.
+ * but the allowlisted words (English or Japanese) and the issuer's own names / ADR ticker (from the universe)? Any
+ * other name ("Mizuho Bank", "SMBC", "Ltd.", みずほ銀行) makes it specific.
  */
-function jpGenericHeading(text: string, issuer: string | null = null): boolean {
+function jpGenericHeading(text: string, issuer?: JpIssuer): boolean {
   let t = text.replace(JP_ANY_NUMBER, '').replace(/[(（][^()（）]*[)）]/g, (p) => (jpUnitOrNote(p) ? ' ' : p)).replace(/[\s.:：。]+$/, '').trim();
-  // The document's own issuer name (as its first title states it), or a group ticker prefix ("MUFG Consolidated").
-  if (issuer && t.toLowerCase().startsWith(issuer.toLowerCase())) t = t.slice(issuer.length);
-  t = t.replace(/^\s*[A-Z]{2,6}(?=\s)/, '').trim();
+  for (const name of [...(issuer?.names ?? [])].sort((a, b) => b.length - a.length)) {
+    t = t.replace(new RegExp(`(?<![A-Za-z])${escapeRe(name)}(?![A-Za-z])`, 'gi'), ' ');
+  }
+  if (issuer?.ticker) t = t.replace(new RegExp(`(?<![A-Za-z])${escapeRe(issuer.ticker)}(?![A-Za-z])`, 'g'), ' ');
+  t = t.trim();
   if (!t) return false;
   const words = t.match(/[a-z]+/gi) ?? [];
   if (!words.every((w) => JP_GENERIC_WORDS.has(w.toLowerCase()) || JP_PERIOD_WORDS.has(w.toLowerCase()))) return false;
-  t = t.replace(/[a-z]+/gi, '').replace(JP_GENERIC_JA, '').replace(/[()（）,，\d\-–]/g, '');
+  // Left after the words: only brackets, commas, digits and date-range dashes ("(April 1, 2025 - March 31, 2026)").
+  t = t.replace(/[a-z]+/gi, '').replace(/[()（）,，\d~～]|\s[-–—]\s/g, ' ').replace(JP_GENERIC_JA, '');
   return t === '' && (words.length > 0 || text.replace(JP_ANY_NUMBER, '').trim().length > 0);
 }
-/** Period words a generic heading may carry: "(for the three months ended June 30, 2026)", "(Accumulated Period)". */
-const JP_PERIOD_WORDS = new Set(['for', 'the', 'fy', 'three', 'six', 'nine', 'twelve', 'months', 'month', 'ended', 'fiscal', 'year',
-  'quarter', 'first', 'second', 'third', 'fourth', 'accumulated', 'period', 'to', 'date', 'under', 'japanese', 'gaap', 'ifrs',
-  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']);
 
 /**
- * The document's issuer name as its first title states it: the first "<Name>, Inc." / "<Name> Corporation" /
- * "<Name> Co., Ltd." / "<Name> Limited" in the document text, else null.
+ * Does the table's own title name the group? From the nearest title-like block upwards (unit / notes blocks skipped),
+ * through numbered sub-headings ("(1) …") up to the first heading that is not one (the top-level section): every
+ * heading of that chain must be generic (`jpGenericHeading`), and one of them must say "Consolidated" / 連結.
+ * "2. Mizuho Bank" above "(1) Consolidated results" is another entity's section.
  */
-function jpIssuerName(docText: string): string | null {
-  const m = docText.match(/\b([A-Z][A-Za-z&'.-]*(?:\s+[A-Z][A-Za-z&'.-]*){0,5}(?:,?\s+Inc\.|\s+Corporation|\s+Co\.,\s*Ltd\.|\s+Limited))/);
-  return m ? m[1]! : null;
-}
-
-/**
- * Does the table's own title name the group? Walking up from the nearest title-like block: unit / note blocks
- * ("(Yen)", "(Millions of yen)", "(Note …)") are skipped; the first other block decides. It names the group when it says
- * "Consolidated" / 連結; a numbered sub-heading ("(1) Operating results", "（１）経営成績") that is generic hands the
- * decision to the heading above it. Anything else — a name, any other parenthetical — is not the group.
- */
-function jpGroupTitle(blocks: string[], issuer: string | null): boolean {
+function jpGroupTitle(blocks: string[], issuer: JpIssuer | undefined): boolean {
+  let group = false;
+  let any = false;
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i]!.trim();
     if (jpUnitOrNote(b)) continue;
-    // A group heading must be generic too: "Consolidated results of Mizuho Bank" names another entity.
-    if (JP_GROUP_TITLE.test(b)) return jpGenericHeading(b, issuer);
-    if (JP_SUB_NUMBER.test(b) && jpGenericHeading(b)) continue;
-    return false;
+    any = true;
+    if (!jpGenericHeading(b, issuer)) return false;
+    if (JP_GROUP_TITLE.test(b)) group = true;
+    if (!JP_SUB_NUMBER.test(b)) break;
   }
-  return false;
+  return any && group;
 }
 /** A footnote block: "*1 …", "※ …", "† …", "Note: …", "(Note) …". */
 const JP_FOOTNOTE = /^\s*(?:[*※†]|\(?notes?\)?\s*[:.)]?\s)/i;
@@ -1200,7 +1234,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
   const docDefs = jpPeriodDefinitions(docText);
   const naming = jpFiscalNaming(docText);
   const tables = parseTables(html, { rowspan: true });
-  const heads = jpHeadingBlocks(html, tables, jpIssuerName(docText));
+  const heads = jpHeadingBlocks(html, tables, opts.issuer);
   for (const [ti, table] of tables.entries()) {
     const caption = tableCaption(table, true);
     const title = `${heads.heading[ti]} ${caption}`;
@@ -1219,7 +1253,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
       if (cells.some((c) => isFigure(c.text.replace(/&yen;|¥/g, '').trim()))) break;
       if (cells.length === 1 && cells[0]!.span > 1) {
         const t = cells[0]!.text;
-        if (!(jpUnitOrNote(t) || JP_GROUP_TITLE.test(t) || jpGenericHeading(t))) titleRowsOk = false;
+        if (!(jpUnitOrNote(t) || jpGenericHeading(t, opts.issuer))) titleRowsOk = false;
       }
     }
     const groupTitled = !JP_ENTITY_TITLE.test(context) && !JP_NON_CONSOLIDATED.test(context) && heads.group[ti]! && titleRowsOk;
@@ -1339,7 +1373,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
       // Header rows or the label column's head naming Core / adjusted / non-GAAP figures: the row is never read.
       if (JP_ADJUSTED_CONTEXT.test(blockText) || JP_ADJUSTED_CONTEXT.test(labelHead)) continue;
       // Summary layout only under a heading naming the group; a token row's table must name no other span.
-      if (row.kind === 'cross' && !groupTitled) continue;
+      if (row.kind === 'cross' && (!groupTitled || !heads.lead[ti])) continue;
       if (row.token && [...jpSpanWords(`${contextRest} ${blockText}`)].some((k) => k !== jpPhraseSpan(row.period))) continue;
       for (const n of row.nums) {
         if (n.dollar) continue; // "$7": a dollar figure, never yen
