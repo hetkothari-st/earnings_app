@@ -64,47 +64,71 @@ function datesAfter(text: string, prefix: string): { date: string; index: number
 const EARNINGS_WORDS = /financial|earnings|quarter|interim|annual|unaudited|half|full[- ]year|fiscal/i;
 const CALL_WORDS = /conference call|webcast|webinar|dial-in|teleconference/i;
 
+const HK_EXCHANGE = '(?:the\\s+)?(?:HKEX|Hong Kong Stock Exchange|Hong Kong market|Stock Exchange of Hong Kong)';
+
 /**
  * Release date and timing from a date notice (Ruling 4). Dates are HK dates.
- * - "before the U.S. market opens on D" is D, AMC (HK evening).
- * - "after the U.S. market closes on D" is D+1, BMO.
- * - An explicit Hong Kong clock time gives the timing by the clock.
- * - A bare date after "(to|will) announce/report/release … results … on" is UNKNOWN.
- * Returns null when no such statement is found.
+ * Clause: "[to|will] announce|report|release|upload|publish … results … on D", or the passive
+ * "results … will be announced|released|published on D". The nearest date after the verb is D.
+ * Timing, first match wins:
+ * - "before the U.S. market opens [on D]" / "before the opening of the U.S. market": D, AMC.
+ * - "after the U.S. market closes [on D]": D+1, BMO.
+ * - An explicit Hong Kong clock time: by the clock.
+ * - "before the opening / trading hours of the HKEX": BMO; "after the close / trading hours of the HKEX": AMC.
+ * - Otherwise UNKNOWN. Returns null when no such statement is found.
  */
 export function parseDateNotice(text: string): { date: string; timing: HkTiming } | null {
   const best: { rank: number; date: string; timing: HkTiming }[] = [];
-  const clause = /\b(?:to|will(?:\s+further)?)\s+(?:announce|report|release)\b[\s\S]{0,160}?\bresults\b/gi;
-  for (const c of text.matchAll(clause)) {
-    const window = text.slice(c.index!, c.index! + 600);
-    // "announce the results of the poll / voting" is a meeting notice, not earnings.
-    if (/poll|vot(?:e|ing)/i.test(text.slice(c.index!, c.index! + c[0].length + 60))) continue;
+  const active = /\b(?:(?:to|will(?:\s+further)?)\s+)?(?:announce|report|release|upload|publish)\b[\s\S]{0,160}?\bresults?\b/gi;
+  const passive = /\bresults?\b[\s\S]{0,200}?\b(?:will(?:\s+further)?\s+be|be)\s+[a-z ,]{0,80}?(?:announced|released|published)\s+on\s+/gi;
+
+  for (const c of text.matchAll(active)) {
+    // "announce the results of the poll / voting / general meeting" is a meeting notice, not earnings.
+    const own = text.slice(c.index!, c.index! + c[0].length + 80);
+    if (/poll|vot(?:e|ing)|results\s+of\s+(?:the\s+)?(?:annual|extraordinary|general)\b|meeting\s+results/i.test(own)) continue;
     if (!EARNINGS_WORDS.test(text.slice(Math.max(0, c.index! - 300), c.index! + 400))) continue;
-    const before = datesAfter(window, 'before the U\\.?S\\.? market opens?\\s+on\\s+')[0];
-    if (before) { best.push({ rank: 3, date: before.date, timing: 'AMC' }); continue; }
-    const after = datesAfter(window, 'after the U\\.?S\\.? market closes?\\s+on\\s+')[0];
-    if (after) { best.push({ rank: 3, date: DateTime.fromISO(after.date, { zone: 'utc' }).plus({ days: 1 }).toISODate()!, timing: 'BMO' }); continue; }
+    const window = text.slice(c.index!, c.index! + 400);
 
-    // Explicit Hong Kong clock time, in the announcing sentence (a conference-call time is not a release time).
-    const clock = /(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s?m\.?,?\s*\(?(?:Beijing\s*\/\s*)?Hong Kong(?:\s+time)?\)?(?:\s+on\s+)?/gi;
-    let byClock: { date: string; timing: HkTiming } | null = null;
-    for (const t of window.matchAll(clock)) {
-      const around = window.slice(Math.max(0, t.index! - 120), t.index! + 40);
-      if (CALL_WORDS.test(around)) continue;
-      const mins = ((Number(t[1]) % 12) + (t[3]!.toLowerCase() === 'p' ? 12 : 0)) * 60 + Number(t[2] ?? 0);
-      const timing: HkTiming = mins < 9 * 60 + 30 ? 'BMO' : mins <= 16 * 60 ? 'DMH' : 'AMC';
-      const after = dateAt(window, t.index! + t[0].length);
-      const sameDay = after ?? (() => { // "on August 13, 2026 at 4:30 p.m. Hong Kong time"
-        const lead = [...window.slice(0, t.index!).matchAll(new RegExp(`on\\s+(?=${WEEKDAY_RE}(?:${MONTH_RE}|\\d))`, 'gi'))].pop();
-        return lead ? dateAt(window, lead.index! + lead[0].length) : null;
-      })();
-      if (sameDay) { byClock = { date: sameDay.date, timing }; break; }
+    const nearest = datesAfter(window, '\\bon\\s+')[0]?.date;
+    let found: { date: string; timing: HkTiming } | null = null;
+
+    const open = datesAfter(window, 'before the U\\.?S\\.? market opens?\\s+on\\s+')[0]?.date;
+    if (open) found = { date: open, timing: 'AMC' };
+    else if (nearest && /before\s+(?:the\s+)?(?:U\.?S\.?\s+market\s+opens?|opening\s+of\s+the\s+U\.?S\.?\s+market)/i.test(window)) found = { date: nearest, timing: 'AMC' };
+    if (!found) {
+      const close = datesAfter(window, 'after the U\\.?S\\.? market closes?\\s+on\\s+')[0]?.date
+        ?? (nearest && /after\s+the\s+U\.?S\.?\s+market\s+closes?/i.test(window) ? nearest : undefined);
+      if (close) found = { date: DateTime.fromISO(close, { zone: 'utc' }).plus({ days: 1 }).toISODate()!, timing: 'BMO' };
     }
-    if (byClock) { best.push({ rank: 2, ...byClock }); continue; }
 
-    const plain = datesAfter(window, '\\bon\\s+')[0];
-    if (plain) best.push({ rank: 1, date: plain.date, timing: 'UNKNOWN' });
+    // Explicit Hong Kong clock time (a conference-call time is not a release time).
+    if (!found) {
+      const clock = /(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s?m\.?,?\s*\(?(?:Beijing\s*\/\s*)?Hong Kong(?:\s+time)?\)?(?:\s+on\s+)?/gi;
+      for (const t of window.matchAll(clock)) {
+        const around = window.slice(Math.max(0, t.index! - 120), t.index! + 40);
+        if (CALL_WORDS.test(around)) continue;
+        const mins = ((Number(t[1]) % 12) + (t[3]!.toLowerCase() === 'p' ? 12 : 0)) * 60 + Number(t[2] ?? 0);
+        const timing: HkTiming = mins < 9 * 60 + 30 ? 'BMO' : mins <= 16 * 60 ? 'DMH' : 'AMC';
+        const date = dateAt(window, t.index! + t[0].length)?.date ?? nearest; // "on D at 4:30 p.m. Hong Kong time"
+        if (date) { found = { date, timing }; break; }
+      }
+    }
+
+    if (!found && nearest) {
+      if (new RegExp(`before\\s+(?:the\\s+)?(?:opening|trading\\s+hours)\\s+of\\s+${HK_EXCHANGE}`, 'i').test(window)) found = { date: nearest, timing: 'BMO' };
+      else if (new RegExp(`after\\s+(?:the\\s+)?(?:close|trading\\s+hours)\\s+of\\s+${HK_EXCHANGE}`, 'i').test(window)) found = { date: nearest, timing: 'AMC' };
+    }
+    if (found) best.push({ rank: 3, ...found });
+    else if (nearest) best.push({ rank: 1, date: nearest, timing: 'UNKNOWN' });
   }
+
+  for (const c of text.matchAll(passive)) {
+    if (!EARNINGS_WORDS.test(text.slice(Math.max(0, c.index! - 300), c.index! + c[0].length + 100))) continue;
+    if (/poll|vot(?:e|ing)|general\s+meeting|meeting\s+results/i.test(c[0])) continue;
+    const d = dateAt(text, c.index! + c[0].length);
+    if (d) best.push({ rank: 1, date: d.date, timing: 'UNKNOWN' });
+  }
+
   best.sort((a, b) => b.rank - a.rank);
   return best[0] ? { date: best[0].date, timing: best[0].timing } : null;
 }

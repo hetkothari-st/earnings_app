@@ -28,13 +28,17 @@ describe('classifyHkExhibit', () => {
   it('a date notice is never results even though it names a quarter', () => {
     expect(classifyHkExhibit(fx('tme_date_notice_ex99.htm'))).toEqual({ kind: 'date-notice', date: '2026-11-17', timing: 'AMC' });
     // TCOM names "three months and six months ended June 30, 2026" and "announce the Results", yet has no results table.
-    expect(classifyHkExhibit(fx('tcom_date_notice_ex99.htm'))).toEqual({ kind: 'date-notice', date: '2026-09-16', timing: 'UNKNOWN' });
+    expect(classifyHkExhibit(fx('tcom_date_notice_ex99.htm'))).toEqual({ kind: 'date-notice', date: '2026-09-16', timing: 'BMO' });
+  });
+
+  it('HKEX-style board-meeting notices confirm the date (passive "will further be ... announced on")', () => {
+    expect(classifyHkExhibit(fx('baba_board_meeting_ex99.htm'))).toEqual({ kind: 'date-notice', date: '2026-08-20', timing: 'UNKNOWN' });
   });
 
   it('buyback / AGM / board-meeting notices are other', () => {
     expect(classifyHkExhibit(fx('baba_exrate_notice_ex99.htm'))).toEqual({ kind: 'other' });
-    // names the quarter's results and a date, but is not "(to|will) announce results on" and has no table
-    expect(classifyHkExhibit(fx('baba_board_meeting_ex99.htm'))).toEqual({ kind: 'other' });
+    expect(classifyHkExhibit('<p>The Company will announce the results of the annual general meeting on May 5, 2026 for the financial year.</p>')).toEqual({ kind: 'other' });
+    expect(classifyHkExhibit('<p>The Company will publish the meeting results for the annual period on May 5, 2026.</p>')).toEqual({ kind: 'other' });
     expect(classifyHkExhibit('<p>The company will announce the results of the voting on May 5, 2026.</p>')).toEqual({ kind: 'other' });
     expect(classifyHkExhibit('<p>Share buy-back: the Company repurchased 1,000,000 shares for the year ended December 31, 2026.</p>')).toEqual({ kind: 'other' });
   });
@@ -78,6 +82,22 @@ describe('parseDateNotice', () => {
       .toEqual({ date: '2026-08-13', timing: 'BMO' });
     expect(parseDateNotice('Acme will release its interim results at 12:30 p.m. Hong Kong time on 13 August 2026'))
       .toEqual({ date: '2026-08-13', timing: 'DMH' });
+  });
+
+  it('HKEX trading-hours phrases and "before the opening of the U.S. market"', () => {
+    expect(parseDateNotice('We will upload the 2026 Interim Results Announcement to the Hong Kong Stock Exchange on Thursday, August 13, 2026 (Beijing/Hong Kong Time), after the trading hours of the Hong Kong Stock Exchange and before the opening of the U.S. market.'))
+      .toEqual({ date: '2026-08-13', timing: 'AMC' });
+    expect(parseDateNotice('The Company will announce its financial results on 5 March 2026, before the opening of the Hong Kong Stock Exchange.'))
+      .toEqual({ date: '2026-03-05', timing: 'BMO' });
+    expect(parseDateNotice('The Company will announce its annual results on 5 March 2026, after the close of the HKEX.'))
+      .toEqual({ date: '2026-03-05', timing: 'AMC' });
+  });
+
+  it('the bare date is the one nearest the verb, not an earlier meeting date', () => {
+    expect(parseDateNotice('The audit committee will hold a meeting on Monday, September 14, 2026 to approve the financial results. The Company will announce the Results on Wednesday, September 16, 2026.'))
+      .toEqual({ date: '2026-09-16', timing: 'UNKNOWN' });
+    // TCOM fixture: audit committee meets 09-14, results are on 09-16
+    expect(classifyHkExhibit(fx('tcom_date_notice_ex99.htm'))).toMatchObject({ kind: 'date-notice', date: '2026-09-16' });
   });
 
   it('a conference-call time is not a release time', () => {

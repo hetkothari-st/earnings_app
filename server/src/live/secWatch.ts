@@ -22,6 +22,7 @@ export class SecWatch {
     private http: Http,
     private readonly onReleased: (ids: number[]) => void,
     private readonly reader?: (exhibitUrl: string, reportId: number) => Promise<void>,
+    /** Fresh feed items (any form). Delivery is at-least-once: a retried batch redelivers items, so the callback must be idempotent. */
     private readonly onFeed?: (items: SecFeedItem[]) => void,
   ) {
     this.failover = createFailover(ctx.db, () => Date.parse(ctx.now()));
