@@ -119,6 +119,19 @@ describe('Yahoo JP bulk calendar', () => {
     expect(capped.complete).toBe(false);
   });
 
+  it('a malformed 200 page is not the end of the sweep: rows so far, complete false', async () => {
+    for (const bad of [{ finance: { result: null, error: { code: 'Bad Request' } } }, {}, null, 'oops', { finance: { result: [{ total: 5 }] } }]) {
+      const first = stub({ postJson: async () => bad });
+      expect(await fetchJpEarningsCalendar(first, '2025-06-01', '2025-06-13'), JSON.stringify(bad)).toEqual({ rows: [], complete: false });
+    }
+    const p1 = fx('y_cal_page1.json');
+    let n = 0;
+    const later = stub({ postJson: async () => (++n === 1 ? p1 : { finance: { result: null } }) });
+    const r = await fetchJpEarningsCalendar(later, '2025-06-01', '2025-06-13');
+    expect(r.complete).toBe(false);
+    expect(r.rows.length).toBeGreaterThan(0);
+  });
+
   it('a first page that fails gives no rows, complete false', async () => {
     const y = stub({ postJson: async () => { throw new HttpError(429, 'https://query1.finance.yahoo.com/v1/finance/visualization'); } });
     expect(await fetchJpEarningsCalendar(y, '2025-06-01', '2025-06-13')).toEqual({ rows: [], complete: false });

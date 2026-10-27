@@ -43,7 +43,8 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 80;
 const INCLUDE_FIELDS = ['ticker', 'companyshortname', 'startdatetime', 'startdatetimetype', 'epsestimate', 'epsactual'];
 
-interface RawPage { rows: unknown[][]; columns: string[] | null; total: number | null }
+/** `wellFormed`: the page has a document with a rows array (an empty one included). */
+interface RawPage { rows: unknown[][]; columns: string[] | null; total: number | null; wellFormed: boolean }
 
 function readPage(json: unknown): RawPage {
   const result = (json as { finance?: { result?: unknown } } | null)?.finance?.result;
@@ -54,7 +55,7 @@ function readPage(json: unknown): RawPage {
   const columns = Array.isArray(doc?.columns)
     ? doc.columns.map((c) => (c && typeof (c as { id?: unknown }).id === 'string' ? (c as { id: string }).id : ''))
     : null;
-  return { rows, columns, total };
+  return { rows, columns, total, wellFormed: Array.isArray(doc?.rows) };
 }
 
 function toRow(row: unknown[], col: (id: string) => number): YahooCalRow | null {
@@ -88,7 +89,7 @@ const addDays = (d: string, n: number) => DateTime.fromISO(d, { zone: 'utc' }).p
 /**
  * Every Tokyo earnings row Yahoo lists with a date in [from, to] (YYYY-MM-DD, both inclusive). Pages of
  * 100 until `total` or an empty page, at most 80 pages. A failure mid-sweep returns the rows so far with
- * `complete: false`; so does reaching the page cap before the end.
+ * `complete: false`; so do a malformed page and reaching the page cap before the end.
  */
 export async function fetchJpEarningsCalendar(y: YahooClient, from: string, to: string): Promise<{ rows: YahooCalRow[]; complete: boolean }> {
   const rows: YahooCalRow[] = [];
@@ -109,6 +110,8 @@ export async function fetchJpEarningsCalendar(y: YahooClient, from: string, to: 
       return { rows, complete: false };
     }
     const raw = readPage(json);
+    // A 200 that is not a calendar page (an error body, a changed shape) is a failure, not the end of the list.
+    if (!raw.wellFormed) return { rows, complete: false };
     const parsed = parseYahooCalendarPage(json);
     rows.push(...parsed.rows.filter((r) => r.date >= from && r.date <= to));
     if (raw.rows.length === 0) return { rows, complete: true };
