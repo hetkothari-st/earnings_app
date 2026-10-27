@@ -47,7 +47,7 @@ ORIX (IX) files 6-Ks but has no Cboe chain → basic. The builder verifies CIKs,
 
 ## Japan rules
 
-- Time zone Asia/Tokyo. TSE session 09:00–11:30, 12:30–15:30 JST. Timing: BMO < 09:00, DMH 09:00–15:30, AMC > 15:30.
+- Time zone Asia/Tokyo. TSE session 09:00–11:30, 12:30–15:30 JST. Timing: BMO < 09:00, DMH 09:00–15:29, AMC ≥ 15:30 (TSE closes at 15:30; a 15:30 release reacts the next session — controller ruling during review).
 - Holidays: Japanese national holidays from the Cabinet Office public list (typed in by hand for 2026–2027) plus the TSE year-end closure 31 Dec–3 Jan. Never fetched from jpx.co.jp.
 - Most companies have a March fiscal year; Japanese quarterly reports are cumulative. Period labels: "1Q FY26" style with fiscal year from the company's FY end (Yahoo/EDINET), e.g. Toyota quarter ending 2026-09-30 = "2Q FY27" (FY ending Mar 2027). Builder decides exact label format consistent with HK.
 - Currency JPY (`¥`). No currency mixing.
