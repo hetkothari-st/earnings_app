@@ -347,6 +347,19 @@ describe('review round 1', () => {
     for (const html of cases) expect(readJpRelease(html, Q4), html.slice(0, 80)).toMatchObject(parentNull);
   });
 
+  it('A6–A9: comparison / ratio / share / negation blocks never end a non-consolidated section', () => {
+    const nc = '<p>2. Summary of Non-consolidated Financial Results</p>';
+    for (const heading of ['Parent Company vs Consolidated', 'Ratio to Consolidated Results', '(1) Share of Consolidated', 'Not Consolidated']) {
+      expect(readJpRelease(`${nc}<p>${heading}</p><table>${ncBody}</table>`, Q4), heading).toMatchObject(parentNull);
+    }
+  });
+
+  it('A10: "Unconsolidated" and "Parent Company Only" headings open a non-consolidated section', () => {
+    for (const heading of ['Unconsolidated Financial Results', 'Parent Company Only']) {
+      expect(readJpRelease(`<p>${heading}</p><table>${ncBody}</table>`, Q4), heading).toMatchObject(parentNull);
+    }
+  });
+
   it('a group-results heading (anchored allowlist) ends a non-consolidated section', () => {
     // The unit sits inside the table, so the heading text just above is not mistaken for the caption.
     const consTable = `<table>${tr('', 'Fiscal year ended March 31, 2026') + tr('', 'Millions of yen') +

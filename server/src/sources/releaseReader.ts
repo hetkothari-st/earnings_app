@@ -792,22 +792,27 @@ const JP_EXPLICIT_SPAN = /\b(three|six|nine|twelve|3|6|9|12)[\s-]*months?\b|\b(f
 /** The release's fiscal quarter (1–4) and fiscal-year label (the calendar year the fiscal year ends in). */
 interface JpFiscal { quarter?: number; year?: number }
 /** Text naming the parent company alone, not the group ("Summary of Non-consolidated Financial Results", 単体, 非連結, 個別). */
-const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|parent[\s-]only|単体|非連結|個別/i;
+const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|unconsolidated|parent[\s-]only|parent company only|parent company basis|単体|非連結|個別/i;
 /**
  * Anchored allowlist of group-results headings, after `JP_HEADING_PREFIX` is stripped: "Consolidated Financial
  * Results / Statements / Highlights", "Consolidated Results", "Consolidated Operating Results", "Consolidated
  * Statement(s) of …", "Consolidated Balance Sheet(s)", "Consolidated Earnings", "Consolidated Summary Report", or a
- * bare "<Company> Consolidated" heading (MUFG); 連結業績 / 連結財務諸表 / 連結経営成績 / 連結損益計算書 / 連結貸借対照表 / 連結決算.
+ * bare "<CO> Consolidated" heading (one all-caps token of 2–6 letters: MUFG). "Statement(s) of" names Income /
+ * Operations / Comprehensive Income / Financial Position / Profit or Loss only. The English heading is end-anchored:
+ * only a closing bracket, a colon, a parenthetical unit / date phrase or a full stop may follow. 連結業績 / 連結財務諸表 / 連結経営成績 / 連結損益計算書 / 連結貸借対照表 / 連結決算.
  */
 const JP_CONSOLIDATED_HEADING = new RegExp(
-  String.raw`^(?:[A-Z][\w&.\- ]{0,30}\s)?Consolidated` +
-  String.raw`(?:\s*[\]】）)］]?\s*$|\s(?:Financial (?:Results|Statements|Highlights)|Results|Operating Results|Statements? of|Balance Sheets?|Earnings|Summary Report))` +
+  String.raw`^(?:[A-Z]{2,6}\s)?Consolidated` +
+  String.raw`(?:\s(?:Financial (?:Results|Statements|Highlights)|Results|Operating Results|Balance Sheets?|Earnings|Summary Report` +
+  String.raw`|Statements? of (?:Income|Operations|Comprehensive Income|Financial Position|Profit or Loss)))?` +
+  // Only a closing bracket, a colon, a parenthetical unit / date phrase or a full stop may follow.
+  String.raw`(?:\s*(?:[\]】）)］:：]|[(（][^()（）]{0,80}[)）]))*\s*[.．]?\s*$` +
   String.raw`|^連結(?:業績|財務諸表|経営成績|損益計算書|貸借対照表|決算)`,
 );
 /** Leading numbering / brackets of a heading: "1.", "(2)", "[", "【", "Ⅱ", "Attachment 1:". */
 const JP_HEADING_PREFIX = /^(?:\s*(?:\d{1,2}\s*[.)．]|[(（]\s*\d{1,2}\s*[)）]|[\[【［(（]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s*[.．]?|Attachment\s*\d*\s*[:.]?)\s*)+/;
 /** Words that make a "Consolidated …" block a remark, not a heading. */
-const JP_NOT_HEADING = /subsidiar|basis|compar|note|子会社/i;
+const JP_NOT_HEADING = /subsidiar|basis|compar|note|子会社|\bvs\b|\bversus\b|\bto\b|\bof consolidated\b|\bnot\b|ratio|share|compared|comparison/i;
 /** Blocks of the text between two tables: paragraphs, divs, headings, line breaks, rows, list items. */
 const JP_BLOCK_END = /<\/p\s*>|<\/div\s*>|<\/h[1-6]\s*>|<br\s*\/?>|<\/tr\s*>|<\/li\s*>/i;
 
