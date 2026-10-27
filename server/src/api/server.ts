@@ -6,6 +6,7 @@ import { registerAuth } from '../auth/routes.js';
 import { registerNotes } from '../notes/routes.js';
 import { registerWatchlist, type WatchlistOptions } from '../watchlist/routes.js';
 import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
+import { type HkServerOptions, registerHkRoutes } from '../hk/api/routes.js';
 import { todayET } from '../domain/marketCalendar.js';
 import { todayIST } from '../india/domain/nseCalendar.js';
 import { computeCoverage } from '../jobs/coverage.js';
@@ -44,6 +45,8 @@ export interface ServerOptions {
   setVisible?: (userId: string, symbols: string[]) => void;
   /** India live data and Zerodha controls. */
   india?: InServerOptions;
+  /** Hong Kong live data. */
+  hk?: HkServerOptions;
   /** Symbol index for the watchlist (search and validation). */
   watchlist?: WatchlistOptions;
 }
@@ -63,6 +66,7 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   registerWatchlist(app, db, currentUser, opts.now ?? Date.now, opts.watchlist);
   registerAdmin(app, db, currentUser, opts.now ?? Date.now);
   registerInRoutes(app, db, currentUser, opts.now ?? Date.now, opts.india);
+  registerHkRoutes(app, db, currentUser, opts.now ?? Date.now, opts.hk);
   let marketsCache: { at: number; body: MarketsResponse } | null = null;
 
   app.get('/api/markets', async () => {
