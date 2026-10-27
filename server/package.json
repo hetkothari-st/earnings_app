@@ -10,6 +10,7 @@
     "coverage-check": "tsx src/cli/coverageCheck.ts",
     "reader-corpus": "tsx src/cli/readerCorpus.ts",
     "collect-in-corpus": "tsx src/cli/collectInCorpus.ts",
+    "verify-hk-universe": "tsx src/cli/verifyHkUniverse.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
