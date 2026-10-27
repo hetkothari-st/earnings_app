@@ -28,7 +28,7 @@ const TM_INDEX = `${TM_DIR}/${TM_ACC}-index.htm`;
 const TM_EX991 = `${TM_DIR}/d258414dex991.htm`;
 const TM_MAIN = `${TM_DIR}/d258414d6k.htm`;
 const TM_ACCEPTED = '2026-08-04T10:03:00.000Z';
-// Nomura's notice "Nomura to Announce Second Quarter Operating Results on October 28" (15:30 JST), accepted 2026-09-17.
+// Nomura's notice "Nomura to Announce Second Quarter Operating Results on October 28" (15:30 JST = the close, AMC), accepted 2026-09-17.
 const NMR_CIK = 1163653;
 const NMR_ACC = '0001193125-26-393642';
 const NMR_DIR = 'https://www.sec.gov/Archives/edgar/data/1163653/000119312526393642';
@@ -213,7 +213,7 @@ describe('Japan 6-K handling', () => {
     const filing = { cik: NMR_CIK, accession: NMR_ACC, indexUrl: NMR_INDEX, acceptedAt: '2026-09-17T10:01:00.000Z', form: '6-K' };
     expect(await handleJpFiling(ctx, filing)).toEqual({ released: [], dated: [id] });
     expect(getJpReport(db, id)).toMatchObject({
-      periodEnd: '2026-09-30', reportDate: '2026-10-28', dateStatus: 'confirmed', timing: 'DMH', timingSource: 'sec-notice', releasedAt: null,
+      periodEnd: '2026-09-30', reportDate: '2026-10-28', dateStatus: 'confirmed', timing: 'AMC', timingSource: 'sec-notice', releasedAt: null,
     });
 
     // The same notice accepted after the date it names: nothing is dated.

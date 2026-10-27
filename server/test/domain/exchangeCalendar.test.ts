@@ -29,4 +29,14 @@ describe('exchangeCalendar', () => {
     expect(cal.holidaysUnknown('2027-01-01')).toBe(true);
     expect(cal.today()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
+
+  it('amcAtClose: the close minute itself is after market (default: inclusive, as HK)', () => {
+    const base = { zone: 'Asia/Tokyo', holidays: {}, openMin: 540, closeMin: 930, unknownFrom: '2028-01-01' };
+    const inclusive = makeExchangeCalendar(base);
+    expect(inclusive.timingFromClock('15:30')).toBe('DMH');
+    const atClose = makeExchangeCalendar({ ...base, amcAtClose: true });
+    expect(atClose.timingFromClock('15:29')).toBe('DMH');
+    expect(atClose.timingFromClock('15:30')).toBe('AMC');
+    expect(atClose.timingFromClock('08:59')).toBe('BMO');
+  });
 });

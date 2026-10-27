@@ -16,7 +16,8 @@ export interface ExchangeCalendar {
 /**
  * A weekday-and-holiday exchange calendar in one time zone. Years without a holiday list count as
  * weekends-only (plus `closed`). BMO is before `openMin`, DMH is `openMin..closeMin` inclusive
- * (lunch counts), AMC is after `closeMin`; minutes are from local midnight.
+ * (lunch counts), AMC is after `closeMin`; minutes are from local midnight. With `amcAtClose` the close minute
+ * itself is AMC (DMH is `openMin..closeMin − 1`): Tokyo, where a 15:30 release reacts in the next session.
  */
 export function makeExchangeCalendar(o: {
   zone: string;
@@ -24,6 +25,7 @@ export function makeExchangeCalendar(o: {
   closed?: (d: string) => boolean;
   openMin: number;
   closeMin: number;
+  amcAtClose?: boolean;
   unknownFrom: string;
 }): ExchangeCalendar {
   const addDays = (d: string, n: number): string =>
@@ -57,7 +59,7 @@ export function makeExchangeCalendar(o: {
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) return 'UNKNOWN';
     const total = hh * 60 + mm;
     if (total < o.openMin) return 'BMO';
-    if (total > o.closeMin) return 'AMC';
+    if (o.amcAtClose ? total >= o.closeMin : total > o.closeMin) return 'AMC';
     return 'DMH';
   };
 

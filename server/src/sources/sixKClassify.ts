@@ -107,9 +107,9 @@ function jpClocks(window: string): ClockHit[] {
   return out;
 }
 
-/** HK: BMO before 09:30, DMH to 16:00. JP: BMO before 09:00, DMH 09:00–15:30 inclusive (lunch counts), AMC after. */
+/** HK: BMO before 09:30, DMH to 16:00. JP: BMO before 09:00, DMH 09:00–15:29 (lunch counts), AMC from 15:30 (the close). */
 function clockTiming(mins: number, profile: SixKProfile): LocalTiming {
-  if (profile === 'jp') return mins < 9 * 60 ? 'BMO' : mins <= 15 * 60 + 30 ? 'DMH' : 'AMC';
+  if (profile === 'jp') return mins < 9 * 60 ? 'BMO' : mins < 15 * 60 + 30 ? 'DMH' : 'AMC';
   return mins < 9 * 60 + 30 ? 'BMO' : mins <= 16 * 60 ? 'DMH' : 'AMC';
 }
 /** Words just before "on D" that make D a dividend date ("payable on", "holders of record on", "register … closed on"). */

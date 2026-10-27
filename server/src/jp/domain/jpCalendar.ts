@@ -67,6 +67,7 @@ export const JP_CAL: ExchangeCalendar = makeExchangeCalendar({
   closed: yearEndClosed,
   openMin: 9 * 60,
   closeMin: 15 * 60 + 30,
+  amcAtClose: true,
   unknownFrom: '2028-01-01',
 });
 
@@ -77,7 +78,7 @@ export const isJpTradingDay = (date: string): boolean => JP_CAL.isTradingDay(dat
 export const prevJpTradingDay = (date: string): string => JP_CAL.prevTradingDay(date);
 export const jpTradingDayOnOrAfter = (date: string): string => JP_CAL.tradingDayOnOrAfter(date);
 
-/** Timing from a JST clock "HH:MM[:SS]". BMO < 09:00, DMH 09:00–15:30 inclusive (lunch counts), AMC > 15:30. */
+/** Timing from a JST clock "HH:MM[:SS]". BMO < 09:00, DMH 09:00–15:29 (lunch counts), AMC from 15:30 (the close). */
 export const jpTimingFromJst = (hhmm: string | null | undefined): JpTiming => JP_CAL.timingFromClock(hhmm);
 
 /** True for 2028 and later, whose holiday list is not in the app yet (weekends and year-end closure only). */

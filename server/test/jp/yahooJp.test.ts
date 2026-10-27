@@ -50,6 +50,12 @@ describe('Yahoo JP bulk calendar', () => {
     expect(q.total).toBe(2);
     expect(q.rows[0]).toEqual({ symbol: '7203.T', code: '7203', date: '2026-11-05', timing: 'DMH', timeType: 'TAS', epsActual: null });
     // 22:00 UTC is already the 5th in Tokyo, but a non-TAS row keeps the UTC date.
+    const at = (iso: string) => parseYahooCalendarPage({ finance: { result: [{ total: 1, documents: [{
+      columns: [{ id: 'ticker' }, { id: 'startdatetime' }, { id: 'startdatetimetype' }], rows: [['7203.T', iso, 'TAS']],
+    }] }] } }).rows[0]!.timing;
+    // A TAS row at 15:30 JST (06:30Z) is at the close: AMC; 15:29 is still during.
+    expect(at('2026-11-05T06:30:00.000Z')).toBe('AMC');
+    expect(at('2026-11-05T06:29:00.000Z')).toBe('DMH');
     expect(q.rows[1]).toMatchObject({ date: '2026-11-04', timing: 'UNKNOWN' });
   });
 

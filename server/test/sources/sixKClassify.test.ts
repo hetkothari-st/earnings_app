@@ -79,11 +79,11 @@ describe("classifySixK, profile 'jp'", () => {
       .toEqual({ kind: 'results', periodEnd: '2026-03-31', span: 'year' });
   });
 
-  it("Nomura's date notice: 15:30 in Tokyo is during market hours", () => {
+  it("Nomura's date notice: 15:30 in Tokyo is at the close, so after market", () => {
     const docs = parseFilingDocs(jp('sec_index_nomura_date_notice.htm'), 'https://www.sec.gov/Archives/edgar/data/1163653/000119312526393642/0001193125-26-393642-index.htm');
     expect(pickReleaseDoc(docs)).toBe('https://www.sec.gov/Archives/edgar/data/1163653/000119312526393642/d140285d6k.htm');
     expect(classifySixK(jp('nomura_2q_date_notice_6k.htm'), { filedOn: '2026-09-17', profile: 'jp' }))
-      .toEqual({ kind: 'date-notice', date: '2026-10-28', timing: 'DMH' });
+      .toEqual({ kind: 'date-notice', date: '2026-10-28', timing: 'AMC' });
   });
 
   it('month-range headers name the period end; the span follows the range length', () => {
@@ -104,7 +104,9 @@ describe("parseDateNoticeFor 'jp'", () => {
     expect(parseDateNoticeFor(t, 'jp')).toEqual({ date: '2026-11-05', timing: 'DMH' });
     expect(parseDateNoticeFor(t.replace('3:00 p.m. Japan time', '4:00 p.m. (JST)'), 'jp')).toEqual({ date: '2026-11-05', timing: 'AMC' });
     expect(parseDateNoticeFor(t.replace('3:00 p.m. Japan time', '8:30 a.m. Tokyo time'), 'jp')).toEqual({ date: '2026-11-05', timing: 'BMO' });
-    expect(parseDateNoticeFor(t.replace('3:00 p.m. Japan time', '15:30 JST'), 'jp')).toEqual({ date: '2026-11-05', timing: 'DMH' });
+    expect(parseDateNoticeFor(t.replace('3:00 p.m. Japan time', '15:29 JST'), 'jp')).toEqual({ date: '2026-11-05', timing: 'DMH' });
+    expect(parseDateNoticeFor(t.replace('3:00 p.m. Japan time', '15:30 JST'), 'jp')).toEqual({ date: '2026-11-05', timing: 'AMC' });
+    expect(parseDateNoticeFor(t.replace('3:00 p.m. Japan time', '3:30 p.m. Japan time'), 'jp')).toEqual({ date: '2026-11-05', timing: 'AMC' });
   });
 
   it('"after the close of the Tokyo Stock Exchange on November 5, 2026" → AMC', () => {

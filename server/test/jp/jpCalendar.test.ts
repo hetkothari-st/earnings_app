@@ -18,11 +18,12 @@ describe('jpCalendar', () => {
   it('previous trading day skips the year end', () => {
     expect(prevJpTradingDay('2027-01-04')).toBe('2026-12-30');
   });
-  it('timing: lunch counts as during', () => {
+  it('timing: lunch counts as during; 15:30 (the close) is after market', () => {
     expect(jpTimingFromJst('08:59')).toBe('BMO');
     expect(jpTimingFromJst('09:00')).toBe('DMH');
     expect(jpTimingFromJst('11:45')).toBe('DMH');
-    expect(jpTimingFromJst('15:30')).toBe('DMH');
+    expect(jpTimingFromJst('15:29')).toBe('DMH');
+    expect(jpTimingFromJst('15:30')).toBe('AMC');
     expect(jpTimingFromJst('15:31')).toBe('AMC');
     expect(jpTimingFromJst(null)).toBe('UNKNOWN');
   });
