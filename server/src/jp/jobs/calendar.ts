@@ -12,8 +12,9 @@
  *   none and supplies TAS timing; it never moves a stored date.
  *
  * Both: dates before today never create a row, nor do dates more than 120 days ahead; a stock without a fiscal year
- * end gets no row; full level merges the ADR's US row (Ruling 8: used when Yahoo agrees or has no date for that
- * period, nothing when they disagree); everything is written `estimated`, and the repo never lets an estimated
+ * end gets no row; full level merges the ADR's US row (Ruling 8 as amended: used when Yahoo agrees, has no date
+ * for that period or only its own projection; a date Yahoo marks announced wins a disagreement — Japan announces on
+ * the TSE first, Nasdaq rows are often estimates; with no flag (bulk rows) a disagreement writes nothing); everything is written `estimated`, and the repo never lets an estimated
  * date move a confirmed one or a released row.
  */
 import type { DatabaseSync } from 'node:sqlite';
@@ -69,13 +70,15 @@ function markChecked(db: DatabaseSync, code: string, now: string, dateSeen: bool
 
 // ---------- Date planning (shared) ----------
 
-interface Candidate { date: string; timing: JpTiming; tas: boolean }
+/** `announced`: Yahoo's `isEarningsDateEstimate` inverted (true: announced, false: Yahoo's projection, null: no flag). */
+interface Candidate { date: string; timing: JpTiming; tas: boolean; announced?: boolean | null }
 interface Planned extends Candidate { period: JpPeriod }
 
 /**
  * The dates to write for one stock, one per fiscal period. Yahoo dates outside [today, today+120] are dropped; two
  * different Yahoo dates for one period are ambiguous and both dropped (Ruling 11). Full level: the ADR's US rows as
- * JST dates; per period, a US date is used when Yahoo agrees or has none, and nothing is written when they disagree.
+ * JST dates; per period, a US date is used when Yahoo agrees, has none or has only a projected one; an announced
+ * Yahoo date wins a disagreement; a Yahoo date with no flag and a different US date write nothing.
  */
 function planDates(ctx: JpJobContext, stock: JpStock, yahoo: Candidate[]): Planned[] {
   const fy = stock.fyEndMonth;
@@ -109,7 +112,11 @@ function planDates(ctx: JpJobContext, stock: JpStock, yahoo: Candidate[]): Plann
     const y = ys.get(periodEnd);
     const u = us.get(periodEnd);
     if (y && y.dates.size > 1) continue; // ambiguous
-    if (y && u) { if (y.best.date === u.date) out.push(y.best); continue; }
+    if (y && u) {
+      if (y.best.date === u.date || y.best.announced === true) out.push(y.best);
+      else if (y.best.announced === false) out.push(u);
+      continue;
+    }
     if (y) out.push(y.best);
     else if (u) out.push(u);
   }
@@ -179,7 +186,8 @@ export async function refreshJpCalendar(ctx: JpJobContext, opts: { perRun?: numb
     const seen = next != null && next >= today;
     const projected = y?.nextDateEstimated === true;
     const announcedBefore = state.get(stock.code)?.announcedDate ?? null;
-    for (const p of planDates(ctx, stock, seen ? [{ date: next, timing: 'UNKNOWN', tas: false }] : [])) {
+    const announced = y?.nextDateEstimated == null ? null : !y.nextDateEstimated;
+    for (const p of planDates(ctx, stock, seen ? [{ date: next, timing: 'UNKNOWN', tas: false, announced }] : [])) {
       // Announced beats projected: Yahoo's projection never moves a row standing on the last announced date.
       if (projected && announcedBefore != null && announcedBefore !== p.date) {
         const stored = findJpReportId(ctx.db, stock.code, p.period.periodEnd);

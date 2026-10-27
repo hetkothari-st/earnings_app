@@ -220,7 +220,7 @@ describe('refreshJpCalendar (rolling per-symbol sweep)', () => {
     expect(summaryCalls.map((c) => c.symbol)).not.toContain('9999.T');
   });
 
-  it('full level: US BMO 2026-11-05 + Yahoo 2026-11-05 → row 2026-11-05 estimated 2Q FY27; disagreement → nothing', async () => {
+  it('full level: US BMO 2026-11-05 + Yahoo 2026-11-05 → row 2026-11-05 estimated 2Q FY27; announced Yahoo wins a disagreement', async () => {
     const agree = setup({ summaries: { '7203.T': S7203 } });
     usRow(agree.db, 'TM', '2026-11-05', 'BMO');
     await refreshJpCalendar(agree.ctx, { perRun: 10 });
@@ -228,10 +228,18 @@ describe('refreshJpCalendar (rolling per-symbol sweep)', () => {
       { report_date: '2026-11-05', date_status: 'estimated', period_end: '2026-09-30', period_label: '2Q FY27' },
     ]);
 
-    const disagree = setup({ summaries: { '7203.T': { ...S7203, nextDate: '2026-11-06' } } });
+    // Toyota / Honda style: Tokyo announced 2026-11-06 (isEarningsDateEstimate false); the ADR's US row still says
+    // 2026-11-05. The announced Yahoo date wins.
+    const disagree = setup({ summaries: { '7203.T': { ...S7203, nextDate: '2026-11-06', nextDateEstimated: false } } });
     usRow(disagree.db, 'TM', '2026-11-05', 'BMO');
     await refreshJpCalendar(disagree.ctx, { perRun: 10 });
-    expect(rows(disagree.db, '7203')).toEqual([]);
+    expect(rows(disagree.db, '7203')).toMatchObject([{ report_date: '2026-11-06', date_status: 'estimated', period_end: '2026-09-30' }]);
+
+    // Yahoo's own projection disagrees with the US row: the US row fills.
+    const projected = setup({ summaries: { '7203.T': { ...S7203, nextDate: '2026-11-06', nextDateEstimated: true } } });
+    usRow(projected.db, 'TM', '2026-11-05', 'BMO');
+    await refreshJpCalendar(projected.ctx, { perRun: 10 });
+    expect(rows(projected.db, '7203')).toMatchObject([{ report_date: '2026-11-05', date_status: 'estimated', period_end: '2026-09-30' }]);
 
     // Yahoo has no single date: the US row alone (US AMC 11-04 → JST 11-05).
     const usOnly = setup({ summaries: { '7203.T': { ...S7203, nextDate: null } } });
