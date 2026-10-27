@@ -15,6 +15,7 @@
     "collect-hk-corpus": "tsx src/cli/collectHkCorpus.ts",
     "collect-jp-corpus": "tsx src/cli/collectJpCorpus.ts",
     "hk-spot-check": "tsx src/cli/hkSpotCheck.ts",
+    "jp-spot-check": "tsx src/cli/jpSpotCheck.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
