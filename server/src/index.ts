@@ -24,7 +24,7 @@ import { HkPrices } from './hk/live/hkPrices.js';
 import { hkSixKMarket } from './hk/live/hkSecWatch.js';
 import { JST, todayJST } from './jp/domain/jpCalendar.js';
 import type { JpJobContext } from './jp/jobs/context.js';
-import { startJpScheduler, warmUpJp, type JpSchedulerHooks } from './jp/jobs/scheduler.js';
+import { startJpScheduler, warmUpJp, warmUpJpAfter, type JpSchedulerHooks } from './jp/jobs/scheduler.js';
 import { JpPrices, toDelayedQuotes } from './jp/live/jpPrices.js';
 import { jpSixKMarket } from './jp/live/jpSixK.js';
 import { fetchEdinetCodeList, makeEdinetClient } from './jp/sources/edinet.js';
@@ -255,7 +255,8 @@ const jpHooks: JpSchedulerHooks = {
 startJpScheduler(jpCtx, job, jpHooks);
 // Japan warms up after Hong Kong: both wait on the one Yahoo budget, and Japan's thousands of codes would otherwise
 // slow HK's warm-up. Neither blocks US or India startup.
-void hkWarm.then(() => warmUpJp(jpCtx, job, jpHooks)).catch((e) => console.error('[job jp-warm-up]', e));
+// A failed HK warm-up never skips Japan's.
+void warmUpJpAfter(hkWarm, () => warmUpJp(jpCtx, job, jpHooks)).catch((e) => console.error('[job jp-warm-up]', e));
 jpPrices.start();
 
 startInScheduler(inCtx, job, {

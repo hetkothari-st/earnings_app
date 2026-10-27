@@ -24,7 +24,8 @@ export const JP_CRONS = {
   calendar: '*/10 * * * *',
   /** The bulk calendar supplement (Ruling 10: every 2 h). */
   bulkCalendar: '5 */2 * * *',
-  estimates: '20 * * * *',
+  /** Every 30 min, so tier A rows (25-minute max age) refresh each run; `JP_SUMMARY_BUDGET` is per run. */
+  estimates: '20,50 * * * *',
   /** Yahoo "results out", every 2 h (summaries are reused for `JP_RESULTS_MAX_AGE_MS`, 100 min). */
   results: '25 */2 * * *',
   /** EDINET today's list every 30 min 09:00–19:59 on weekdays; the last 7 days nightly (Ruling 13). */
@@ -95,6 +96,13 @@ export function startJpScheduler(ctx: JpJobContext, job: JobRunner, hooks: JpSch
   schedule(JP_CRONS.prevMoves, job('jp-prev-moves', () => computeJpPrevMoves(ctx)), jst);
   schedule(JP_CRONS.movesSnapshot, job('jp-moves', withIds(() => snapshotJpMoves(ctx), hooks.onMoves)), et);
   schedule(JP_CRONS.liveMoves, job('jp-live-moves', withIds(() => refreshJpLiveMoves(ctx), hooks.onMoves)), et);
+}
+
+/**
+ * Japan's warm-up after Hong Kong's (both wait on the one Yahoo budget): it starts once HK's settles, failed or not.
+ */
+export function warmUpJpAfter(hkWarm: Promise<unknown>, run: () => Promise<void>): Promise<void> {
+  return hkWarm.catch(() => {}).then(run);
 }
 
 /**

@@ -5,7 +5,8 @@ import { createJobRunner, type JobRunner } from '../../src/jobs/scheduler.js';
 import { upsertJpPastDates } from '../../src/jp/db/jpRepo.js';
 import { JP_DATE_SWEEP } from '../../src/jp/jobs/calendar.js';
 import type { JpJobContext } from '../../src/jp/jobs/context.js';
-import { JP_CRONS, JP_DATE_SWEEP_PEAK, jpDateSweepPerRun, warmUpJp } from '../../src/jp/jobs/scheduler.js';
+import { JP_SUMMARY_BUDGET, JP_TIER_A_MAX_AGE_MS } from '../../src/jp/jobs/estimates.js';
+import { JP_CRONS, JP_DATE_SWEEP_PEAK, jpDateSweepPerRun, warmUpJp, warmUpJpAfter } from '../../src/jp/jobs/scheduler.js';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -61,7 +62,7 @@ describe('Japan scheduler', () => {
       pastDates: '0 3 * * 0',
       calendar: '*/10 * * * *',
       bulkCalendar: '5 */2 * * *',
-      estimates: '20 * * * *',
+      estimates: '20,50 * * * *',
       results: '25 */2 * * *',
       edinetToday: '*/30 9-19 * * 1-5',
       edinetBackfill: '0 2 * * *',
@@ -70,6 +71,10 @@ describe('Japan scheduler', () => {
       movesSnapshot: '20 16 * * 1-5',
       liveMoves: '* 9-15 * * 1-5',
     });
+    // Estimates every 30 min so tier A (25-minute max age) is refreshed each run; the per-run budget is halved so the
+    // hourly summary cap stays 900 (the 1 request/s Yahoo budget).
+    expect(JP_TIER_A_MAX_AGE_MS).toBeLessThan(30 * 60_000);
+    expect(JP_SUMMARY_BUDGET * 2).toBeLessThanOrEqual(900);
     // The rolling date sweep runs at the cadence its per-run size was chosen for.
     expect(JP_DATE_SWEEP.everyMs).toBe(10 * 60_000);
   });
@@ -84,5 +89,18 @@ describe('Japan scheduler', () => {
     expect(jpDateSweepPerRun('2027-06-25')).toBe(JP_DATE_SWEEP.perRun);
     // Even at the peak size the sweep is a small share of the 1 request/s Japan Yahoo budget.
     expect(JP_DATE_SWEEP_PEAK.perRun / (JP_DATE_SWEEP.everyMs / 1000)).toBeLessThanOrEqual(0.2);
+  });
+
+  it('Japan warm-up starts after Hong Kong even when the HK warm-up fails', async () => {
+    const run = vi.fn(async () => {});
+    await warmUpJpAfter(Promise.reject(new Error('hk warm-up failed')), run);
+    expect(run).toHaveBeenCalledTimes(1);
+    const order: string[] = [];
+    let release!: () => void;
+    const hk = new Promise<void>((r) => { release = r; }).then(() => { order.push('hk'); });
+    const done = warmUpJpAfter(hk, async () => { order.push('jp'); });
+    release();
+    await done;
+    expect(order).toEqual(['hk', 'jp']);
   });
 });

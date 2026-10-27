@@ -7,8 +7,8 @@ import { trackIn, type JpJobContext } from './context.js';
 /** Ruling 10 summary tiers. */
 export const JP_TIER_A_MAX_AGE_MS = 25 * 60_000;
 export const JP_TIER_B_MAX_AGE_MS = 12 * 3_600_000;
-/** At most this many summary requests per estimates run. */
-export const JP_SUMMARY_BUDGET = 900;
+/** At most this many summary requests per estimates run (every 30 min: at most 900 an hour). */
+export const JP_SUMMARY_BUDGET = 450;
 /** Tier A rows (visible or watched) up to this far ahead get estimates. */
 const TIER_A_DAYS = 180;
 
