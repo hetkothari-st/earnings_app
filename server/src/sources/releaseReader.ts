@@ -226,8 +226,50 @@ const DOLLAR_M = /\$\s?(m|mn|bn)\b/i;
 const MULT: Record<string, number> = {
   thousands: 1e3, '000': 1e3, millions: 1e6, billions: 1e9, m: 1e6, mn: 1e6, bn: 1e9, thousand: 1e3, million: 1e6, billion: 1e9,
 };
-/** Profile 'hk': a caption naming the income statement, whose per-share lines may continue in the next table. */
-const INCOME_STATEMENT_CAPTION = /\bstatements?\s+of\s+(?:comprehensive\s+)?(?:income|operations|earnings|profit|loss|\(loss\))|\bincome\s+statements?\b/i;
+/**
+ * Profile 'hk': a caption that is an income-statement title and nothing else — "Unaudited Condensed Consolidated
+ * Statements of Comprehensive Profit/(Loss) (Continued) (All amounts in thousands…)", "Income Statements
+ * (in millions)". Prose that mentions a statement, and highlight / segment / key-figure tables, are not titles.
+ */
+const STATEMENT_TITLE = new RegExp(
+  String.raw`^\s*(?:\d{1,3}\s+)?(?:(?:unaudited|condensed|consolidated|interim)\s+)*` +
+  String.raw`(?:statements?\s+of\s+(?:comprehensive\s+)?(?:income|operations|earnings|profit|loss|\(loss\))` +
+  String.raw`(?:\s*(?:\/|and|or)\s*(?:comprehensive\s+)?\(?(?:income|loss|profit)\)?)*|income\s+statements?)` +
+  String.raw`\s*(?:\(\s*continued\s*\)\s*)?(?:\([^()]*\)\s*)*$`,
+  'i',
+);
+const NOT_STATEMENT = /highlight|summary|selected|\bkey\b|segment|pro forma|outlook|guidance/i;
+
+/** The income-statement title of a caption, normalised for comparison ("(continued)" and units dropped), else null. */
+function statementTitle(caption: string): string | null {
+  if (NOT_STATEMENT.test(caption) || !STATEMENT_TITLE.test(caption)) return null;
+  return caption.toLowerCase().replace(/\([^()]*\)/g, ' ').replace(/^\s*\d+\s+/, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Unit phrases that name a currency: "in thousands of U.S. dollars", "in millions of RMB", "RMB in millions",
+ * "(US$ in thousands", "in US$ million", "RMB (million)", "RMB'000", "US$m". A currency named in passing in prose
+ * ("deposits denominated in US$") is not one.
+ */
+const UNIT_CUR = String.raw`(?:rmb|renminbi|u\.?\s?s\.?\s*dollars|us\$|usd|hk\$|hkd|hk dollars|hong kong dollars)`;
+/** "RMB and US$", "RMB/US$": every currency of a list is kept, so a two-currency unit phrase stays ambiguous. */
+const UNIT_CURS = String.raw`${UNIT_CUR}(?:\s*(?:and|or|\/|,)\s*${UNIT_CUR})*`;
+const CURRENCY_UNIT_RE = new RegExp(
+  String.raw`\bin\s+(?:thousands|millions|billions)\s+of\s+${UNIT_CURS}` +
+  String.raw`|(?:\brmb|renminbi|us\$|hk\$|\busd|\bhkd)(?:\s*'\s*000\b|\s?(?:m|mn|bn)\b|\s+(?:in\s+)?(?:thousands|millions|billions)\b|\s*\(\s*(?:thousand|million|billion)s?\s*\))` +
+  String.raw`|\bin\s+${UNIT_CURS}\s*(?:thousand|million|billion)s?\b`,
+  'gi',
+);
+export function currencyUnitPhrases(text: string): string {
+  return [...text.matchAll(CURRENCY_UNIT_RE)].map((m) => m[0]).join(' ; ');
+}
+
+/** A figure cell: "1,234", "(0.29)", "$ 0.87", "12%". A lone footnote mark "(2)" and header text are not. */
+const FIGURE_RE = /^\(?[-–−]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?\)?%?\)?$/;
+export function isFigure(text: string): boolean {
+  const s = text.replace(/[\s$]/g, '');
+  return FIGURE_RE.test(s) && !/^\(\d{1,2}\)$/.test(s);
+}
 
 /** The caption of a table: the last sentence above it ("… Statements of Income (in millions)"). */
 export function tableCaption(table: Table): string {
@@ -395,10 +437,23 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     ? /per (diluted |common |basic )?share|\beps\b|earnings per|per (class [a-z] )?ordinary share|per ads\b|per american depositary/i
     : /per (diluted |common |basic )?share|\beps\b|earnings per/i;
 
-  for (const table of tables) {
+  const epsTables = tables.map((t) => t.rows.some((r) => epsRow.test(r.find((c) => c.text)?.text ?? '')));
+  const statementTitles = hk ? tables.map((t) => statementTitle(tableCaption(t))) : [];
+
+  for (const [ti, table] of tables.entries()) {
     // Table unit: stated in its non-data rows, else just above the table.
     const nonData: string[] = [];
-    const hasEpsRow = table.rows.some((r) => epsRow.test(r.find((c) => c.text)?.text ?? ''));
+    const hasEpsRow = epsTables[ti]!;
+    // Profile 'hk': an income statement split over consecutive tables (XPeng, KE Holdings) — the tables that follow
+    // carry the same statement title ("(continued)"), and one of them holds the per-share lines.
+    let splitStatement = false;
+    if (hk && statementTitles[ti] != null) {
+      for (let j = ti + 1; j < tables.length; j++) {
+        if (!tables[j]!.rows.some((r) => r.some((c) => /[a-z]/i.test(c.text)))) continue; // a page-number / layout table
+        if (statementTitles[j] !== statementTitles[ti]) break;
+        if (epsTables[j]) splitStatement = true;
+      }
+    }
     let headers: Cell[][] = [];
     let lastWasData = false;
     let section = '';
@@ -463,7 +518,9 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     if (inTable.size === 1) unit = [...inTable][0]!;
     else if (inTable.size === 0 && near.size === 1) unit = [...near][0]!;
     const dollarM = hk && DOLLAR_M.test(nonDataText);
-    const capCur = currenciesIn(caption);
+    // Profile 'hk': the caption names a currency only through a unit phrase ("in thousands of U.S. dollars").
+    const captionCurrencyText = hk ? currencyUnitPhrases(caption) : caption;
+    const capCur = currenciesIn(captionCurrencyText);
     const dollarIsUsd = dollarIsUsdInDoc || (capCur.has('USD') && !capCur.has('CNY') && !capCur.has('HKD'));
 
     for (const { field, nums, headers: hs, label, rawLabel, section: sec } of rowsOut) {
@@ -491,7 +548,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
           // The column's currency: its own header, else the row label, else the table's titles and caption.
           // A header and a row label naming different currencies ("RMB" column, "… (USD)" row) is ambiguous.
           let cur: Currency | null | undefined;
-          for (const t of [over, rawLabel, `${nonDataText} ${caption}`]) if ((cur = oneCurrency(t, dollarIsUsd)) !== undefined) break;
+          for (const t of [over, rawLabel, `${nonDataText} ${captionCurrencyText}`]) if ((cur = oneCurrency(t, dollarIsUsd)) !== undefined) break;
           const rowCur = oneCurrency(rawLabel, dollarIsUsd);
           if (cur !== undefined && rowCur !== undefined && rowCur !== cur) cur = null;
           if (cur === undefined && n.dollar && dollarIsUsd) cur = 'USD';
@@ -514,7 +571,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
         // Segment / KPI tables have no per-share line and are not the income statement. A "$m" table
         // (HSBC's highlights) states revenue without one; so does an income statement whose caption names it
         // and whose per-share lines continue in the next table (XPeng).
-        if (!hasEpsRow && !dollarM && !(hk && INCOME_STATEMENT_CAPTION.test(caption))) continue;
+        if (!hasEpsRow && !dollarM && !splitStatement) continue;
         if (unit === null) { notes.push('revenue: no unit stated for table'); continue; }
         for (const n of picked) found.revenue.push({ value: n.value * unit, unit });
       } else {

@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { parseTables, type Cell } from '../../sources/releaseReader.js';
+import { isFigure, parseTables, type Cell } from '../../sources/releaseReader.js';
 import type { FilingDoc } from '../../sources/secFeed.js';
 import type { HkTiming } from '../domain/hkCalendar.js';
 
@@ -136,23 +136,29 @@ export function parseDateNotice(text: string): { date: string; timing: HkTiming 
 
 const SPAN_ORDER: Record<HkSpan, number> = { quarter: 0, half: 1, year: 2 };
 
+/**
+ * A period named for a dividend ("second interim dividend … in respect of the financial year ended 31 December
+ * 2025", paid mid-year) is not the period the release reports, and may even end after it.
+ */
+const dividendContext = (text: string, at: number) => /\bin respect of\b|\bdividends?\b/i.test(text.slice(Math.max(0, at - 60), at));
+
 /** All period ends the document states, as (end date, span). */
 function periodMentions(text: string): { end: string; span: HkSpan }[] {
   const out: { end: string; span: HkSpan }[] = [];
   const words = '(?:three|six|nine|twelve)';
   for (const m of text.matchAll(new RegExp(`\\b(${words}(?:\\s+and\\s+${words})?)\\s+months\\s+ended\\s+`, 'gi'))) {
-    const d = dateAt(text, m.index! + m[0].length);
+    const d = dividendContext(text, m.index!) ? null : dateAt(text, m.index! + m[0].length);
     if (!d) continue;
     const w = m[1]!.toLowerCase();
     const span: HkSpan | null = w.includes('three') ? 'quarter' : w.includes('six') ? 'half' : w.includes('twelve') ? 'year' : null;
     if (span) out.push({ end: d.date, span });
   }
   for (const m of text.matchAll(/\bquarter\s+ended\s+/gi)) {
-    const d = dateAt(text, m.index! + m[0].length);
+    const d = dividendContext(text, m.index!) ? null : dateAt(text, m.index! + m[0].length);
     if (d) out.push({ end: d.date, span: 'quarter' });
   }
   for (const m of text.matchAll(/\byear\s+ended\s+/gi)) {
-    const d = dateAt(text, m.index! + m[0].length);
+    const d = dividendContext(text, m.index!) ? null : dateAt(text, m.index! + m[0].length);
     if (d) out.push({ end: d.date, span: 'year' });
   }
   for (const m of text.matchAll(new RegExp(`\\b(${MONTH_RE})\\s+quarter\\s+(\\d{4})\\b`, 'gi'))) {
@@ -163,8 +169,6 @@ function periodMentions(text: string): { end: string; span: HkSpan }[] {
   return out;
 }
 
-/** A data row: a text label followed by at least one figure. */
-const FIGURE = /^\(?\s*[-–−]?\s*\$?\s*(\d{1,3}(,\d{3})+|\d+)(\.\d+)?\s*\)?\s*%?$/;
 
 /**
  * Period ends named by table column headers whose words are split across cells, e.g. "Three Months Ended" over
@@ -189,7 +193,7 @@ function tableHeaderMentions(html: string): { end: string; span: HkSpan }[] {
     };
     for (const row of t.rows) {
       const li = row.findIndex((c) => c.text);
-      const isData = /[a-z]/i.test(row[li]?.text ?? '') && row.slice(li + 1).some((c) => FIGURE.test(c.text));
+      const isData = /[a-z]/i.test(row[li]?.text ?? '') && row.slice(li + 1).some((c) => isFigure(c.text));
       if (isData) flush();
       else block.push(row);
     }
@@ -198,8 +202,23 @@ function tableHeaderMentions(html: string): { end: string; span: HkSpan }[] {
   return out;
 }
 
+/**
+ * Results-release titles: "X announces … results", "interim / annual results", "March Quarter 2026 Results",
+ * "Earnings Release 3Q25" (HSBC), "3Q25 results", "Full Year 2025 Results" / "2026 Half Year Results" /
+ * "FY25 Results" (Prudential).
+ */
 const RESULTS_PHRASE = new RegExp(
-  `\\b(?:announces?|reports?)\\b[^.]{0,120}?\\bresults\\b|\\binterim results\\b|\\bannual results\\b|\\b${MONTH_RE}\\s+quarter\\s+\\d{4}\\s+results\\b`,
+  [
+    String.raw`\b(?:announces?|reports?)\b[^.]{0,120}?\bresults\b`,
+    String.raw`\binterim results\b`,
+    String.raw`\bannual results\b`,
+    String.raw`\b${MONTH_RE}\s+quarter\s+\d{4}\s+results\b`,
+    String.raw`\bearnings release\b`,
+    String.raw`\b[1-4]q\s?'?(?:\d{4}|\d{2})\s+(?:earnings|results)\b`,
+    String.raw`\b(?:full|half)[\s-]year\s+\d{4}\s+results\b`,
+    String.raw`\b\d{4}\s+(?:interim|half[\s-]year|full[\s-]year|annual)\s+results\b`,
+    String.raw`\b(?:fy|hy|h[12])\s?'?(?:\d{4}|\d{2})\s+results\b`,
+  ].join('|'),
   'i',
 );
 

@@ -10,7 +10,7 @@
  * - Uncertain means blank: no currency stated, no unit, or disagreeing candidates → null.
  */
 import type { HkPeriodKind } from '../domain/period.js';
-import { currenciesIn, parseTables, readRelease, tableCaption, type Currency, type ReaderOptions } from '../../sources/releaseReader.js';
+import { currenciesIn, currencyUnitPhrases, isFigure, parseTables, readRelease, tableCaption, type Currency, type ReaderOptions } from '../../sources/releaseReader.js';
 
 export interface HkReleaseValues {
   revenue: number | null;
@@ -25,23 +25,20 @@ const SPAN: Record<HkPeriodKind, ReaderOptions['span']> = { Q: 'quarter', H: 'ha
 
 /** First cell of an income-statement line: a per-share / per-ADS or revenue row. */
 const STATEMENT_ROW = /per (diluted |common |basic )?share|per (class [a-z] )?ordinary share|per ads\b|per american depositary|earnings per|\beps\b|^\s*(total )?(net )?revenues?\b/i;
-/** A figure cell: "1,234", "(0.29)", "$ 0.87", "12%". Header cells ("June 30, 2026 RMB (million)", "US$ (2)") are not. */
-const AMOUNT = /^\(?\s*[-–−]?\s*(\d{1,3}(,\d{3})+|\d+)(\.\d+)?\s*\)?\s*%?\s*\)?$/;
-const isAmount = (text: string) => AMOUNT.test(text.replace(/\$/g, '').trim());
 
 /**
  * Currencies named in the tables that carry an income-statement line: their header rows (rows without figures,
- * even when a header cell holds a date or a footnote mark), their captions, plus currency marks on those lines'
+ * even when a header cell holds a date or a footnote mark), the unit phrases of their captions ("in thousands of U.S. dollars"; never prose), plus currency marks on those lines'
  * labels ("Diluted earnings per share ($)").
  */
 export function statementCurrencies(html: string): Set<Currency | '$'> {
   const text: string[] = [];
   for (const t of parseTables(html, { rowspan: true })) {
     const label = (r: (typeof t.rows)[number]) => r.find((c) => c.text)?.text ?? '';
-    const figures = (r: (typeof t.rows)[number]) => r.slice(r.findIndex((c) => c.text) + 1).some((c) => isAmount(c.text));
+    const figures = (r: (typeof t.rows)[number]) => r.slice(r.findIndex((c) => c.text) + 1).some((c) => isFigure(c.text));
     const lines = t.rows.filter((r) => STATEMENT_ROW.test(label(r)) && figures(r));
     if (!lines.length) continue;
-    text.push(tableCaption(t));
+    text.push(currencyUnitPhrases(tableCaption(t)));
     for (const r of t.rows) if (!figures(r)) text.push(r.map((c) => c.text).join(' '));
     for (const r of lines) text.push(label(r));
   }

@@ -40,6 +40,34 @@ describe('classifyHkExhibit: period from table headers split across cells', () =
   });
 });
 
+describe('classifyHkExhibit: results titles without "announces … results" (HSBC, Prudential)', () => {
+  // Real 6-K documents from the review's held-out set (not part of the reader corpus).
+  it('HSBC "Earnings Release 3Q25" is the quarter ended 2025-09-30, not the dividend\'s financial year ended 2025-12-31', () => {
+    expect(classifyHkExhibit(fx('hsbc_3q25_earnings_release_6k.htm'))).toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
+  });
+
+  it('Prudential "2026 HALF YEAR RESULTS" and "FY25 RESULTS"', () => {
+    expect(classifyHkExhibit(fx('puk_2026_half_year_results_6k.htm'))).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'half' });
+    expect(classifyHkExhibit(fx('puk_fy25_results_6k.htm'))).toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
+  });
+
+  it('new title forms still need a results table row; notices stay notices', () => {
+    for (const title of ['Earnings Release 3Q25', '3Q 2025 Results', 'Full Year 2025 Results', '2026 Half Year Results', 'FY25 Results']) {
+      const p = `<p>Acme ${title}. For the three months ended September 30, 2025.</p>`;
+      expect(classifyHkExhibit(p).kind, title).not.toBe('results');
+      expect(classifyHkExhibit(`${p}<table><tr><td>Revenue</td><td>1</td></tr></table>`).kind, title).toBe('results');
+    }
+    const notice = '<p>HSBC Holdings plc will publish its Earnings Release 3Q25 results on 28 October 2025 for the quarter ended 30 September 2025.</p>';
+    expect(classifyHkExhibit(notice)).toEqual({ kind: 'date-notice', date: '2025-10-28', timing: 'UNKNOWN' });
+  });
+
+  it('a period named for a dividend is not the release period', () => {
+    const html = '<p>Acme Earnings Release 3Q25. For the quarter ended 30 September 2025. The second interim dividend in respect of the financial year ended 31 December 2025 was paid in June 2025.</p>'
+      + '<table><tr><td>Revenue</td><td>1</td></tr></table>';
+    expect(classifyHkExhibit(html)).toEqual({ kind: 'results', periodEnd: '2025-09-30', span: 'quarter' });
+  });
+});
+
 describe('classifyHkExhibit', () => {
   it('BABA EX-99.1 is results for the quarter ended 2026-06-30', () => {
     expect(classifyHkExhibit(fx('baba_results_ex99.htm'))).toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });

@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readHkRelease } from '../../src/hk/sources/releaseHk.js';
+import { readHkRelease, statementCurrencies } from '../../src/hk/sources/releaseHk.js';
 import { HK_UNIVERSE } from '../../src/hk/universe.js';
-import { readRelease, readUsRelease } from '../../src/sources/releaseReader.js';
+import { isFigure, readRelease, readUsRelease } from '../../src/sources/releaseReader.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/hk/${n}`, import.meta.url), 'utf8');
 const Q3 = { periodEnd: '2026-09-30', kind: 'Q' as const };
@@ -321,6 +321,53 @@ describe('readHkRelease: currency, unit and basis stated outside a plain currenc
     // A key-figures table (no statement caption, no per-share line) is still never read for revenue.
     const kpi = `<p>Key Financial Results (in RMB billions)</p><table>${head}${row('Total revenues', '19.74', '2.76')}</table>`;
     expect(readHkRelease(kpi, Q2)).toMatchObject({ revenue: null });
+  });
+});
+
+describe('readHkRelease: captions and prose never widen what is read (review round 1)', () => {
+  const Q3h = `<tr><td></td><td colspan="2">Three months ended September 30, 2026</td></tr>`;
+
+  it('Demo B: an "Income statement highlights" table never supplies revenue', () => {
+    const html = `<p>Income statement highlights (in RMB billions)</p>
+    <table>${Q3h}${row('Revenues', '1.25')}${row('Operating income', '0.30')}</table>`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null });
+  });
+
+  it('Demo P2: a segment table after prose naming "the consolidated statements of operations" never supplies revenue', () => {
+    const html = `<p>Segment information is presented on the same basis as the consolidated statements of operations (in RMB thousands)</p>
+    <table>${Q3h}<tr><td></td><td colspan="2">RMB</td></tr>${row('Revenues', '350,000')}${row('Segment profit', '20,000')}</table>`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null });
+  });
+
+  it('Demo P1: a currency named in passing in prose never labels the figures', () => {
+    const html = `<p>Note: cash and cash equivalents included US$ denominated deposits</p>
+    <table>${Q3h}<tr><td>(in millions)</td></tr>${row('Revenue', '1,200')}${row('Diluted earnings per share', '0.60')}</table>`;
+    expect(readHkRelease(html, Q3)).toMatchObject({ revenue: null, revenueCurrency: null, eps: null, epsCurrency: null });
+  });
+
+  it('a split statement needs the same title on both tables and per-share lines in the second', () => {
+    const head = `${Q3h}<tr><td></td><td colspan="2">RMB</td></tr>`;
+    const first = `<p>Unaudited Condensed Consolidated Statements of Operations (in thousands)</p><table>${head}${row('Total revenues', '19,743,593')}</table>`;
+    const other = `<p>Unaudited Condensed Consolidated Statements of Cash Flows (in thousands)</p><table>${head}${row('Net loss per share - Diluted', '(0.70)')}</table>`;
+    expect(readHkRelease(first + other, Q3)).toMatchObject({ revenue: null, eps: -0.7 });
+    const cont = `<p>Unaudited Condensed Consolidated Statements of Operations (Continued) (in thousands)</p><table>${head}${row('Net loss per share - Diluted', '(0.70)')}</table>`;
+    expect(readHkRelease(first + cont, Q3)).toMatchObject({ revenue: 19_743_593_000, revenueCurrency: 'CNY', eps: -0.7 });
+    // KE Holdings: three "(Continued)" parts with page-number tables between; per-share lines in the last part.
+    const mid = `<p>Unaudited Condensed Consolidated Statements of Operations (Continued) (in thousands)</p><table>${head}${row('Net loss', '(1,300,000)')}</table>`;
+    const page = '<table><tr><td>11</td></tr></table>';
+    expect(readHkRelease(first + page + mid + page + cont, Q3)).toMatchObject({ revenue: 19_743_593_000, eps: -0.7 });
+  });
+
+  it('a lone footnote cell "(2)" does not make a currency header row a figure row', () => {
+    const html = `<table>
+      <tr><td></td><td>Three months ended September 30, 2026</td><td>Three months ended September 30, 2026</td><td></td></tr>
+      <tr><td></td><td>RMB</td><td>US$</td><td>(2)</td></tr>
+      ${'<tr><td>Diluted earnings per share</td><td>1.10</td><td>0.15</td><td></td></tr>'}
+    </table>`;
+    expect([...statementCurrencies(html)].sort()).toEqual(['CNY', 'USD']);
+    expect(isFigure('(2)')).toBe(false);
+    expect(isFigure('(0.29)')).toBe(true);
+    expect(isFigure('$ 1,234')).toBe(true);
   });
 });
 
