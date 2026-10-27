@@ -117,7 +117,14 @@ export function makeEdinetClient(o: { key: string; fetchImpl?: typeof fetch; min
     async xbrlInstance(docID) {
       if (!/^[A-Za-z0-9]+$/.test(docID)) throw new SourceFormatError(`EDINET document: bad docID ${docID}`);
       const res = await get(`/documents/${docID}?type=1`);
-      const buf = new Uint8Array(await res.arrayBuffer());
+      let buf: Uint8Array;
+      try {
+        buf = new Uint8Array(await res.arrayBuffer());
+      } catch (err) {
+        // A new error without `cause`: the original may carry the URL.
+        const why = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        throw new SourceFormatError(`EDINET document ${docID}: body not read (Subscription-Key=***): ${redact(why, key)}`);
+      }
       const found = unzipEntries(buf, (name) => /(^|\/)XBRL\/PublicDoc\/[^/]+\.xbrl$/.test(name));
       if (found.size !== 1) {
         throw new SourceFormatError(`EDINET document ${docID}: ${found.size} PublicDoc instances, expected 1 (Subscription-Key=***)`);

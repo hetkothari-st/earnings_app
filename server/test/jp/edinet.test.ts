@@ -132,6 +132,18 @@ describe('EDINET client', () => {
     expect((err as Error).message).not.toContain(KEY);
   });
 
+  it('a document body that fails mid-read throws a redacted error without cause', async () => {
+    const failing = () =>
+      new Response(new ReadableStream({ start(c) { c.error(new TypeError(`terminated: Subscription-Key=${KEY}`)); } }), { status: 200 });
+    const client = makeEdinetClient({ key: KEY, fetchImpl: stub(failing).fetchImpl, minIntervalMs: 0 });
+    const err = await client.xbrlInstance('S100Y9NX').then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(SourceFormatError);
+    expect((err as Error).message).toContain('Subscription-Key=***');
+    expect((err as Error).message).not.toContain(KEY);
+    expect(String((err as Error).stack)).not.toContain(KEY);
+    expect((err as Error).cause).toBeUndefined();
+  });
+
   it('zip without a PublicDoc instance throws', async () => {
     const zip = fxBytes('small.zip');
     const { urls, fetchImpl } = stub(() => new Response(zip, { status: 200 }));
