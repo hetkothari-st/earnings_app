@@ -40,7 +40,7 @@ export function SymbolSearch({ market, onPick }: { market: Market; onPick: (symb
       <input
         type="text" role="combobox" aria-label="Add a stock to your watchlist" aria-autocomplete="list"
         aria-expanded={shown} aria-controls={listId} aria-activedescendant={shown && active >= 0 ? `${listId}-${active}` : undefined}
-        placeholder={market === 'IN' ? 'Add a symbol or company' : market === 'HK' ? 'Add a code or company' : 'Add a ticker or company'}
+        placeholder={market === 'IN' ? 'Add a symbol or company' : market === 'HK' || market === 'JP' ? 'Add a code or company' : 'Add a ticker or company'}
         value={text} onChange={(e) => { setText(e.target.value); setOpen(true); }} onKeyDown={onKey}
       />
       <ul id={listId} role="listbox" className="symbol-hits" hidden={!shown}>

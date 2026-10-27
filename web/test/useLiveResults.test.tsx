@@ -116,3 +116,22 @@ test('hk-results and hk-prices reach the hk group', () => {
   expect(hk.onIndices).toHaveBeenCalledWith(idx);
   expect(onIds).not.toHaveBeenCalled();
 });
+
+test('jp-results and jp-prices reach the jp group', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  vi.stubGlobal('WebSocket', undefined); // event-stream path
+  const jp = { onIds: vi.fn(), onMoves: vi.fn(), onPrices: vi.fn(), onIndices: vi.fn() };
+  const onIds = vi.fn();
+  renderHook(() => useLiveResults(onIds, undefined, undefined, undefined, undefined, undefined, jp));
+  FakeSource.last!.emit('jp-results', { ids: [3000000001] });
+  FakeSource.last!.emit('jp-moves', { ids: [3000000002] });
+  const price = { price: 2845.5, prevClose: 2800, changePct: 1.62, at: '2026-10-27T02:00:00Z' };
+  FakeSource.last!.emit('jp-prices', { prices: { '7203': price } });
+  const idx = [{ index: 'Nikkei 225', price: 64000, changePct: 0.1, asOf: null }];
+  FakeSource.last!.emit('jp-indices', { indices: idx });
+  expect(jp.onIds).toHaveBeenCalledWith([3000000001]);
+  expect(jp.onMoves).toHaveBeenCalledWith([3000000002]);
+  expect(jp.onPrices).toHaveBeenCalledWith({ '7203': price });
+  expect(jp.onIndices).toHaveBeenCalledWith(idx);
+  expect(onIds).not.toHaveBeenCalled();
+});

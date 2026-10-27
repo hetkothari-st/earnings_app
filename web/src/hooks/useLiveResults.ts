@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { HkLivePriceDto, HkMarketDto, InLivePriceDto, InMarket, LivePrice } from '../api';
+import type { HkLivePriceDto, HkMarketDto, InLivePriceDto, JpLivePriceDto, JpMarketDto, InMarket, LivePrice } from '../api';
 
 /** India events: results and moves by report id, prices by NSE symbol. */
 export interface IndiaLive {
@@ -17,6 +17,15 @@ export interface HongKongLive {
   onPrices?: (prices: Record<string, HkLivePriceDto>) => void;
   /** Index levels (HSI, HSCEI, Hang Seng Tech) as they tick. */
   onIndices?: (indices: HkMarketDto[]) => void;
+}
+
+/** Japan events: results and moves by report id, prices by TSE code. */
+export interface JapanLive {
+  onIds?: (ids: number[]) => void;
+  onMoves?: (ids: number[]) => void;
+  onPrices?: (prices: Record<string, JpLivePriceDto>) => void;
+  /** Nikkei 225 and TOPIX (ETF 1306) as they tick. */
+  onIndices?: (indices: JpMarketDto[]) => void;
 }
 
 /** Reconnect waits after a WebSocket closes: doubling from 1 s to 10 s. */
@@ -40,13 +49,14 @@ export function useLiveResults(
   /** The stream came back after a drop: events sent meanwhile were missed, so reload. */
   onReconnect?: () => void,
   hk?: HongKongLive,
+  jp?: JapanLive,
 ): void {
-  const cb = useRef({ onIds, onMoves, onPrices, india, onReconnect, hk });
-  cb.current = { onIds, onMoves, onPrices, india, onReconnect, hk };
+  const cb = useRef({ onIds, onMoves, onPrices, india, onReconnect, hk, jp });
+  cb.current = { onIds, onMoves, onPrices, india, onReconnect, hk, jp };
   useEffect(() => {
     const dispatch = (event: string, data: string) => {
       try {
-        const body = JSON.parse(data) as { ids?: number[]; prices?: Record<string, unknown>; indices?: (InMarket | HkMarketDto)[] };
+        const body = JSON.parse(data) as { ids?: number[]; prices?: Record<string, unknown>; indices?: (InMarket | HkMarketDto | JpMarketDto)[] };
         const ids = Array.isArray(body.ids) && body.ids.length ? body.ids : null;
         const prices = body.prices && typeof body.prices === 'object' ? body.prices : null;
         const c = cb.current;
@@ -61,6 +71,10 @@ export function useLiveResults(
         else if (event === 'hk-moves' && ids) c.hk?.onMoves?.(ids);
         else if (event === 'hk-prices' && prices) c.hk?.onPrices?.(prices as Record<string, HkLivePriceDto>);
         else if (event === 'hk-indices' && Array.isArray(body.indices)) c.hk?.onIndices?.(body.indices as HkMarketDto[]);
+        else if (event === 'jp-results' && ids) c.jp?.onIds?.(ids);
+        else if (event === 'jp-moves' && ids) c.jp?.onMoves?.(ids);
+        else if (event === 'jp-prices' && prices) c.jp?.onPrices?.(prices as Record<string, JpLivePriceDto>);
+        else if (event === 'jp-indices' && Array.isArray(body.indices)) c.jp?.onIndices?.(body.indices as JpMarketDto[]);
       } catch {
         // malformed frame: ignore
       }
@@ -78,7 +92,7 @@ export function useLiveResults(
         if (dropped) cb.current.onReconnect?.();
         dropped = false;
       });
-      for (const event of ['results', 'moves', 'in-results', 'in-moves', 'prices', 'in-prices', 'in-indices', 'hk-results', 'hk-moves', 'hk-prices', 'hk-indices']) {
+      for (const event of ['results', 'moves', 'in-results', 'in-moves', 'prices', 'in-prices', 'in-indices', 'hk-results', 'hk-moves', 'hk-prices', 'hk-indices', 'jp-results', 'jp-moves', 'jp-prices', 'jp-indices']) {
         source.addEventListener(event, (e: MessageEvent) => dispatch(event, String(e.data)));
       }
       cleanup = () => source.close();

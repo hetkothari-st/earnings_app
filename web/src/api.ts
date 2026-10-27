@@ -1,5 +1,6 @@
 import type { EarningsResponse, StatusResponse } from '../../server/src/api/types';
 import type { HkAdminDto, HkEarningsResponse, HkLivePriceDto, HkMarketDto, HkReportDto } from '../../server/src/hk/api/types';
+import type { JpAdminDto, JpEarningsResponse, JpLivePriceDto, JpMarketDto, JpReportDto } from '../../server/src/jp/api/types';
 import type { Market } from './lib/market';
 import type { InEarningsResponse, InLivePriceDto, KiteStatusDto } from '../../server/src/india/api/types';
 
@@ -25,11 +26,11 @@ export async function fetchEarnings(
 }
 
 /** One report as the calendar lists it; null when it is gone. Live updates patch rows with these. */
-export async function fetchReport(market: Market, id: number): Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto | null> {
-  const res = await apiFetch(market === 'IN' ? `/api/in/earnings/${id}` : market === 'HK' ? `/api/hk/earnings/${id}` : `/api/earnings/${id}`);
+export async function fetchReport(market: Market, id: number): Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto | JpReportDto | null> {
+  const res = await apiFetch(market === 'IN' ? `/api/in/earnings/${id}` : market === 'HK' ? `/api/hk/earnings/${id}` : market === 'JP' ? `/api/jp/earnings/${id}` : `/api/earnings/${id}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
-  return res.json() as Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto>;
+  return res.json() as Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto | JpReportDto>;
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
@@ -159,6 +160,25 @@ export async function fetchHkPrices(): Promise<Record<string, HkLivePriceDto>> {
   const res = await apiFetch('/api/hk/prices');
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return ((await res.json()) as { prices: Record<string, HkLivePriceDto> }).prices;
+}
+
+export type { JpAdminDto, JpEarningsResponse, JpLivePriceDto, JpMarketDto, JpReportDto };
+
+export async function fetchJpEarnings(
+  p: { from: string; to: string; q: string },
+  signal: AbortSignal,
+): Promise<JpEarningsResponse> {
+  const qs = new URLSearchParams({ from: p.from, to: p.to });
+  if (p.q.trim()) qs.set('q', p.q.trim());
+  const res = await apiFetch(`/api/jp/earnings?${qs}`, { signal });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return res.json() as Promise<JpEarningsResponse>;
+}
+
+export async function fetchJpPrices(): Promise<Record<string, JpLivePriceDto>> {
+  const res = await apiFetch('/api/jp/prices');
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { prices: Record<string, JpLivePriceDto> }).prices;
 }
 
 export type { SymbolsResponse, WatchHistoryDto, WatchRow, WatchRowsResponse } from '../../server/src/api/types';

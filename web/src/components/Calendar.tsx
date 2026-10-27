@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EarningsResponse, Timing } from '../../../server/src/api/types';
 import type { InReportDto } from '../../../server/src/india/api/types';
 import type { HkReportDto } from '../../../server/src/hk/api/types';
-import { fetchEarnings, fetchHkEarnings, fetchHkPrices, fetchInEarnings, fetchInPrices, fetchNotes, fetchPrices, fetchReport, type HkEarningsResponse, type HkLivePriceDto, type HkMarketDto, type InEarningsResponse, type InLivePriceDto, type InMarket, type LivePrice, type Note, saveNote } from '../api';
+import type { JpReportDto } from '../../../server/src/jp/api/types';
+import { fetchEarnings, fetchHkEarnings, fetchHkPrices, fetchInEarnings, fetchJpEarnings, fetchJpPrices, fetchInPrices, fetchNotes, fetchPrices, fetchReport, type HkEarningsResponse, type HkLivePriceDto, type HkMarketDto, type InEarningsResponse, type InLivePriceDto, type InMarket, type JpEarningsResponse, type JpLivePriceDto, type JpMarketDto, type LivePrice, type Note, saveNote } from '../api';
 import { useExpanded } from '../hooks/useExpanded';
 import { useLiveResults } from '../hooks/useLiveResults';
 import { useVisibleSymbols } from '../hooks/useVisibleSymbols';
@@ -10,15 +11,16 @@ import { useZone } from '../hooks/useZone';
 import { useMarket } from '../hooks/useMarket';
 import { useWatchlist } from '../hooks/useWatchlist';
 import type { Market } from '../lib/market';
-import { todayHkt } from '../lib/liveCap';
+import { todayHkt, todayJst } from '../lib/liveCap';
 import { rangeFor, shiftAnchor, type View } from '../lib/ranges';
 import { daySummary } from '../lib/session';
 import type { SortKey } from '../lib/sort';
 import { todayEt, zoneLabel } from '../lib/time';
 import { DayStrip } from './DayStrip';
 import { Header } from './Header';
-import { HongKongMarketBar, IndiaMarketBar, LiveMarketBar } from './MarketBar';
+import { HongKongMarketBar, IndiaMarketBar, JapanMarketBar, LiveMarketBar } from './MarketBar';
 import { HkStockList } from './HkStockList';
+import { JpStockList } from './JpStockList';
 import { SessionBand } from './SessionBand';
 import { StaleBanner } from './StaleBanner';
 import { StockList } from './StockList';
@@ -38,7 +40,7 @@ function todayIst(): string {
 
 /** Today in the market's own zone. */
 function todayFor(market: Market): string {
-  return market === 'IN' ? todayIst() : market === 'HK' ? todayHkt() : todayEt();
+  return market === 'IN' ? todayIst() : market === 'HK' ? todayHkt() : market === 'JP' ? todayJst() : todayEt();
 }
 
 export function Calendar() {
@@ -59,26 +61,29 @@ export function Calendar() {
   const [hkPrices, setHkPrices] = useState<Record<string, HkLivePriceDto>>({});
   const [hkIndices, setHkIndices] = useState<HkMarketDto[]>([]);
   const [hkLoad, setHkLoad] = useState<Load<HkEarningsResponse>>({ status: 'loading' });
+  const [jpPrices, setJpPrices] = useState<Record<string, JpLivePriceDto>>({});
+  const [jpIndices, setJpIndices] = useState<JpMarketDto[]>([]);
+  const [jpLoad, setJpLoad] = useState<Load<JpEarningsResponse>>({ status: 'loading' });
   const [inLoad, setInLoad] = useState<Load<InEarningsResponse>>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
   const [showWatch, setShowWatch] = useState(false);
   const watch = useWatchlist(market);
-  useVisibleSymbols(market !== 'IN', market === 'HK' ? 'HK' : 'US');
+  useVisibleSymbols(market !== 'IN', market === 'HK' ? 'HK' : market === 'JP' ? 'JP' : 'US');
   const onWatch = useCallback((symbol: string, on: boolean) => { (on ? watch.add(symbol) : watch.remove(symbol)).catch(() => {}); }, [watch.add, watch.remove]);
 
   // Reset anchor and switch to week view when market changes
   useEffect(() => {
     setAnchor(todayFor(market));
-    if (market === 'IN' || market === 'HK') setView('week');
+    if (market === 'IN' || market === 'HK' || market === 'JP') setView('week');
   }, [market]);
 
   // Live updates: ids are gathered for a moment, then only those reports are fetched and patched into the
   // rows on screen. A big burst, a report not on screen yet, or a failed fetch reloads the range once.
   const [watchKey, setWatchKey] = useState(0);
-  const pending = useRef<Record<Market, Set<number>>>({ US: new Set(), IN: new Set(), HK: new Set() });
+  const pending = useRef<Record<Market, Set<number>>>({ US: new Set(), IN: new Set(), HK: new Set(), JP: new Set() });
   const flushTimer = useRef<number | null>(null);
-  const shown = useRef<Record<Market, Set<number>>>({ US: new Set(), IN: new Set(), HK: new Set() });
+  const shown = useRef<Record<Market, Set<number>>>({ US: new Set(), IN: new Set(), HK: new Set(), JP: new Set() });
   const reload = () => setReloadKey((k) => k + 1);
   const visibleMarket = useRef(market);
   visibleMarket.current = market;
@@ -91,6 +96,7 @@ export function Calendar() {
       const got = new Map((await Promise.all(ids.map((id) => fetchReport(m, id)))).filter((r) => r != null).map((r) => [r.id, r]));
       const swap = <T extends { id: number }>(rows: T[]) => rows.map((r) => (got.get(r.id) as T | undefined) ?? r);
       if (m === 'US') setLoad((prev) => (prev.status === 'ok' ? { status: 'ok', data: { ...prev.data, rows: swap(prev.data.rows) } } : prev));
+      else if (m === 'JP') setJpLoad((prev) => (prev.status === 'ok' ? { status: 'ok', data: { ...prev.data, rows: swap(prev.data.rows) } } : prev));
       else if (m === 'HK') setHkLoad((prev) => (prev.status === 'ok' ? { status: 'ok', data: { ...prev.data, rows: swap(prev.data.rows) } } : prev));
       else setInLoad((prev) => (prev.status === 'ok' ? { status: 'ok', data: { ...prev.data, rows: swap(prev.data.rows) } } : prev));
     } catch {
@@ -102,7 +108,7 @@ export function Calendar() {
     flushTimer.current ??= window.setTimeout(() => {
       flushTimer.current = null;
       setWatchKey((k) => k + 1);
-      for (const mk of ['US', 'IN', 'HK'] as const) {
+      for (const mk of ['US', 'IN', 'HK', 'JP'] as const) {
         const list = [...pending.current[mk]];
         pending.current[mk].clear();
         if (list.length) void patch(mk, list);
@@ -130,12 +136,19 @@ export function Calendar() {
       fetchPrices().then(setPrices).catch(() => {});
       fetchInPrices().then(setInPrices).catch(() => {});
       if (market === 'HK') fetchHkPrices().then(setHkPrices).catch(() => {});
+      if (market === 'JP') fetchJpPrices().then(setJpPrices).catch(() => {});
     },
     {
       onIds: flash('HK'),
       onMoves: (ids) => queue('HK', ids),
       onPrices: (p) => setHkPrices((prev) => ({ ...prev, ...p })),
       onIndices: (list) => setHkIndices((prev) => [...prev.filter((m) => !list.some((n) => n.index === m.index)), ...list]),
+    },
+    {
+      onIds: flash('JP'),
+      onMoves: (ids) => queue('JP', ids),
+      onPrices: (p) => setJpPrices((prev) => ({ ...prev, ...p })),
+      onIndices: (list) => setJpIndices((prev) => [...prev.filter((m) => !list.some((n) => n.index === m.index)), ...list]),
     },
   );
   const { expanded, toggle } = useExpanded();
@@ -149,6 +162,9 @@ export function Calendar() {
   }, [market]);
   useEffect(() => {
     if (market === 'HK') fetchHkPrices().then(setHkPrices).catch(() => {});
+  }, [market]);
+  useEffect(() => {
+    if (market === 'JP') fetchJpPrices().then(setJpPrices).catch(() => {});
   }, [market]);
   useEffect(() => {
     fetchNotes().then((list) => setNotes(new Map(list.map((n) => [n.reportId, n])))).catch(() => {});
@@ -202,6 +218,18 @@ export function Calendar() {
     return () => ac.abort();
   }, [market, range.from, range.to, query, customInvalid, reloadKey]);
 
+  // Japan market data
+  useEffect(() => {
+    if (market !== 'JP') return;
+    if (customInvalid) return;
+    const ac = new AbortController();
+    if (reloadKey === 0) setJpLoad({ status: 'loading' });
+    fetchJpEarnings({ from: range.from, to: range.to, q: query }, ac.signal)
+      .then((data) => setJpLoad({ status: 'ok', data }))
+      .catch((e: Error) => { if (!ac.signal.aborted) setJpLoad({ status: 'error', error: e.message }); });
+    return () => ac.abort();
+  }, [market, range.from, range.to, query, customInvalid, reloadKey]);
+
   const zoneText = zoneLabel(zone, range.from);
 
   // US calendar
@@ -220,9 +248,13 @@ export function Calendar() {
   const hkRows: HkReportDto[] = hkLoad.status === 'ok' ? hkLoad.data.rows : [];
   shown.current.HK = new Set(hkRows.map((r) => r.id));
 
+  // Japan rows
+  const jpRows: JpReportDto[] = jpLoad.status === 'ok' ? jpLoad.data.rows : [];
+  shown.current.JP = new Set(jpRows.map((r) => r.id));
+
   return (
     <div className="app">
-      {market === 'IN' ? <IndiaMarketBar live={inIndices} /> : market === 'HK' ? <HongKongMarketBar live={hkIndices} /> : <LiveMarketBar />}
+      {market === 'IN' ? <IndiaMarketBar live={inIndices} /> : market === 'HK' ? <HongKongMarketBar live={hkIndices} /> : market === 'JP' ? <JapanMarketBar live={jpIndices} /> : <LiveMarketBar />}
       <Header
         view={view} onView={setView} range={range} custom={custom} onCustom={setCustom}
         onShift={(dir) => setAnchor((a) => shiftAnchor(view, a, dir))} onToday={() => setAnchor(todayFor(market))}
@@ -237,7 +269,7 @@ export function Calendar() {
       <main className="content">
         {watch.error && <p className="warn-text" role="alert">{watch.error}</p>}
         {showWatch && (
-          <WatchlistView market={market} prices={market === 'IN' ? inPrices : market === 'HK' ? hkPrices : prices} watch={watch} reloadKey={reloadKey + watchKey} />
+          <WatchlistView market={market} prices={market === 'IN' ? inPrices : market === 'HK' ? hkPrices : market === 'JP' ? jpPrices : prices} watch={watch} reloadKey={reloadKey + watchKey} />
         )}
         {/* US day view: session band */}
         {!showWatch && market === 'US' && load.status === 'ok' && view === 'day' && usRows.length > 0 && (
@@ -275,12 +307,22 @@ export function Calendar() {
             notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={hkPrices}
             watched={watch.symbols} onWatch={onWatch} />
         )}
+
+        {/* Japan loading/error */}
+        {!showWatch && market === 'JP' && !customInvalid && jpLoad.status === 'loading' && <p className="muted">Loading Japan earnings…</p>}
+        {!showWatch && market === 'JP' && jpLoad.status === 'error' && <p className="warn-text">Could not load data: {jpLoad.error}</p>}
+        {!showWatch && market === 'JP' && jpLoad.status === 'ok' && (
+          <JpStockList rows={jpRows} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
+            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={jpPrices}
+            watched={watch.symbols} onWatch={onWatch} />
+        )}
       </main>
 
       <footer className="footer muted">
         {market === 'US' && <span>Data from Nasdaq, Finnhub, SEC EDGAR and Cboe (delayed). Prototype, not trading advice.</span>}
         {market === 'IN' && <span>Data from NSE filings (RSS), Zerodha Kite and Yahoo Finance. Times in IST. Prototype, not trading advice.</span>}
         {market === 'HK' && <span>Data from SEC EDGAR, Cboe (delayed) and Yahoo Finance (delayed ~15 min). Times in HKT. Prototype, not trading advice.</span>}
+        {market === 'JP' && <span>Data from SEC EDGAR, Cboe (delayed), Yahoo Finance (delayed ~20 min) and EDINET (Financial Services Agency), edited. Times in JST. Prototype, not trading advice.</span>}
         <a href="/status">Data source status</a>
       </footer>
     </div>

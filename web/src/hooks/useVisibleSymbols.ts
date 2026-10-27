@@ -6,10 +6,10 @@ const KEEPALIVE_MS = 60_000; // the server forgets a user after 2 minutes withou
 const MAX_SYMBOLS = 100;
 
 /**
- * Tells the server which US or Hong Kong rows are on screen (`[data-symbol]` elements in view), so those stocks
+ * Tells the server which US, Hong Kong or Japan rows are on screen (`[data-symbol]` elements in view), so those stocks
  * get live-price slots. Debounced; re-sent every minute while the page is open.
  */
-export function useVisibleSymbols(enabled: boolean, market: 'US' | 'HK' = 'US'): void {
+export function useVisibleSymbols(enabled: boolean, market: 'US' | 'HK' | 'JP' = 'US'): void {
   useEffect(() => {
     if (!enabled || typeof IntersectionObserver === 'undefined') return;
     const visible = new Set<string>();

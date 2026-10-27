@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { HongKongMarketBar, IndiaMarketBar, MarketBar } from '../src/components/MarketBar';
+import { HongKongMarketBar, IndiaMarketBar, JapanMarketBar, MarketBar } from '../src/components/MarketBar';
 
 test('HK strip shows Hang Seng, HS China Enterprises, HS Tech with delayed label', async () => {
   const polled = [
@@ -48,5 +48,22 @@ test('India strip: live Kite ticks replace the polled level at once', async () =
   rerender(<IndiaMarketBar live={[{ index: 'NIFTY 50', price: 22630.1, changePct: -0.79, asOf: 'y', source: 'kite' }]} />);
   expect(screen.getByText('22,630.10')).toBeTruthy();
   expect(screen.getByText('73,168.56')).toBeTruthy(); // no tick yet: polled level stays
+  vi.unstubAllGlobals();
+});
+
+test('JP strip shows Nikkei 225 and TOPIX (ETF 1306) with delayed label', async () => {
+  const polled = [
+    { index: 'Nikkei 225', price: 64425.95, changePct: 0.42, asOf: 'x' },
+    { index: 'TOPIX (ETF 1306)', price: 3650.5, changePct: -0.3, asOf: 'x' },
+  ];
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ indices: polled }), { status: 200 })));
+  const { rerender } = render(<JapanMarketBar />);
+  expect(await screen.findByText('Nikkei 225 · delayed')).toBeTruthy();
+  expect(screen.getByText('TOPIX (ETF 1306) · delayed')).toBeTruthy();
+  expect(screen.getAllByText('TSE')).toHaveLength(2);
+  expect(screen.getByText('64,425.95')).toBeTruthy();
+  rerender(<JapanMarketBar live={[{ index: 'Nikkei 225', price: 64500, changePct: 0.5, asOf: 'y' }]} />);
+  expect(screen.getByText('64,500.00')).toBeTruthy();
+  expect(screen.getByText('3,650.50')).toBeTruthy();
   vi.unstubAllGlobals();
 });

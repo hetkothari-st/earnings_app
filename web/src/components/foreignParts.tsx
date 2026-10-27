@@ -53,9 +53,11 @@ export function PreviousMoveLine({ pm }: { pm: ForeignPreviousMove | null }) {
 }
 
 /** EPS or revenue: each side in its own currency, and no colour when they cannot be compared. */
-export function CurrencyFigure({ f, fmt, source, spanLabel, extra }: {
+export function CurrencyFigure({ f, fmt, source, spanLabel, extra, notComparedText }: {
   f: HkFigureDto; fmt: (n: number | null, currency: string | null) => string;
   source?: 'Yahoo' | 'EDINET' | null; spanLabel?: string | null; extra?: ReactNode;
+  /** Wording of the not-compared note (Japan adds span). */
+  notComparedText?: string;
 }) {
   const notCompared = f.estimate != null && f.actual != null && f.result == null;
   return (
@@ -64,7 +66,7 @@ export function CurrencyFigure({ f, fmt, source, spanLabel, extra }: {
         format={(n) => fmt(n, f.estimateCurrency)} formatActual={(n) => fmt(n, f.actualCurrency)}
         preliminary={false} corrected={false} source={f.actual != null ? source ?? null : null} spanLabel={spanLabel} />
       {extra}
-      {notCompared && <span className="basis"> * different currency or basis from the estimate: not compared</span>}
+      {notCompared && <span className="basis"> {notComparedText ?? '* different currency or basis from the estimate: not compared'}</span>}
     </>
   );
 }

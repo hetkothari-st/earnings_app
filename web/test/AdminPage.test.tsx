@@ -96,6 +96,18 @@ describe('admin page', () => {
     expect(panel.textContent).not.toContain('Never');
   });
 
+  test('Japan panel shows EDINET key not configured and reader off', async () => {
+    reply = (url) => (url === '/api/admin/jp'
+      ? json(200, { full: 9, basic: 30, secConfigured: true, edinetConfigured: false, readerOn: false, lastSixKAt: null, lastEdinetAt: null })
+      : undefined);
+    renderPage();
+    const panel = (await screen.findByRole('region', { name: 'Japan' }));
+    await waitFor(() => expect(panel.textContent).toContain('Full level 9 · Basic level 30'));
+    expect(panel.textContent).toContain('EDINET key: not configured (set EDINET_API_KEY)');
+    expect(panel.textContent).toContain('6-K reader: off until 20 releases and the held-out set are read exactly right');
+    expect(panel.textContent).toContain('Last EDINET document:');
+  });
+
   test('lists users with role, created and last sign-in', async () => {
     renderPage();
     const one = await row('1A');

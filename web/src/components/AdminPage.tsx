@@ -1,9 +1,9 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from 'react';
 import {
   type AdminUser, bulkIds, bulkPreview, createUser, createUsersBulk, deleteUser, fetchKiteStatus, kiteBrowserLoginUrl, kiteLoginNow, listUsers,
-  fetchHkAdmin, MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
+  fetchHkAdmin, fetchJpAdmin, MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
 } from '../adminApi';
-import type { HkAdminDto, KiteStatusDto } from '../api';
+import type { HkAdminDto, JpAdminDto, KiteStatusDto } from '../api';
 import { useAccount } from '../lib/account';
 import '../admin.css';
 
@@ -319,6 +319,32 @@ function ZerodhaPanel() {
   );
 }
 
+/** Japan coverage, SEC and EDINET settings. Read-only. */
+function JapanPanel() {
+  const [jp, setJp] = useState<JpAdminDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void fetchJpAdmin().then((r) => (r.ok ? setJp(r.data) : setError(r.error)));
+  }, []);
+  return (
+    <section className="admin-card" aria-label="Japan">
+      <h2>Japan</h2>
+      {error && <p role="alert" className="admin-msg admin-msg-error">Could not load Japan status: {error}</p>}
+      {!jp && !error && <p className="admin-muted">Loading…</p>}
+      {jp && (
+        <>
+          <p>Full level {jp.full} · Basic level {jp.basic}</p>
+          <p>SEC access: {jp.secConfigured ? 'configured' : 'not configured (set SEC_USER_AGENT)'}</p>
+          <p>EDINET key: {jp.edinetConfigured ? 'configured' : 'not configured (set EDINET_API_KEY)'}</p>
+          <p>6-K reader: {jp.readerOn ? 'on' : 'off until 20 releases and the held-out set are read exactly right'}</p>
+          <p>Last 6-K seen: {when(jp.lastSixKAt)}</p>
+          <p>Last EDINET document: {when(jp.lastEdinetAt)}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Hong Kong coverage and SEC settings. Read-only. */
 function HongKongPanel() {
   const [hk, setHk] = useState<HkAdminDto | null>(null);
@@ -433,6 +459,7 @@ export function AdminPage() {
             <AddManyForm onAdded={() => void load()} />
             <ZerodhaPanel />
             <HongKongPanel />
+            <JapanPanel />
           </aside>
         </div>
       </main>

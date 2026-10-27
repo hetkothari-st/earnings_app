@@ -11,7 +11,7 @@ export function useMarket(): { market: Market; setMarket: (m: Market) => void } 
     apiFetch('/api/prefs')
       .then((r) => (r.ok ? (r.json() as Promise<{ market: Market }>) : null))
       .then((body) => {
-        if (alive && (body?.market === 'US' || body?.market === 'IN' || body?.market === 'HK')) {
+        if (alive && (body?.market === 'US' || body?.market === 'IN' || body?.market === 'HK' || body?.market === 'JP')) {
           setMarketState(body.market);
           setStoredMarket(body.market);
         }
