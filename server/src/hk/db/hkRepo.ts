@@ -38,7 +38,7 @@ export interface HkStock {
 
 /**
  * Upserts the universe. Codes no longer listed become inactive and keep their reports.
- * The name is taken from the universe on first insert only; later refreshes come from Yahoo (`setHkProfile`).
+ * The universe name is always refreshed; a Yahoo name (`setHkProfile`) is kept apart and served in preference.
  */
 export function syncHkUniverse(db: DatabaseSync, entries: readonly HkUniverseEntry[], now: string): void {
   db.exec('BEGIN');
@@ -46,7 +46,7 @@ export function syncHkUniverse(db: DatabaseSync, entries: readonly HkUniverseEnt
     db.prepare('UPDATE hk_stocks SET active = 0').run();
     const up = db.prepare(`INSERT INTO hk_stocks (code, name, yahoo_symbol, level, adr, adr_ratio, cik, cadence, fy_end_month, active, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-      ON CONFLICT (code) DO UPDATE SET yahoo_symbol = excluded.yahoo_symbol, level = excluded.level, adr = excluded.adr,
+      ON CONFLICT (code) DO UPDATE SET name = excluded.name, yahoo_symbol = excluded.yahoo_symbol, level = excluded.level, adr = excluded.adr,
         adr_ratio = excluded.adr_ratio, cik = excluded.cik, cadence = excluded.cadence, fy_end_month = excluded.fy_end_month,
         active = 1, updated_at = excluded.updated_at`);
     for (const e of entries) up.run(e.code, e.name, yahooHkSymbol(e.code), hkLevel(e), e.adr, e.adrRatio, e.cik, e.cadence, e.fyEndMonth, now);
@@ -62,21 +62,21 @@ export function setHkProfile(
   db: DatabaseSync, code: string,
   p: { name: string | null; sector: string | null; industry: string | null; marketCap: number | null; asOf: string | null }, now: string,
 ): void {
-  db.prepare(`UPDATE hk_stocks SET name = COALESCE(?, name), sector = COALESCE(?, sector), industry = COALESCE(?, industry),
-      market_cap = COALESCE(?, market_cap), market_cap_as_of = CASE WHEN ? IS NULL THEN market_cap_as_of ELSE ? END,
+  db.prepare(`UPDATE hk_stocks SET profile_name = COALESCE(?, profile_name), sector = COALESCE(?, sector), industry = COALESCE(?, industry),
+      market_cap = COALESCE(?, market_cap), market_cap_as_of = COALESCE(?, market_cap_as_of),
       updated_at = ? WHERE code = ?`)
-    .run(p.name?.trim() || null, p.sector, p.industry, p.marketCap, p.marketCap, p.asOf, now, code);
+    .run(p.name?.trim() || null, p.sector, p.industry, p.marketCap, p.asOf, now, code);
 }
 
 interface StockRow {
-  code: string; name: string; yahoo_symbol: string; level: string; adr: string | null; adr_ratio: number | null; cik: number | null;
+  code: string; name: string; profile_name: string | null; yahoo_symbol: string; level: string; adr: string | null; adr_ratio: number | null; cik: number | null;
   cadence: string; fy_end_month: number; sector: string | null; industry: string | null; market_cap: number | null;
   market_cap_as_of: string | null; active: number;
 }
 
 export function hkStocks(db: DatabaseSync): HkStock[] {
   return (db.prepare('SELECT * FROM hk_stocks ORDER BY code').all() as unknown as StockRow[]).map((r) => ({
-    code: r.code, name: r.name, yahooSymbol: r.yahoo_symbol, level: r.level === 'full' ? 'full' : 'basic',
+    code: r.code, name: r.profile_name ?? r.name, yahooSymbol: r.yahoo_symbol, level: r.level === 'full' ? 'full' : 'basic',
     adr: r.adr, adrRatio: r.adr_ratio, cik: r.cik, cadence: r.cadence === 'H' ? 'H' : 'Q', fyEndMonth: r.fy_end_month,
     sector: r.sector, industry: r.industry, marketCap: r.market_cap, marketCapAsOf: r.market_cap_as_of, active: r.active === 1,
   }));
@@ -137,7 +137,7 @@ interface ReportRow {
   estimate_currency: string | null; estimates_fetched_at: string | null;
   prev_move_pct: number | null; prev_move_date: string | null; prev_move_basis: string | null; prev_move_checked_at: string | null;
   calendar_fetched_at: string | null;
-  s_level: string; s_adr: string | null; s_adr_ratio: number | null; s_sector: string | null; s_industry: string | null;
+  s_name: string; s_level: string; s_adr: string | null; s_adr_ratio: number | null; s_sector: string | null; s_industry: string | null;
   s_market_cap: number | null; s_market_cap_as_of: string | null;
   em_adr: string | null; em_expiry: string | null; em_strike: number | null; em_call_mid: number | null; em_put_mid: number | null;
   em_underlying: number | null; em_move_pct: number | null; em_illiquid: number | null; em_final: number | null;
@@ -147,7 +147,7 @@ interface ReportRow {
 
 const SELECT_COLUMNS = `
 SELECT r.*,
-  s.level AS s_level, s.adr AS s_adr, s.adr_ratio AS s_adr_ratio, s.sector AS s_sector, s.industry AS s_industry,
+  COALESCE(s.profile_name, s.name) AS s_name, s.level AS s_level, s.adr AS s_adr, s.adr_ratio AS s_adr_ratio, s.sector AS s_sector, s.industry AS s_industry,
   s.market_cap AS s_market_cap, s.market_cap_as_of AS s_market_cap_as_of,
   m.adr AS em_adr, m.expiry AS em_expiry, m.strike AS em_strike, m.call_mid AS em_call_mid, m.put_mid AS em_put_mid,
   m.underlying AS em_underlying, m.move_pct AS em_move_pct, m.illiquid AS em_illiquid, m.final AS em_final,
@@ -167,7 +167,7 @@ function toHkReport(r: ReportRow): HkReport {
   return {
     id: r.id,
     code: r.code,
-    name: r.name,
+    name: r.s_name,
     periodEnd: r.period_end,
     periodKind: r.period_kind as HkPeriodKind,
     periodLabel: r.period_label,
@@ -336,23 +336,25 @@ export function mergeHkActuals(
       eps_basis: string | null; actual_source: string | null; sec_doc_url: string | null } | undefined;
   if (!r) return false;
   if (a.source === 'yahoo' && r.actual_source === 'sec') return false;
-  // A figure comes with its own currency / basis.
+  // A new figure carries exactly the currency / basis it came with (uncertain means blank), never the old row's.
   const next = {
     revenue: a.revenue ?? r.revenue_actual,
-    revenueCurrency: a.revenue != null ? a.revenueCurrency ?? r.revenue_currency : r.revenue_currency,
+    revenueCurrency: a.revenue != null ? a.revenueCurrency : r.revenue_currency,
     eps: a.eps ?? r.eps_actual,
-    epsCurrency: a.eps != null ? a.epsCurrency ?? r.eps_currency : r.eps_currency,
-    epsBasis: a.eps != null ? a.epsBasis ?? r.eps_basis : r.eps_basis,
+    epsCurrency: a.eps != null ? a.epsCurrency : r.eps_currency,
+    epsBasis: a.eps != null ? a.epsBasis : r.eps_basis,
     docUrl: a.docUrl ?? r.sec_doc_url,
   };
+  // The source follows the data: SEC data (even identical to Yahoo's) makes the row SEC-sourced.
+  const gives = a.revenue != null || a.eps != null;
+  const source = gives ? a.source : r.actual_source;
   const changed = next.revenue !== r.revenue_actual || next.revenueCurrency !== r.revenue_currency || next.eps !== r.eps_actual
-    || next.epsCurrency !== r.eps_currency || next.epsBasis !== r.eps_basis || next.docUrl !== r.sec_doc_url;
+    || next.epsCurrency !== r.eps_currency || next.epsBasis !== r.eps_basis || next.docUrl !== r.sec_doc_url
+    || source !== r.actual_source;
   if (!changed) return false;
-  const hasData = next.revenue != null || next.eps != null;
   db.prepare(`UPDATE hk_reports SET revenue_actual = ?, revenue_currency = ?, eps_actual = ?, eps_currency = ?, eps_basis = ?,
       actual_source = ?, sec_doc_url = ? WHERE id = ?`)
-    .run(next.revenue, next.revenueCurrency, next.eps, next.epsCurrency, next.epsBasis,
-      hasData ? a.source : r.actual_source, next.docUrl, id);
+    .run(next.revenue, next.revenueCurrency, next.eps, next.epsCurrency, next.epsBasis, source, next.docUrl, id);
   return true;
 }
 

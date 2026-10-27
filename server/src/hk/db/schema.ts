@@ -2,7 +2,8 @@
 export const HK_SCHEMA = `
 CREATE TABLE IF NOT EXISTS hk_stocks (
   code TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
+  name TEXT NOT NULL,                -- universe name
+  profile_name TEXT,                 -- name from Yahoo; served in preference to the universe name
   yahoo_symbol TEXT NOT NULL,
   level TEXT NOT NULL,               -- 'full' | 'basic'
   adr TEXT,
@@ -85,4 +86,6 @@ CREATE TABLE IF NOT EXISTS hk_sec_seen (
 `;
 
 /** Columns that databases created before they existed still need. */
-export const HK_ADDED_COLUMNS: Record<string, [string, string][]> = {};
+export const HK_ADDED_COLUMNS: Record<string, [string, string][]> = {
+  hk_stocks: [['profile_name', 'TEXT']],
+};

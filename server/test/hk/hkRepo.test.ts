@@ -74,6 +74,43 @@ describe('hk repo', () => {
     expect(getHkReport(db, id)).toMatchObject({ revenueActual: 110, revenueCurrency: 'CNY', epsActual: 1.6, epsBasis: 'share' });
   });
 
+  it('sec with the same numbers as yahoo still takes the source, so a later yahoo cannot overwrite it', () => {
+    const db = setup();
+    const id = upsertHkCalendarRow(db, { ...base, reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    const nums = { revenue: 100, revenueCurrency: 'CNY', eps: 1.5, epsCurrency: 'CNY', epsBasis: 'share' as const };
+    mergeHkActuals(db, id, { ...nums, source: 'yahoo' }, NOW);
+    expect(mergeHkActuals(db, id, { ...nums, source: 'sec', docUrl: 'https://www.sec.gov/d' }, NOW)).toBe(true);
+    expect(getHkReport(db, id)).toMatchObject({ actualSource: 'sec', secDocUrl: 'https://www.sec.gov/d' });
+    expect(mergeHkActuals(db, id, { ...nums, eps: 9, revenue: 999, source: 'yahoo' }, NOW)).toBe(false);
+    expect(getHkReport(db, id)).toMatchObject({ epsActual: 1.5, revenueActual: 100, actualSource: 'sec' });
+  });
+
+  it('a new figure carries its own currency and basis, never the old ones', () => {
+    const db = setup();
+    const id = upsertHkCalendarRow(db, { ...base, reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    mergeHkActuals(db, id, { revenue: 100, revenueCurrency: 'CNY', eps: 1.5, epsCurrency: 'CNY', epsBasis: 'share', source: 'yahoo' }, NOW);
+    mergeHkActuals(db, id, { revenue: 120, revenueCurrency: null, eps: 1.7, epsCurrency: null, epsBasis: null, source: 'yahoo' }, NOW);
+    expect(getHkReport(db, id)).toMatchObject({
+      revenueActual: 120, revenueCurrency: null, epsActual: 1.7, epsCurrency: null, epsBasis: null,
+    });
+  });
+
+  it('serves the stock name: Yahoo profile name over universe name, universe fixes propagate', () => {
+    const db = setup();
+    const id = upsertHkCalendarRow(db, { ...base, reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    expect(getHkReport(db, id)!.name).toBe('Alibaba');
+    setHkProfile(db, '9988', { name: 'Alibaba Group Holding', sector: null, industry: null, marketCap: null, asOf: '2026-10-27' }, NOW);
+    expect(getHkReport(db, id)!.name).toBe('Alibaba Group Holding');
+    expect(hkStocks(db).find((s) => s.code === '9988')!.name).toBe('Alibaba Group Holding');
+    // as-of is gated on asOf itself, not on the market cap
+    setHkProfile(db, '9988', { name: null, sector: null, industry: null, marketCap: null, asOf: '2026-10-28' }, NOW);
+    expect(hkStocks(db).find((s) => s.code === '9988')!.marketCapAsOf).toBe('2026-10-28');
+    // universe-name fix reaches a stock with no profile name
+    syncHkUniverse(db, ENTRIES.map((e) => (e.code === '0285' ? { ...e, name: 'BYD Electronic Intl' } : e)), NOW);
+    const other = upsertHkCalendarRow(db, { ...base, code: '0285', reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
+    expect(getHkReport(db, other)!.name).toBe('BYD Electronic Intl');
+  });
+
   it('final expected move is never replaced', () => {
     const db = setup();
     const id = upsertHkCalendarRow(db, { ...base, reportDate: '2026-11-13', dateStatus: 'estimated' }, NOW);
