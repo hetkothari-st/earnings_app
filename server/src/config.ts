@@ -31,8 +31,8 @@ export const config = {
    * differs from Nasdaq's), GAAP EPS 31/31 = 100%, revenue 24/24 = 100%.
    * Quick US EPS is shown GAAP-labelled, without colour. India reader not built yet.
    */
-  fastFields: { usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false } as {
-    usEpsAdjusted: boolean; usEpsGaap: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean;
+  fastFields: { usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false, hkEps: false, hkRevenue: false } as {
+    usEpsAdjusted: boolean; usEpsGaap: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean; hkEps?: boolean; hkRevenue?: boolean;
   },
 };
 

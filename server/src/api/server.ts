@@ -8,6 +8,7 @@ import { registerWatchlist, type WatchlistOptions } from '../watchlist/routes.js
 import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
 import { type HkServerOptions, registerHkRoutes } from '../hk/api/routes.js';
 import { todayET } from '../domain/marketCalendar.js';
+import { todayHKT } from '../hk/domain/hkCalendar.js';
 import { todayIST } from '../india/domain/nseCalendar.js';
 import { computeCoverage } from '../jobs/coverage.js';
 import { normalizeTicker } from '../domain/ticker.js';
@@ -91,9 +92,15 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
     const user = currentUser(req);
     if (!user) return reply.code(401).send({ error: 'Not signed in' });
     const body = (req.body ?? {}) as { market?: unknown; symbols?: unknown };
-    if (body.market !== 'US') return reply.code(400).send({ error: 'market must be US' });
+    if (body.market !== 'US' && body.market !== 'HK') return reply.code(400).send({ error: 'market must be US or HK' });
     if (!Array.isArray(body.symbols) || body.symbols.length > 100 || !body.symbols.every((s) => typeof s === 'string')) {
       return reply.code(400).send({ error: 'symbols must be an array of at most 100 strings' });
+    }
+    if (body.market === 'HK') {
+      const codes = body.symbols as string[];
+      if (!codes.every((c) => /^\d{4,5}$/.test(c))) return reply.code(400).send({ error: 'invalid symbol' });
+      opts.hk?.setVisible?.(user, [...new Set(codes)]);
+      return reply.code(204).send();
     }
     const symbols = (body.symbols as string[]).map(normalizeTicker);
     if (!symbols.every((s) => /^[A-Z0-9.\-/]{1,12}$/.test(s))) return reply.code(400).send({ error: 'invalid symbol' });
@@ -126,7 +133,7 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   app.get('/api/status', async () => {
     const body: StatusResponse = {
       sources: listSourceStatus(db), counts: counts(db),
-      coverage: { US: computeCoverage(db, 'US', todayET()), IN: computeCoverage(db, 'IN', todayIST()) },
+      coverage: { US: computeCoverage(db, 'US', todayET()), IN: computeCoverage(db, 'IN', todayIST()), HK: computeCoverage(db, 'HK', todayHKT()) },
     };
     return body;
   });

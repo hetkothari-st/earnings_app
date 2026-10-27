@@ -5,6 +5,7 @@ import { IST, type InTiming, timingForRelease } from '../domain/nseCalendar.js';
 import type { InExpectedMove } from '../domain/inMoves.js';
 import { quarterLabel } from '../domain/quarter.js';
 import { config } from '../../config.js';
+import type { Market } from '../api/types.js';
 
 /** India report ids start here, so they never collide with US report ids (notes, live events). */
 export const IN_ID_BASE = 1_000_000_001;
@@ -544,12 +545,12 @@ export function setInEstimates(
     .run(e.eps, e.epsAnalysts, e.revenue, e.revenueAnalysts, now, id);
 }
 
-export function getInPref(db: DatabaseSync, userId: string): 'US' | 'IN' {
+export function getInPref(db: DatabaseSync, userId: string): Market {
   const row = db.prepare('SELECT market FROM user_prefs WHERE user_id = ?').get(userId) as { market: string } | undefined;
-  return row?.market === 'IN' ? 'IN' : 'US';
+  return row?.market === 'IN' || row?.market === 'HK' ? row.market : 'US';
 }
 
-export function setInPref(db: DatabaseSync, userId: string, market: 'US' | 'IN', now: string): void {
+export function setInPref(db: DatabaseSync, userId: string, market: Market, now: string): void {
   db.prepare(`INSERT INTO user_prefs (user_id, market, updated_at) VALUES (?, ?, ?)
     ON CONFLICT (user_id) DO UPDATE SET market = excluded.market, updated_at = excluded.updated_at`)
     .run(userId, market, now);

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import { listRange, openDb, saveExpectedMove, upsertCalendarRow } from '../../src/db/repo.js';
+import { saveHkExpectedMove, syncHkUniverse, upsertHkCalendarRow } from '../../src/hk/db/hkRepo.js';
 import { computeCoverage, coverageOk, runCoverageCheck } from '../../src/jobs/coverage.js';
 import { saveFoList, saveInExpectedMove, upsertInCalendarRow } from '../../src/india/db/inRepo.js';
 import type { CalendarRow } from '../../src/types.js';
@@ -75,7 +76,7 @@ describe('coverage', () => {
       const db = openDb(path);
       seedUs(db);
       const lines: string[] = [];
-      expect(runCoverageCheck(db, TODAY, TODAY, (l) => lines.push(l))).toBe(1);
+      expect(runCoverageCheck(db, TODAY, TODAY, TODAY, (l) => lines.push(l))).toBe(1);
       expect(lines.join('\n')).toContain('BELOW MINIMUM');
       db.close();
       const cli = join(import.meta.dirname, '../../src/cli/coverageCheck.ts');
@@ -97,10 +98,15 @@ describe('coverage', () => {
     const r = upsertInCalendarRow(db, { symbol: 'TCS', name: 'TCS', reportDate: '2026-10-25', quarterEnd: '2026-09-30', quarterLabel: 'Q2' }, NOW);
     db.prepare('UPDATE in_reports SET eps_estimate = 1, prev_move_pct = 1 WHERE id = ?').run(r);
     saveInExpectedMove(db, r, { symbol: 'TCS', expiry: '2026-10-29', strike: 1, callMid: 1, putMid: 1, underlying: 1, movePct: 3, illiquid: false }, false, NOW);
-    expect(runCoverageCheck(db, TODAY, TODAY, () => {})).toBe(0);
+    syncHkUniverse(db, [{ code: '9988', name: 'Alibaba', cadence: 'Q', fyEndMonth: 3, adr: 'BABA', adrRatio: 8, cik: 1577552 }], NOW);
+    db.prepare('UPDATE hk_stocks SET market_cap = 1e12').run();
+    const h = upsertHkCalendarRow(db, { code: '9988', name: 'Alibaba', periodEnd: '2026-09-30', periodKind: 'Q', periodLabel: 'Q3 26', reportDate: '2026-10-25', dateStatus: 'confirmed' }, NOW);
+    db.prepare('UPDATE hk_reports SET eps_estimate = 1, prev_move_pct = 1 WHERE id = ?').run(h);
+    saveHkExpectedMove(db, h, { adr: 'BABA', expiry: '2026-10-29', strike: 1, callMid: 1, putMid: 1, underlying: 1, movePct: 3, illiquid: false, quoteDate: '2026-10-23' }, false, NOW);
+    expect(runCoverageCheck(db, TODAY, TODAY, TODAY, () => {})).toBe(0);
   });
 
-  test('GET /api/status carries coverage for both markets', async () => {
+  test('GET /api/status carries coverage for all markets', async () => {
     const db = openDb(':memory:');
     const app = buildServer(db);
     const body = (await app.inject('/api/status')).json();

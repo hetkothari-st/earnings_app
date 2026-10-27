@@ -2,7 +2,7 @@
 import type { BeatMiss } from '../../api/types.js';
 
 export type InTiming = 'BMO' | 'DMH' | 'AMC' | 'UNKNOWN';
-export type Market = 'US' | 'IN';
+export type Market = 'US' | 'IN' | 'HK';
 
 /** One India (NSE F&O) report. Money in full rupees; EPS in rupees per share. */
 export interface InReportDto {

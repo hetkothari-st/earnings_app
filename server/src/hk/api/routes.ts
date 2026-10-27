@@ -1,11 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { isAdmin } from '../../auth/store.js';
+import { config } from '../../config.js';
 import { DateTime } from 'luxon';
 import type { DatabaseSync } from 'node:sqlite';
 import type { IndexQuote } from '../../sources/yahoo.js';
-import { getHkReport, listHkRange } from '../db/hkRepo.js';
+import { getHkReport, lastSecSeenAt, listHkRange } from '../db/hkRepo.js';
 import { HK_INDICES } from '../universe.js';
 import { toHkDto } from './dto.js';
-import type { HkEarningsResponse, HkLivePriceDto, HkMarketDto } from './types.js';
+import type { HkAdminDto, HkEarningsResponse, HkLivePriceDto, HkMarketDto } from './types.js';
 
 const MAX_RANGE_DAYS = 400;
 const MARKETS_TTL_MS = 15_000;
@@ -17,6 +19,8 @@ export interface HkServerOptions {
   indices?: () => HkMarketDto[];
   /** Fallback: a Yahoo index quote per HK_INDICES symbol. */
   indexQuote?: (yahooSymbol: string) => Promise<IndexQuote>;
+  /** Records the HK codes a signed-in user currently sees (their price slots). */
+  setVisible?: (user: string, codes: string[]) => void;
 }
 
 function validDate(s: string | undefined): s is string {
@@ -26,7 +30,7 @@ function validDate(s: string | undefined): s is string {
 export function registerHkRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
-  _currentUser: (req: FastifyRequest) => string | null,
+  currentUser: (req: FastifyRequest) => string | null,
   nowFn: () => number = Date.now,
   opts: HkServerOptions = {},
 ): void {
@@ -66,5 +70,18 @@ export function registerHkRoutes(
     }));
     marketsCache = { at: nowFn(), body: { indices } };
     return marketsCache.body;
+  });
+
+  /** Counts, SEC settings and the last 6-K seen, for the admin page. Admins only. */
+  app.get('/api/admin/hk', async (req, reply) => {
+    const user = currentUser(req);
+    if (!user) return reply.code(401).send({ error: 'Not signed in' });
+    if (!isAdmin(db, user)) return reply.code(403).send({ error: 'Admins only' });
+    const c = db.prepare(`SELECT COALESCE(SUM(level = 'full'), 0) AS full, COALESCE(SUM(level != 'full'), 0) AS basic FROM hk_stocks WHERE active = 1`).get() as { full: number; basic: number };
+    const body: HkAdminDto = {
+      full: c.full, basic: c.basic, secConfigured: !!config.secUserAgent,
+      readerOn: !!(config.fastFields.hkEps || config.fastFields.hkRevenue), lastSixKAt: lastSecSeenAt(db),
+    };
+    return body;
   });
 }

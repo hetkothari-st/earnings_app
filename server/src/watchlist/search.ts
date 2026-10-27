@@ -3,6 +3,7 @@ import type { Http } from '../sources/http.js';
 import { equityTokens, fetchKiteInstruments } from '../india/sources/foList.js';
 import type { SymbolEntry } from '../api/types.js';
 import type { Db } from '../db/repo.js';
+import { HK_UNIVERSE } from '../hk/universe.js';
 import type { WatchMarket } from './store.js';
 
 export type { SymbolEntry };
@@ -32,9 +33,9 @@ export function rankSymbols(entries: IndexEntry[], q: string, limit = 20): Symbo
 
 /** In-memory symbol lists per market. Loaded in the background, never inside a request. */
 export class SymbolIndex {
-  private lists: Record<WatchMarket, IndexEntry[]> = { US: [], IN: [] };
-  private sets: Record<WatchMarket, Set<string>> = { US: new Set(), IN: new Set() };
-  private names: Record<WatchMarket, Map<string, string>> = { US: new Map(), IN: new Map() };
+  private lists: Record<WatchMarket, IndexEntry[]> = { US: [], IN: [], HK: [] };
+  private sets: Record<WatchMarket, Set<string>> = { US: new Set(), IN: new Set(), HK: new Set() };
+  private names: Record<WatchMarket, Map<string, string>> = { US: new Map(), IN: new Map(), HK: new Map() };
   set(market: WatchMarket, entries: IndexEntry[]): void {
     this.lists[market] = entries.map((e) => ({ ...e, words: words(e.name) }));
     this.sets[market] = new Set(entries.map((e) => e.symbol));
@@ -68,6 +69,18 @@ export async function loadInEntries(http: Http, db?: Db, tokensOut?: Map<string,
     .map((i) => ({ symbol: i.tradingsymbol, name: i.name, exchange: 'NSE', weight: w.get(i.tradingsymbol) }));
 }
 
+/** Hong Kong: the fixed universe; names (Yahoo's preferred) and market caps come from hk_stocks when there. */
+export function hkEntries(db?: Db): IndexEntry[] {
+  const rows = new Map<string, { name: string; cap: number | null }>();
+  if (db) {
+    for (const r of db.prepare('SELECT code, COALESCE(profile_name, name) AS name, market_cap AS cap FROM hk_stocks').all() as { code: string; name: string; cap: number | null }[]) rows.set(r.code, { name: r.name, cap: r.cap });
+  }
+  return HK_UNIVERSE.map((e) => {
+    const r = rows.get(e.code);
+    return { symbol: e.code, name: r?.name ?? e.name, exchange: 'HKEX', weight: r?.cap ?? undefined };
+  });
+}
+
 /**
  * Loads the lists now and every 24 h. A failed load keeps the previous list; the timer does not keep the process alive.
  * Until a market is loaded its search is empty and PUT falls back to a format check.
@@ -96,5 +109,6 @@ export function startSymbolRefresh(
   };
   run('US');
   run('IN');
+  run('HK');
   return () => { stopped = true; for (const t of timers.values()) clearTimeout(t); };
 }

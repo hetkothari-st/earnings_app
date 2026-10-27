@@ -28,7 +28,7 @@ import { refreshWatchedEstimates } from './jobs/refreshCalendar.js';
 import { allWatched } from './watchlist/store.js';
 import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js';
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
-import { SymbolIndex, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
+import { SymbolIndex, hkEntries, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
 import { createKiteApi } from './india/sources/kiteApi.js';
 import { completeBrowserLogin, ensureSession, getKiteCredentials, getSession, kiteStatus, startBrowserLogin } from './india/sources/kiteLogin.js';
 import { createYahooInFetcher, fetchYahooIndex } from './india/sources/yahooIn.js';
@@ -127,6 +127,7 @@ registerStream(app, live, (cookie) => {
 });
 startSymbolRefresh(symbolIndex, {
   ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers(), db) } : {}),
+  HK: async () => hkEntries(db),
   IN: async () => {
     const list = await loadInEntries(inCtx.http, db, inTokens);
     // Names for watched stocks outside F&O come from this list.

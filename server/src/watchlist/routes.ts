@@ -9,6 +9,10 @@ import { toInDto } from '../india/api/dto.js';
 import { listInForSymbols } from '../india/db/inRepo.js';
 import { IST } from '../india/domain/nseCalendar.js';
 import type { InReportDto } from '../india/api/types.js';
+import { toHkDto } from '../hk/api/dto.js';
+import { listHkForSymbols } from '../hk/db/hkRepo.js';
+import { HKT } from '../hk/domain/hkCalendar.js';
+import type { HkReportDto } from '../hk/api/types.js';
 import { SymbolIndex } from './search.js';
 import { addWatch, listWatch, MAX_WATCH, removeWatch, type WatchMarket } from './store.js';
 
@@ -22,8 +26,12 @@ export interface WatchlistOptions {
 // Used only while a market's index has not loaded yet, so adding a symbol right after a restart still works.
 const SYMBOL_FORMAT = /^[A-Z0-9&.\-]{1,24}$/;
 
-const asMarket = (v: unknown): WatchMarket | null => (v === 'US' || v === 'IN' ? v : null);
-const normalize = (market: WatchMarket, raw: string): string => (market === 'US' ? normalizeTicker(raw) : raw.trim().toUpperCase());
+const asMarket = (v: unknown): WatchMarket | null => (v === 'US' || v === 'IN' || v === 'HK' ? v : null);
+const normalize = (market: WatchMarket, raw: string): string => {
+  if (market === 'US') return normalizeTicker(raw);
+  if (market === 'HK') { const t = raw.trim(); return /^\d{1,4}$/.test(t) ? t.padStart(4, '0') : t; }
+  return raw.trim().toUpperCase();
+};
 
 /** GET /api/symbols, GET /api/watchlist, PUT/DELETE /api/watchlist/:market/:symbol for the signed-in user. */
 export function registerWatchlist(
@@ -31,7 +39,7 @@ export function registerWatchlist(
 ): void {
   const index = opts.index ?? new SymbolIndex();
   const NOT_SIGNED_IN = { error: 'Not signed in' };
-  const BAD_MARKET = { error: 'market must be US or IN' };
+  const BAD_MARKET = { error: 'market must be US, IN or HK' };
 
   app.get('/api/symbols', async (req, reply) => {
     if (!currentUser(req)) return reply.code(401).send(NOT_SIGNED_IN);
@@ -58,25 +66,27 @@ export function registerWatchlist(
     const m = asMarket((req.query as { market?: string }).market);
     if (!m) return reply.code(400).send(BAD_MARKET);
     const symbols = listWatch(db, user, m);
-    const today = DateTime.fromMillis(now(), { zone: m === 'US' ? ET : IST });
+    const today = DateTime.fromMillis(now(), { zone: m === 'US' ? ET : m === 'IN' ? IST : HKT });
     const from = today.minus({ days: 400 }).toISODate()!;
     const to = today.plus({ days: 400 }).toISODate()!;
-    const bySymbol = new Map<string, (ReportDto | InReportDto)[]>();
-    const add = (k: string, d: ReportDto | InReportDto) => bySymbol.set(k, [...(bySymbol.get(k) ?? []), d]);
+    type AnyDto = ReportDto | InReportDto | HkReportDto;
+    const bySymbol = new Map<string, AnyDto[]>();
+    const add = (k: string, d: AnyDto) => bySymbol.set(k, [...(bySymbol.get(k) ?? []), d]);
     if (m === 'US') for (const r of listForSymbols(db, symbols, from, to)) add(r.symbolKey, toDto(r));
-    else for (const r of listInForSymbols(db, symbols, from, to)) add(r.symbol, toInDto(r));
+    else if (m === 'IN') for (const r of listInForSymbols(db, symbols, from, to)) add(r.symbol, toInDto(r));
+    else for (const r of listHkForSymbols(db, symbols, from, to)) add(r.code, toHkDto(r));
     const history = new Map<string, WatchHistoryDto>(); // latest Yahoo-backup quarter per US symbol
     if (m === 'US' && symbols.length) {
       const h = db.prepare(`SELECT symbol_key AS k, fiscal_quarter AS q, period_end AS p, eps_actual AS e FROM watch_history
           WHERE symbol_key IN (${symbols.map(() => '?').join(',')}) AND eps_actual IS NOT NULL ORDER BY period_end`).all(...symbols) as { k: string; q: string; p: string; e: number }[];
       for (const r of h) history.set(r.k, { source: 'yahoo', reportDate: null, fiscalQuarter: r.q, periodEnd: r.p, eps: { actual: r.e } });
     }
-    const hasActual = (d: ReportDto | InReportDto) =>
+    const hasActual = (d: AnyDto) =>
       d.eps.actual != null || d.revenue.actual != null || ('profit' in d && d.profit.actual != null);
     const body: WatchRowsResponse = { rows: symbols.map((symbol): WatchRow => {
       const all = bySymbol.get(symbol) ?? []; // oldest first
       // Past = released or has an actual. Anything else is pending (even if dated before today), so it is `next`.
-      const isPast = (d: ReportDto | InReportDto) => d.releasedAt != null || hasActual(d);
+      const isPast = (d: AnyDto) => d.releasedAt != null || hasActual(d);
       return {
         symbol,
         name: all[all.length - 1]?.name ?? index.nameOf(m, symbol) ?? symbol,
