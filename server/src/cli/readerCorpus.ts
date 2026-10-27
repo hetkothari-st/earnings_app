@@ -4,6 +4,8 @@
  *   npm run reader-corpus -w server -- --write         (also write test/fixtures/us/releases/report.json)
  *   npm run reader-corpus -w server -- --india [--write] (India results PDFs, test/fixtures/india/pdf/)
  *   npm run reader-corpus -w server -- --hk            (HK 6-K releases, test/fixtures/hk/releases/, exact match)
+ *   npm run reader-corpus -w server -- --jp            (JP 6-K releases, test/fixtures/jp/releases/, exact match)
+ *   npm run reader-corpus -w server -- --jp-heldout    (JP held-out set, test/fixtures/jp/releases/heldout/; run once)
  * Reads every test/fixtures/us/releases/*.htm and compares accepted values with
  * expected.json (EPS ±0.01, revenue ±0.5%). Adjusted EPS is gated against Nasdaq;
  * GAAP EPS against the release (hand-read); revenue against Finnhub or the release.
@@ -16,6 +18,7 @@ import type { HkPeriodKind } from '../hk/domain/period.js';
 import { readHkRelease } from '../hk/sources/releaseHk.js';
 import { HK_UNIVERSE } from '../hk/universe.js';
 import { readInResultsPdf } from '../india/sources/resultsPdf.js';
+import { readJpRelease } from '../jp/sources/releaseJp.js';
 import { readUsRelease } from '../sources/releaseReader.js';
 
 const write = process.argv.includes('--write');
@@ -31,6 +34,8 @@ function finish(s: Stat): void {
 
 if (process.argv.includes('--india')) await runIndia();
 else if (process.argv.includes('--hk')) runHk();
+else if (process.argv.includes('--jp-heldout')) runJp('heldout/', 6);
+else if (process.argv.includes('--jp')) runJp('', 20);
 else runUs();
 
 /**
@@ -66,6 +71,44 @@ function runHk(): void {
   for (const k of ['hkEps', 'hkRevenue'] as const) {
     const cfg = config.fastFields[k] ?? false;
     console.log(`${k}=${gatePasses}  config ${cfg}${cfg === gatePasses ? '' : '  <-- config disagrees with corpus'}`);
+  }
+}
+
+/**
+ * JP (Global Constraints, reader gate): every hand-checked entry of test/fixtures/jp/releases/[heldout/]expected.json
+ * is read with readJpRelease for its period. A field is exact when `===` the hand-read value (null === null counts),
+ * blank when the reader returned null for a non-null value, wrong otherwise. A release is exact when all six fields
+ * are. The main set needs >= 20 checked, the held-out set >= 6, all exact, none wrong; jpEps / jpRevenue need both.
+ */
+function runJp(sub: string, minChecked: number): void {
+  const dir = fileURLToPath(new URL(`../../test/fixtures/jp/releases/${sub}`, import.meta.url));
+  interface JpExpected {
+    adr: string; periodEnd: string; fiscalQuarter: 1 | 2 | 3 | 4; checked: boolean; note: string;
+    revenue: number | null; eps: number | null; epsDiluted: number | null; currency: string | null; span: string | null; ytdMonths: number | null;
+  }
+  const FIELDS = ['revenue', 'eps', 'epsDiluted', 'currency', 'span', 'ytdMonths'] as const;
+  const expected: Record<string, JpExpected> = JSON.parse(readFileSync(`${dir}expected.json`, 'utf8'));
+  let checked = 0, exact = 0, wrong = 0, unchecked = 0;
+  const adrs = new Set<string>();
+  for (const [file, e] of Object.entries(expected).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!e.checked) { unchecked++; continue; }
+    checked++;
+    adrs.add(e.adr);
+    const got = readJpRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter });
+    const marks = FIELDS.map((f) => (got[f] === e[f] ? 'exact' : got[f] === null ? 'blank' : 'wrong'));
+    const verdict = marks.includes('wrong') ? 'wrong' : marks.includes('blank') ? 'blank' : 'exact';
+    if (verdict === 'exact') exact++;
+    if (verdict === 'wrong') wrong++;
+    console.log(`${verdict.padEnd(5)} ${file} (Q${e.fiscalQuarter})`);
+    FIELDS.forEach((f, i) => { if (marks[i] !== 'exact') console.log(`      ${f}: got ${got[f]}, expected ${e[f]} [${marks[i]}]`); });
+    if (verdict !== 'exact' && got.notes.length) console.log(`      notes: ${got.notes.join('; ')}`);
+  }
+  const gatePasses = checked >= minChecked && exact === checked && wrong === 0;
+  console.log(`${sub ? 'held-out' : 'main'}: checked ${checked} (${adrs.size} issuers), exact ${exact}, wrong ${wrong}${unchecked ? `, not yet checked ${unchecked}` : ''}; gate ${gatePasses ? 'passes' : 'fails'}`);
+  for (const k of ['jpEps', 'jpRevenue'] as const) {
+    const cfg = config.fastFields[k] ?? false;
+    const note = !gatePasses && cfg ? '  <-- config on but this set fails' : '';
+    console.log(`${k}: config ${cfg} (needs the main and the held-out gate)${note}`);
   }
 }
 
