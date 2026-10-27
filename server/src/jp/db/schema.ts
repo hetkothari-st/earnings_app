@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS jp_edinet_seen (
   code TEXT,
   doc_type TEXT,
   period_end TEXT,
-  outcome TEXT NOT NULL,             -- 'merged' | 'no-row' | 'blank' | 'error'
+  outcome TEXT NOT NULL,             -- 'merged' | 'superseded' | 'no-row' | 'blank' | 'parse-error' | 'error'
   seen_at TEXT NOT NULL
 );
 

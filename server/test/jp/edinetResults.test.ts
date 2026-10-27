@@ -3,7 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDb } from '../../src/db/repo.js';
 import {
-  EDINET_MAX_ATTEMPTS, edinetSeen, getJpReport, mergeJpActuals, syncJpUniverse, upsertJpCalendarRow,
+  edinetSeen, getJpReport, mergeJpActuals, syncJpUniverse, upsertJpCalendarRow,
 } from '../../src/jp/db/jpRepo.js';
 import type { JpJobContext } from '../../src/jp/jobs/context.js';
 import { jpEdinetDates, refreshJpEdinet } from '../../src/jp/jobs/edinetResults.js';
@@ -158,29 +158,65 @@ describe('refreshJpEdinet', () => {
     expect(s.downloads).toEqual([TAKEDA_HANKI, TAKEDA_HANKI]);
   });
 
-  it('errored documents are retried with backoff and given up after the last attempt', async () => {
+  it('errored documents are retried with doubling backoff, never given up; successes are not re-downloaded', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    let failing = true;
     const s = setup([docOf(TAKEDA_HANKI, '45020'), docOf(NINTENDO_YUHO, '79740')], {
-      fail: (docID) => (docID === TAKEDA_HANKI ? new Error('HTTP 500') : null),
+      fail: (docID) => (failing && docID === TAKEDA_HANKI ? new Error('HTTP 500') : null),
     });
-    s.row('4502', '2025-09-30', 2, '2026-03-31');
+    const id = s.row('4502', '2025-09-30', 2, '2026-03-31');
     s.row('7974', '2026-03-31', 4, '2026-03-31');
-    await refreshJpEdinet(s.ctx, [DATE]);
-    // Within the backoff: not retried. The successful document is never downloaded again.
-    s.clock.now = later(10);
-    await refreshJpEdinet(s.ctx, [DATE]);
-    expect(s.downloads).toEqual([TAKEDA_HANKI, NINTENDO_YUHO]);
-    // Each run after the backoff tries again, until the last attempt.
-    let t = 0;
-    for (let i = 0; i < EDINET_MAX_ATTEMPTS + 2; i++) {
-      t += 24 * 60;
-      s.clock.now = later(t);
-      await refreshJpEdinet(s.ctx, [DATE]);
-    }
-    expect(s.downloads.filter((d) => d === TAKEDA_HANKI)).toHaveLength(EDINET_MAX_ATTEMPTS);
-    expect(s.downloads.filter((d) => d === NINTENDO_YUHO)).toHaveLength(1);
+    const takeda = () => s.downloads.filter((d) => d === TAKEDA_HANKI).length;
+    const at = async (min: number) => { s.clock.now = later(min); await refreshJpEdinet(s.ctx, [DATE]); };
+    await at(0);                               // attempt 1; next due +15 min
+    await at(10);
+    expect(takeda()).toBe(1);
+    await at(15);                              // attempt 2; next due +30 min
+    await at(40);
+    expect(takeda()).toBe(2);
+    await at(45);                              // attempt 3; next due +60 min
+    await at(105);                             // attempt 4; next due +120 min
+    await at(225);                             // attempt 5 (the error has lasted almost 4 h); next due +240 min
+    await at(465);                             // attempt 6 (> 4 h): still retried; next due +360 min (the cap)
+    expect(takeda()).toBe(6);
+    await at(465 + 359);
+    expect(takeda()).toBe(6);
+    // Many attempts later the delay stays capped at 6 h and it is still retried.
+    let t = 465 + 360;
+    for (let i = 0; i < 6; i++) { await at(t); t += 360; }
+    expect(takeda()).toBe(12);
     expect(s.outcome(TAKEDA_HANKI)).toBe('error');
+    failing = false;
+    await at(t);
+    expect(s.outcome(TAKEDA_HANKI)).toBe('merged');
+    expect(getJpReport(s.db, id)!.edinetDocId).toBe(TAKEDA_HANKI);
+    expect(s.downloads.filter((d) => d === NINTENDO_YUHO)).toHaveLength(1);
+  });
+
+  it('a parser exception is final (parse-error) and never re-downloaded', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup([docOf(TAKEDA_HANKI, '45020')]);
+    const parse = await import('../../src/jp/sources/edinetXbrl.js');
+    vi.spyOn(parse, 'parseEdinetXbrl').mockImplementation(() => { throw new Error('boom'); });
+    s.row('4502', '2025-09-30', 2, '2026-03-31');
+    expect(await refreshJpEdinet(s.ctx, [DATE])).toEqual([]);
+    expect(s.outcome(TAKEDA_HANKI)).toBe('parse-error');
+    s.clock.now = later(7 * 24 * 60);
     expect(edinetSeen(s.db, TAKEDA_HANKI, s.clock.now)).toBe(true);
+    await refreshJpEdinet(s.ctx, [DATE]);
+    expect(s.downloads).toEqual([TAKEDA_HANKI]);
+  });
+
+  it('a document that changes nothing is marked superseded, not merged', async () => {
+    const s = setup([docOf(TAKEDA_HANKI, '45020')]);
+    const id = s.row('4502', '2025-09-30', 2, '2026-03-31');
+    mergeJpActuals(s.db, id, {
+      revenue: { value: 1_000, currency: 'JPY', span: 'quarter', ytdMonths: null },
+      eps: { basic: 30, diluted: 29, currency: 'JPY', span: 'quarter', ytdMonths: null }, source: 'sec', edinetDocId: 'S100OTHER',
+    }, NOW);
+    expect(await refreshJpEdinet(s.ctx, [DATE])).toEqual([]);
+    expect(s.outcome(TAKEDA_HANKI)).toBe('superseded');
+    expect(getJpReport(s.db, id)).toMatchObject({ revenueSource: 'sec', epsSource: 'sec', edinetDocId: 'S100OTHER' });
   });
 
   it('no client → no-op with "not configured" status', async () => {
