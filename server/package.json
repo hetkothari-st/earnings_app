@@ -11,6 +11,7 @@
     "reader-corpus": "tsx src/cli/readerCorpus.ts",
     "collect-in-corpus": "tsx src/cli/collectInCorpus.ts",
     "verify-hk-universe": "tsx src/cli/verifyHkUniverse.ts",
+    "verify-jp-universe": "tsx src/cli/verifyJpUniverse.ts",
     "collect-hk-corpus": "tsx src/cli/collectHkCorpus.ts",
     "hk-spot-check": "tsx src/cli/hkSpotCheck.ts",
     "test": "vitest run",
