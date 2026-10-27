@@ -540,6 +540,22 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
     expect(readJpRelease(G + `<table><tr><td colspan="3">(% represents the change from the same period)</td></tr>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`, Q1)).toMatchObject(read);
   });
 
+  it('S1b: a "Consolidated" heading names the group only when it is otherwise generic (ticker / own issuer name allowed)', () => {
+    const sumT = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`;
+    const blank = { eps: null, epsDiluted: null };
+    const read = { eps: 31.62, epsDiluted: 31.59 };
+    for (const h of ['Consolidated results of Mizuho Bank', 'Mizuho Bank Consolidated', 'みずほ銀行 連結業績', '(2) Mizuho Securities Consolidated Results', 'Consolidated Financial Results of Mizuho Bank, Ltd. (for the three months ended June 30, 2026)']) {
+      expect(readJpRelease(`<p>${h}</p>${sumT}`, Q1), h).toMatchObject(blank);
+    }
+    for (const h of ['(1) Consolidated Results of Operations', 'MUFG Consolidated', '1. Consolidated financial results (for the three months ended June 30, 2026)', '連結業績', '(1) Consolidated Results of Operations (Accumulated Period)']) {
+      expect(readJpRelease(`<p>${h}</p>${sumT}`, Q1), h).toMatchObject(read);
+    }
+    // The document's own issuer name (its first title) is allowed; another company's name is not.
+    const doc = '<p>Mizuho Financial Group, Inc.</p><p>Consolidated Financial Statements for the First Quarter of Fiscal 2026</p>';
+    expect(readJpRelease(`${doc}<table>${tr('Code', '8411')}</table><p>Mizuho Financial Group, Inc. Consolidated Results</p>${sumT}`, Q1)).toMatchObject(read);
+    expect(readJpRelease(`${doc}<table>${tr('Code', '8411')}</table><p>Mizuho Bank, Ltd. Consolidated Results</p>${sumT}`, Q1)).toMatchObject(blank);
+  });
+
   it('S2: a "3Q F2025" row is dated only by the definition in its own table\'s heading block', () => {
     const rows = tr('3Q F2025', '409.21', '409.21') + tr('3Q F2024', '337.64', '337.64');
     expect(readJpRelease(def9 + group + eps(rows), Q3)).toMatchObject({ eps: 409.21, epsDiluted: 409.21, span: 'ytd', ytdMonths: 9, currency: 'JPY' });
