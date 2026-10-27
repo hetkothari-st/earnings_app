@@ -1,5 +1,6 @@
+import { DateTime } from 'luxon';
 import { computeExpectedMove } from '../../domain/expectedMove.js';
-import { todayET } from '../../domain/marketCalendar.js';
+import { ET, todayET } from '../../domain/marketCalendar.js';
 import type { ExpectedMove, OptionChain } from '../../types.js';
 import { hkReportsBetween, saveHkExpectedMove, saveHkLiveMove } from '../db/hkRepo.js';
 import { addDaysHKT } from '../domain/hkCalendar.js';
@@ -30,6 +31,13 @@ function chainLoader(ctx: HkJobContext) {
 const moveFor = (chain: OptionChain, r: Pending): ExpectedMove | null =>
   computeExpectedMove(chain, firstUsSessionAfterHkRelease(r.reportDate, r.timing, r.releasedAt), 'BMO');
 
+/** True when the quotes were taken after the regular US close of their date (16:00 ET); else they may be intraday. */
+function afterUsClose(chain: OptionChain, now: string): boolean {
+  const day = chain.asOfDate!;
+  if (chain.quoteTime) return chain.quoteTime >= `${day}T16:00:00`;
+  return DateTime.fromISO(now).setZone(ET) >= DateTime.fromISO(`${day}T16:15:00`, { zone: ET });
+}
+
 /**
  * Expected-move snapshot from the ADR's option chain. Quotes dated after the last US close before the HK date
  * already price in the release and are never used. Final when the quotes are from exactly that close.
@@ -42,9 +50,15 @@ export async function snapshotHkMoves(ctx: HkJobContext): Promise<number[]> {
     const chain = await load(r.adr);
     const lastClose = lastUsCloseBeforeHk(r.reportDate);
     if (!chain?.asOfDate || chain.asOfDate > lastClose) continue;
+    // Final only from the full last-close session: an intraday quote on that day stays provisional.
+    const final = chain.asOfDate === lastClose && afterUsClose(chain, now);
+    const stored = ctx.db.prepare('SELECT quote_date AS quoteDate, final FROM hk_expected_moves WHERE report_id = ?').get(r.id) as
+      { quoteDate: string; final: number } | undefined;
+    // Nothing newer than what we have (a same-day quote only upgrades provisional to final).
+    if (stored && (chain.asOfDate < stored.quoteDate || (chain.asOfDate === stored.quoteDate && !(final && stored.final === 0)))) continue;
     const em = moveFor(chain, r);
     if (!em) continue;
-    if (saveHkExpectedMove(ctx.db, r.id, { ...em, adr: r.adr, quoteDate: chain.asOfDate }, chain.asOfDate === lastClose, now)) changed.push(r.id);
+    if (saveHkExpectedMove(ctx.db, r.id, { ...em, adr: r.adr, quoteDate: chain.asOfDate }, final, now)) changed.push(r.id);
   }
   return changed;
 }
