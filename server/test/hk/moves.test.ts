@@ -14,7 +14,8 @@ const ENTRIES: HkUniverseEntry[] = [
   { code: '9988', name: 'Alibaba', cadence: 'Q', fyEndMonth: 3, adr: 'BABA', adrRatio: 8, cik: 1577552 },
   { code: '0700', name: 'Tencent', cadence: 'Q', fyEndMonth: 12, adr: null, adrRatio: null, cik: null },
 ];
-const chainAt = (asOfDate: string | null): OptionChain => ({ ...parseCboeChain(raw, 'BABA')!, asOfDate });
+const chainAt = (asOfDate: string | null, quoteTime: string | null = asOfDate ? `${asOfDate}T16:30:00` : null): OptionChain =>
+  ({ ...parseCboeChain(raw, 'BABA')!, asOfDate, quoteTime });
 
 function setup(opts: { chain?: OptionChain | null | Error; now?: string; today?: string; timing?: 'UNKNOWN' | 'AMC' | 'BMO' } = {}) {
   const db = openDb(':memory:');
@@ -68,12 +69,48 @@ describe('snapshotHkMoves', () => {
     const u = setup({ timing: 'UNKNOWN' });
     const uid = u.row('9988', 'Alibaba');
     await snapshotHkMoves(u.ctx);
-    expect(getHkReport(u.db, uid)!.expectedMove!.expiry > '2026-11-20').toBe(true);
+    const ue = getHkReport(u.db, uid)!.expectedMove!.expiry;
+    expect(ue > '2026-11-20').toBe(true);
 
     const a = setup({ timing: 'AMC' });
     const aid = a.row('9988', 'Alibaba');
     await snapshotHkMoves(a.ctx);
-    expect(getHkReport(a.db, aid)!.expectedMove!.expiry >= '2026-11-20').toBe(true);
+    const ae = getHkReport(a.db, aid)!.expectedMove!.expiry;
+    expect(ae >= '2026-11-20').toBe(true);
+    // the exact expiries: AMC takes the 11-20 monthly, UNKNOWN the first expiry after it
+    const expiries = [...new Set(chainAt('2026-11-19').quotes.map((q) => q.expiry))].sort();
+    expect(ae).toBe(expiries.find((e) => e >= '2026-11-20'));
+    expect(ue).toBe(expiries.find((e) => e > '2026-11-20'));
+  });
+
+  it('an intraday quote on the last US day is provisional, not final, and live still updates', async () => {
+    const { db, ctx, state, row } = setup({ chain: chainAt('2026-11-19', '2026-11-19T11:00:00'), now: '2026-11-19T16:30:00.000Z', today: '2026-11-20' });
+    const id = row('9988', 'Alibaba');
+    await snapshotHkMoves(ctx);
+    expect(getHkReport(db, id)!.expectedMove).toMatchObject({ final: false, quoteDate: '2026-11-19' });
+    expect(await refreshHkLiveMoves(ctx)).toEqual([id]);
+    // the same-day post-close quote upgrades it to final
+    state.chain = chainAt('2026-11-19', '2026-11-19T16:20:00');
+    expect(await snapshotHkMoves(ctx)).toEqual([id]);
+    expect(getHkReport(db, id)!.expectedMove).toMatchObject({ final: true });
+  });
+
+  it('without a quote time, now before 16:15 ET is intraday and after is final', async () => {
+    const early = setup({ chain: chainAt('2026-11-19', null), now: '2026-11-19T20:30:00.000Z' }); // 15:30 ET
+    const eid = early.row('9988', 'Alibaba');
+    await snapshotHkMoves(early.ctx);
+    expect(getHkReport(early.db, eid)!.expectedMove!.final).toBe(false);
+    const late = setup({ chain: chainAt('2026-11-19', null), now: '2026-11-19T21:30:00.000Z' }); // 16:30 ET
+    const lid = late.row('9988', 'Alibaba');
+    await snapshotHkMoves(late.ctx);
+    expect(getHkReport(late.db, lid)!.expectedMove!.final).toBe(true);
+  });
+
+  it('an unchanged chain is not reported as changed again', async () => {
+    const { ctx, row } = setup({ chain: chainAt('2026-11-18') });
+    const id = row('9988', 'Alibaba');
+    expect(await snapshotHkMoves(ctx)).toEqual([id]);
+    expect(await snapshotHkMoves(ctx)).toEqual([]);
   });
 
   it('basic level and no-ADR rows are skipped', async () => {
@@ -117,5 +154,20 @@ describe('refreshHkLiveMoves', () => {
     const off = setup({ now: '2026-11-18T20:00:00.000Z', today: '2026-11-18', chain: chainAt('2026-11-18') });
     off.row('9988', 'Alibaba');
     expect(await refreshHkLiveMoves(off.ctx)).toEqual([]);
+  });
+
+  it('an already-final report is not refreshed', async () => {
+    const { ctx, row, db } = setup({ now: '2026-11-19T21:30:00.000Z', today: '2026-11-20', chain: chainAt('2026-11-19') });
+    const id = row('9988', 'Alibaba');
+    await snapshotHkMoves(ctx);
+    expect(getHkReport(db, id)!.expectedMove!.final).toBe(true);
+    expect(await refreshHkLiveMoves(ctx)).toEqual([]);
+  });
+
+  it('blocked Cboe writes nothing', async () => {
+    const { ctx, row, db } = setup({ now: '2026-11-19T20:00:00.000Z', today: '2026-11-20', chain: new Error('HTTP 403') });
+    const id = row('9988', 'Alibaba');
+    expect(await refreshHkLiveMoves(ctx)).toEqual([]);
+    expect(getHkReport(db, id)!.liveMovePct).toBeNull();
   });
 });
