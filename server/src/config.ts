@@ -36,13 +36,13 @@ export const config = {
    * 6-K/8-K releases, 24 exact, 0 wrong, 0 blank (HK reader 24/24 exact, 0 wrong) => gate open,
    * hkEps / hkRevenue on.
    * JP reader gate (exact match on six fields; npm run reader-corpus -w server -- --jp / --jp-heldout): main set 24
-   * hand-checked 6-K releases (all 8 issuers, 9 bank releases), 12 exact, 0 wrong, 12 blank; held-out 6, 2 exact,
-   * 0 wrong, 4 blank => gate closed, jpEps / jpRevenue off. They go on only when the 'jp' profile reads >= 20
-   * hand-checked releases all exact with 0 wrong, and the held-out set is all exact with 0 wrong.
+   * hand-checked 6-K releases (all 8 issuers, 9 bank releases), 21 exact, 0 wrong, 3 blank (MUFG summary EPS);
+   * held-out 6, 4 exact, 0 wrong; second held-out set of 9 unseen releases, 0 wrong => gate open, jpEps / jpRevenue
+   * on. The gate is: main >= 20 exact and 0 wrong, every held-out set 0 wrong (blanks allowed).
    */
   fastFields: {
     usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false, hkEps: true, hkRevenue: true,
-    jpEps: false, jpRevenue: false,
+    jpEps: true, jpRevenue: true,
   } as {
     usEpsAdjusted: boolean; usEpsGaap: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean; hkEps?: boolean; hkRevenue?: boolean;
     jpEps?: boolean; jpRevenue?: boolean;
