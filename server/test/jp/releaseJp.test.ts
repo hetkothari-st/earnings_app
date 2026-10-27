@@ -418,6 +418,45 @@ describe('real 6-K releases', () => {
   });
 });
 
+/** The six gate fields of a real release, read for its period. */
+const six = (file: string, periodEnd: string, fiscalQuarter: 1 | 2 | 3 | 4) => {
+  const { revenue, eps, epsDiluted, currency, span, ytdMonths } = readJpRelease(fx(file), { periodEnd, fiscalQuarter });
+  return { revenue, eps, epsDiluted, currency, span, ytdMonths };
+};
+
+describe('Task 12b: unit headers "Yen (millions)", "JPY (millions)", "Million JPY"', () => {
+  it('U1: "Yen (millions)" / "JPY (millions)" / "(Million JPY)" / "Billion JPY" state the unit', () => {
+    for (const [unit, mult] of [['Yen (millions)', 1e6], ['JPY (millions)', 1e6], ['(Million JPY)', 1e6], ['JPY millions', 1e6], ['Billion JPY, except EPS', 1e9], ['(Billions of JPY)', 1e9]] as const) {
+      const html = table('Condensed Consolidated Statements of Income',
+        tr('', unit) +
+        tr('', 'Three months ended June 30, 2026') +
+        tr('Sales revenue', '6,061') +
+        tr('Basic earnings per share', '115.84'));
+      expect(readJpRelease(html, { periodEnd: '2026-06-30', fiscalQuarter: 1 }), unit).toMatchObject({ revenue: 6061 * mult, eps: 115.84 });
+    }
+  });
+
+  it('U2: "Yen" alone, "Yen (thousands)" and a US$ unit are still no yen unit', () => {
+    for (const unit of ['Yen', 'Yen (thousands)', 'USD (millions)']) {
+      const html = table('Condensed Consolidated Statements of Income',
+        tr('', unit) +
+        tr('', 'Three months ended June 30, 2026') +
+        tr('Sales revenue', '6,061'));
+      expect(readJpRelease(html, { periodEnd: '2026-06-30', fiscalQuarter: 1 }).revenue, unit).toBeNull();
+    }
+  });
+
+  it('Honda: statements in "Yen (millions)"', () => {
+    expect(six('HMC_2026-06-30.htm', '2026-06-30', 1)).toEqual({ revenue: 6_061_514_000_000, eps: 115.84, epsDiluted: 115.84, currency: 'JPY', span: 'quarter', ytdMonths: null });
+    expect(six('HMC_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 21_796_610_000_000, eps: -106.06, epsDiluted: -106.06, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
+    expect(six('HMC_2025-12-31.htm', '2025-12-31', 3)).toEqual({ revenue: 15_975_664_000_000, eps: 115.53, epsDiluted: 115.53, currency: 'JPY', span: 'ytd', ytdMonths: 9 });
+  });
+
+  it('Takeda FY2025 Tanshin: statement in "JPY (millions)"', () => {
+    expect(six('TAK_2026-03-31.htm', '2026-03-31', 4)).toEqual({ revenue: 4_505_720_000_000, eps: 121.75, epsDiluted: 119.64, currency: 'JPY', span: 'ytd', ytdMonths: 12 });
+  });
+});
+
 describe("readRelease profile 'jp'", () => {
   it('yen is detected only under jp: the hk profile reads nothing from a yen table', () => {
     const html = table('(Millions of yen, except per share amounts)',

@@ -671,12 +671,16 @@ function jpCurrency(text: string): 'JPY' | 'USD' | null | undefined {
 /**
  * Allowlisted yen unit statements: "Millions of yen", "(Millions of yen)", "Yen in millions", "(¥ in millions)",
  * "¥ million(s)", "in millions of yen", "Amounts in millions of yen", "Billions of yen", "Yen in billions" (and the
- * Tanshin "Million yen"), each with an optional ", except per share amounts". Nothing else counts as a unit.
+ * Tanshin "Million yen"), "Yen (millions)", "JPY (millions)", "JPY millions", "Million JPY", "Billion JPY", each
+ * with an optional ", except per share amounts / EPS". Nothing else counts as a unit.
  */
-const JP_UNIT_STATEMENT = /^(?:(?:amounts\s+)?in\s+(millions|billions)\s+of\s+yen|(millions?|billions?)\s+(?:of\s+)?yen|yen\s+in\s+(millions|billions)|¥\s*(?:in\s+)?(millions?|billions?))$/i;
+const JP_UNIT_STATEMENT = /^(?:(?:amounts\s+)?in\s+(millions|billions)\s+of\s+(?:yen|jpy)|(millions?|billions?)\s+(?:of\s+)?(?:yen|jpy)|(?:yen|jpy)\s+in\s+(millions|billions)|¥\s*(?:in\s+)?(millions?|billions?)|(?:yen|jpy|¥)\s*\(\s*(millions?|billions?)\s*\)|jpy\s+(millions?|billions?))$/i;
 
 function jpUnit(text: string): number | null {
-  const core = text.trim().replace(/^\(\s*/, '').replace(/\s*\)$/, '').replace(EXCEPT_CLAUSE, '').trim();
+  let core = text.trim();
+  // Outer parentheses only when they wrap the whole text ("(Millions of yen)", not "Yen (millions)").
+  if (/^\(/.test(core)) core = core.replace(/^\(\s*/, '').replace(/\s*\)$/, '');
+  core = core.replace(EXCEPT_CLAUSE, '').trim();
   const m = core.match(JP_UNIT_STATEMENT);
   if (!m) return null;
   return m.slice(1).find((g) => g !== undefined)!.toLowerCase().startsWith('million') ? 1e6 : 1e9;
