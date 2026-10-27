@@ -507,6 +507,39 @@ describe('Task 12b: summaries with periods in rows (banks)', () => {
     expect(readJpRelease('<p>1. Consolidated financial results</p><p>(1) Operating results</p><p>(Yen)</p>' + sumT, Q1)).toMatchObject({ eps: 31.62, epsDiluted: 31.59 });
   });
 
+  it('S1 (probe5 m1–m7): only generic sub-headings inherit the group heading; named ones, parentheticals and title rows do not', () => {
+    const sumT = `<table>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`;
+    const kpi = `<table>${tr('Branches', '120')}</table>`;
+    const G = '<p>1. Consolidated financial results</p>';
+    const blank = { eps: null, epsDiluted: null };
+    const cases: Array<[string, string]> = [
+      ['m1', G + '<p>(2) Results of Mizuho Bank</p>' + sumT],
+      ['m1b', G + '<p>(2) Mizuho Bank, Ltd.</p>' + sumT],
+      ['m2', G + kpi + kpi + sumT],
+      ['m2b', G + kpi + '<table><tr><td colspan="3">Mizuho Bank</td></tr></table>' + sumT],
+      ['m2c', G + `<table><tr><td colspan="3">Mizuho Bank</td></tr>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`],
+      ['m3', '<p>1. 連結業績</p><p>(2) 子会社の業績</p>' + sumT],
+      ['m3b', '<p>1. 連結業績</p><p>(2) みずほ銀行の業績</p>' + sumT],
+      ['m3c', '<p>1. 連結業績</p><p>（２）みずほ銀行</p>' + sumT],
+      ['m4', '<p>Consolidated Financial Results</p><p>(Reference: Summary of results of Mizuho Bank)</p>' + sumT],
+      ['m4b', '<p>Consolidated Financial Results</p><p>(Mizuho Bank)</p>' + sumT],
+      ['m5', G + '<p>(a) Mizuho Bank</p>' + sumT],
+      ['m6', G + '<p>(ii) Mizuho Bank</p>' + sumT],
+      ['m7', G + kpi + '<p>2. Mizuho Bank</p>' + sumT],
+    ];
+    for (const [name, html] of cases) expect(readJpRelease(html, Q1), name).toMatchObject(blank);
+    // m1c: the group's own "(1) Operating results" table is read; the bank's "(2) Results of …" table adds nothing.
+    const m1c = G + '<p>(1) Operating results</p>' + sumT.replace('31.6', '30.6') + '<p>(2) Results of Mizuho Trust &amp; Banking</p>' + sumT;
+    expect(readJpRelease(m1c, Q1)).toMatchObject({ eps: 30.62, epsDiluted: 31.59 });
+    // Controls: generic sub-headings (English and Japanese), unit / note parentheticals, a generic title row.
+    const read = { eps: 31.62, epsDiluted: 31.59 };
+    expect(readJpRelease(G + '<p>(1) Operating results</p>' + sumT, Q1)).toMatchObject(read);
+    expect(readJpRelease(G + '<p>(2) Earnings per share</p><p>(Yen)</p>' + sumT, Q1)).toMatchObject(read);
+    expect(readJpRelease('<p>1. 連結業績</p><p>（１）経営成績</p><p>(Millions of yen, except per share data)</p>' + sumT, Q1)).toMatchObject(read);
+    expect(readJpRelease(G + '<p>(1) Operating results (Millions of yen, except per share data and percentages)</p>' + sumT, Q1)).toMatchObject(read);
+    expect(readJpRelease(G + `<table><tr><td colspan="3">(% represents the change from the same period)</td></tr>${tr('', 'Earnings per share', 'Earnings per share (Diluted)')}${tr('Three months ended June 30, 2026', '&yen; 31.62', '&yen; 31.59')}</table>`, Q1)).toMatchObject(read);
+  });
+
   it('S2: a "3Q F2025" row is dated only by the definition in its own table\'s heading block', () => {
     const rows = tr('3Q F2025', '409.21', '409.21') + tr('3Q F2024', '337.64', '337.64');
     expect(readJpRelease(def9 + group + eps(rows), Q3)).toMatchObject({ eps: 409.21, epsDiluted: 409.21, span: 'ytd', ytdMonths: 9, currency: 'JPY' });

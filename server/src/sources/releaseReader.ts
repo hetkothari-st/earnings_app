@@ -1010,7 +1010,7 @@ function jpHeadingTableText(t: Table): string | null {
  * the heading block of that run of adjacent tables (the text before the run's first table) plus the heading-only
  * tables of the run above it. Splits with the same pattern as `parseTables`, so the indexes line up.
  */
-function jpHeadingBlocks(html: string, tables: Table[]): { block: string[]; heading: string[]; titles: string[] } {
+function jpHeadingBlocks(html: string, tables: Table[]): { block: string[]; heading: string[]; group: boolean[] } {
   // Title-like blocks of the text between tables: short (<= 200 characters) and not a footnote ("*1 Please refer …",
   // "※", "Note:"). Long prose and footnotes title nothing.
   const between = html.split(/<table\b[\s\S]*?<\/table>/gi).slice(0, tables.length).map((seg) =>
@@ -1024,22 +1024,50 @@ function jpHeadingBlocks(html: string, tables: Table[]): { block: string[]; head
     heading.push(head);
     lists.push(i > 0 && empty[i] ? [...lists[i - 1]!, ...(head ? [head] : [])] : between[i] ?? []);
   }
-  return { block: lists.map((l) => l.join(' ')), heading, titles: lists.map(jpTitleChain) };
+  return { block: lists.map((l) => l.join(' ')), heading, group: lists.map(jpGroupTitle) };
+}
+
+/** A unit / notes block or parenthetical: "(Yen)", "(Millions of yen, except …)", "(Note …)", "(Percentages …)", "(% …)". */
+const JP_NOTE_PAREN = /^[(（]\s*(?:%|¥|(?:notes?|percent(?:ages?)?|amounts?|units?|yen|jpy|millions?|billions?|thousands?|rounded)\b)[^]*[)）]$/i;
+const jpUnitOrNote = (t: string) => jpUnit(t) !== null || JP_NOTE_PAREN.test(t.trim());
+/** Sub-heading numbering: "(1)", "（２）", "(a)", "(ii)". */
+const JP_SUB_NUMBER = /^\s*[(（]\s*(?:\d{1,2}|[０-９]{1,2}|[a-z]|[ivx]+)\s*[)）]\s*/i;
+/** Heading numbering of any level: a sub-heading's, or "1." / "2)". */
+const JP_ANY_NUMBER = /^\s*(?:[(（]\s*(?:\d{1,2}|[０-９]{1,2}|[a-z]|[ivx]+)\s*[)）]|[\d０-９]{1,2}\s*[.．)）])\s*/i;
+/** Words of a generic (entity-free) heading: "Operating results", "Financial position", "Earnings per share", … */
+const JP_GENERIC_WORDS = new Set(['operating', 'results', 'result', 'of', 'operations', 'financial', 'position', 'condition',
+  'cash', 'flows', 'flow', 'dividends', 'dividend', 'earnings', 'per', 'share', 'data', 'summary', 'highlights', 'overview',
+  'key', 'figures', 'consolidated', 'and']);
+const JP_GENERIC_JA = /経営成績|業績|財政状態|キャッシュ・フロー|キャッシュフロー|配当|１株当たり|1株当たり|概要|連結|の|及び|[・、\s]/g;
+
+/**
+ * Is a heading generic — after its numbering, unit / note parentheticals and a trailing colon or full stop, nothing
+ * but the allowlisted words (English or Japanese)? A name ("Mizuho Bank", "Ltd.", みずほ銀行) makes it specific.
+ */
+function jpGenericHeading(text: string): boolean {
+  let t = text.replace(JP_ANY_NUMBER, '').replace(/[(（][^()（）]*[)）]/g, (p) => (jpUnitOrNote(p) ? ' ' : p)).replace(/[\s.:：。]+$/, '').trim();
+  if (!t) return false;
+  const words = t.match(/[a-z]+/gi) ?? [];
+  if (!words.every((w) => JP_GENERIC_WORDS.has(w.toLowerCase()))) return false;
+  t = t.replace(/[a-z]+/gi, '').replace(JP_GENERIC_JA, '');
+  return t === '' && (words.length > 0 || text.replace(JP_ANY_NUMBER, '').trim().length > 0);
 }
 
 /**
- * The table's own title: its nearest title-like block (unit / parenthetical-only blocks such as "(Yen)" skipped), and,
- * when that is a numbered sub-heading ("(1) Operating results"), the headings above it up to the first that is not.
+ * Does the table's own title name the group? Walking up from the nearest title-like block: unit / note blocks
+ * ("(Yen)", "(Millions of yen)", "(Note …)") are skipped; the first other block decides. It names the group when it says
+ * "Consolidated" / 連結; a numbered sub-heading ("(1) Operating results", "（１）経営成績") that is generic hands the
+ * decision to the heading above it. Anything else — a name, any other parenthetical — is not the group.
  */
-function jpTitleChain(blocks: string[]): string {
-  const out: string[] = [];
+function jpGroupTitle(blocks: string[]): boolean {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i]!.trim();
-    if (/^\([^()]*\)$/.test(b) || jpUnit(b) !== null) continue;
-    out.unshift(b);
-    if (!/^\(\s*(?:\d{1,2}|[a-z]|[ivx]+)\s*\)/i.test(b)) break;
+    if (jpUnitOrNote(b)) continue;
+    if (JP_GROUP_TITLE.test(b)) return true;
+    if (JP_SUB_NUMBER.test(b) && jpGenericHeading(b)) continue;
+    return false;
   }
-  return out.join(' ');
+  return false;
 }
 /** A footnote block: "*1 …", "※ …", "† …", "Note: …", "(Note) …". */
 const JP_FOOTNOTE = /^\s*(?:[*※†]|\(?notes?\)?\s*[:.)]?\s)/i;
@@ -1162,10 +1190,20 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
     // Forecast tables, Core / non-GAAP / adjusted tables and tables in the parent company's own (non-consolidated)
     // sections are never read.
     if (JP_FORECAST.test(title) || JP_ADJUSTED_CONTEXT.test(context) || nonConsolidated[ti]) continue;
-    // Summary (period-in-rows) layouts and "¥" signs count only when the table's OWN heading block names the group's
-    // figures ("Consolidated" / 連結) and no other entity; a document-level title never vouches for a table.
-    // Own title: the nearest heading (with its parents when it is a numbered sub-heading), not any text since the table before.
-    const groupTitled = !JP_ENTITY_TITLE.test(context) && !JP_NON_CONSOLIDATED.test(context) && JP_GROUP_TITLE.test(heads.titles[ti]!);
+    // Summary (period-in-rows) layouts and "¥" signs count only when the table's own title names the group's figures
+    // (`jpGroupTitle`: the nearest heading, or a generic numbered sub-heading under it); a document-level title never
+    // vouches for a table. The table's own spanning title rows above its figures must be generic, group or unit / note
+    // rows too ("Mizuho Bank" over the figures is another entity's table).
+    let titleRowsOk = true;
+    for (const r of table.rows) {
+      const cells = r.filter((c) => c.text);
+      if (cells.some((c) => isFigure(c.text.replace(/&yen;|¥/g, '').trim()))) break;
+      if (cells.length === 1 && cells[0]!.span > 1) {
+        const t = cells[0]!.text;
+        if (!(jpUnitOrNote(t) || JP_GROUP_TITLE.test(t) || jpGenericHeading(t))) titleRowsOk = false;
+      }
+    }
+    const groupTitled = !JP_ENTITY_TITLE.test(context) && !JP_NON_CONSOLIDATED.test(context) && heads.group[ti]! && titleRowsOk;
     // Appendix columns ("FY2024 Q4 (Jan-Mar)") count only under a title naming the reported figures.
     const reportedTitled = JP_REPORTED_TITLE.test(context);
     // Token rows ("3Q F2025") are dated only by a definition in the table's own heading block.
