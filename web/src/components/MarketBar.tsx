@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MarketIndexDto, MarketsResponse } from '../../../server/src/api/types';
-import { apiFetch, type HkMarketDto, type InMarket } from '../api';
+import { apiFetch, type HkMarketDto, type InMarket, type JpMarketDto } from '../api';
 import { changeClass, formatChange } from '../lib/format';
 
 const level = (n: number | null) =>
@@ -62,6 +62,39 @@ export function HongKongMarketBar({ live = [] }: { live?: HkMarketDto[] }) {
       {indices.map((m) => (
         <div key={m.index} className="market">
           <span className="market-exchange">HKEX</span>
+          <span className="market-index">{m.index} · delayed</span>
+          <span className="market-level">{level(m.price)}</span>
+          <span className={`market-change ${changeClass(m.changePct)}`}>{formatChange(m.changePct)}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/**
+ * Nikkei 225 and TOPIX (ETF 1306, a fund that tracks TOPIX). Yahoo only, so every figure is delayed. `live` carries
+ * pushes over the live stream; /api/jp/markets (every 15 s) fills the rest.
+ */
+export function JapanMarketBar({ live = [] }: { live?: JpMarketDto[] }) {
+  const [polled, setIndices] = useState<JpMarketDto[] | null>(null);
+  const byName = new Map(live.map((m) => [m.index, m]));
+  const indices = polled?.map((m) => byName.get(m.index) ?? m) ?? null;
+  useEffect(() => {
+    let alive = true;
+    const load = () => apiFetch('/api/jp/markets')
+      .then((r) => (r.ok ? (r.json() as Promise<{ indices: JpMarketDto[] }>) : null))
+      .then((b) => { if (alive && b) setIndices(b.indices); })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  if (!indices) return null;
+  return (
+    <section className="markets markets-jp" aria-label="Japan markets">
+      {indices.map((m) => (
+        <div key={m.index} className="market">
+          <span className="market-exchange">TSE</span>
           <span className="market-index">{m.index} · delayed</span>
           <span className="market-level">{level(m.price)}</span>
           <span className={`market-change ${changeClass(m.changePct)}`}>{formatChange(m.changePct)}</span>

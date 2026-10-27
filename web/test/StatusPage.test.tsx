@@ -12,7 +12,7 @@ const body = {
     { source: 'finnhub', lastSuccessAt: null, lastError: 'boom', lastErrorAt: '2026-10-21T09:00:00.000Z', state: 'backup', blockedUntil: null },
   ],
   counts: { reports: 10, withExpectedMove: 4, secVerified: 2 },
-  coverage: { US: [cov('epsEstimate', 9, 10, 85), cov('timing', 3, 10, 70)], IN: [cov('marketCap', 10, 10, 95)], HK: [cov('adrTicker', 3, 4, 70)] },
+  coverage: { US: [cov('epsEstimate', 9, 10, 85), cov('timing', 3, 10, 70)], IN: [cov('marketCap', 10, 10, 95)], HK: [cov('adrTicker', 3, 4, 70)], JP: [cov('edinetCode', 5, 8, 50)] },
 };
 
 test('Hong Kong coverage table renders', async () => {
@@ -20,6 +20,13 @@ test('Hong Kong coverage table renders', async () => {
   const row = (await screen.findByText('adrTicker')).closest('tr')!;
   expect(row.textContent).toContain('3/4');
   expect(row.closest('table')!.querySelector('caption')!.textContent).toContain('Hong Kong');
+});
+
+test('Japan coverage table renders', async () => {
+  mount();
+  const row = (await screen.findByText('edinetCode')).closest('tr')!;
+  expect(row.textContent).toContain('5/8');
+  expect(row.closest('table')!.querySelector('caption')!.textContent).toContain('Japan');
 });
 
 afterEach(() => vi.unstubAllGlobals());

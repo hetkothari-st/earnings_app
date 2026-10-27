@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { DateTime } from 'luxon';
 import type { InReportDto } from '../../../server/src/india/api/types';
 import type { HkReportDto } from '../../../server/src/hk/api/types';
+import type { JpReportDto } from '../../../server/src/jp/api/types';
 import type { ReportDto } from '../../../server/src/api/types';
 import { fetchWatchRows, type WatchRow } from '../api';
 import type { Watchlist } from '../hooks/useWatchlist';
-import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatHkEps, formatHkMoney, formatHkPrice, formatInrCr, formatMoney } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatHkEps, formatHkMoney, formatHkPrice, formatInrCr, formatJpEps, formatJpMoney, formatJpPrice, formatMoney, ytdLabel } from '../lib/format';
 import type { Market } from '../lib/market';
-import { todayHkt } from '../lib/liveCap';
+import { todayHkt, todayJst } from '../lib/liveCap';
 import { todayEt } from '../lib/time';
 import { priceKey } from '../lib/ticker';
 import { SymbolSearch } from './SymbolSearch';
@@ -15,7 +16,7 @@ import { Star } from './Star';
 import { Tags } from './Tags';
 
 type Price = { price: number; changePct: number | null; source?: string };
-type Report = ReportDto | InReportDto | HkReportDto;
+type Report = ReportDto | InReportDto | HkReportDto | JpReportDto;
 
 interface Props {
   market: Market;
@@ -30,6 +31,7 @@ const pct1 = (n: number) => (Math.round(n * 10 + 1e-9) / 10).toFixed(1);
 
 function today(market: Market): string {
   if (market === 'HK') return todayHkt();
+  if (market === 'JP') return todayJst();
   return market === 'IN' ? DateTime.now().setZone('Asia/Kolkata').toISODate()! : todayEt();
 }
 
@@ -64,6 +66,19 @@ function Latest({ latest, market }: { latest: WatchRow['latest']; market: Market
       </>
     );
   }
+  if (market === 'JP') {
+    const j = r as JpReportDto;
+    if (j.eps.actual == null && j.revenue.actual == null) return <span className="muted">—</span>;
+    const span = (f: JpReportDto['eps']) => (f.actualSpan === 'ytd' ? ytdLabel(f.ytdMonths) : null);
+    return (
+      <>
+        <Figure label="EPS" actual={j.eps.actual} result={j.eps.result} format={(n) => formatJpEps(n, j.eps.actualCurrency)} preliminary={false} corrected={false} />
+        {span(j.eps) && <span className="muted"> {span(j.eps)}</span>}
+        <Figure label="Revenue" actual={j.revenue.actual} result={j.revenue.result} format={(n) => formatJpMoney(n, j.revenue.actualCurrency)} preliminary={false} corrected={false} />
+        {span(j.revenue) && <span className="muted"> {span(j.revenue)}</span>}
+      </>
+    );
+  }
   const r2 = r as ReportDto | InReportDto;
   const eps = market === 'IN' ? formatEpsInr : formatEps;
   const money = market === 'IN' ? formatInrCr : (n: number | null) => formatMoney(n, (r2 as ReportDto).revenue.currency);
@@ -93,7 +108,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
 
   const t = today(market);
   const shown = (rows ?? []).filter((r) => watch.symbols.has(r.symbol));
-  const money = (n: number) => (market === 'IN' ? rupees(n) : market === 'HK' ? formatHkPrice(n) : `$${n.toFixed(2)}`);
+  const money = (n: number) => (market === 'IN' ? rupees(n) : market === 'HK' ? formatHkPrice(n) : market === 'JP' ? formatJpPrice(n) : `$${n.toFixed(2)}`);
 
   return (
     <section className="watchlist" aria-label="Watchlist">

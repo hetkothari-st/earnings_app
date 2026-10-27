@@ -76,6 +76,14 @@ export function Header(p: Props) {
           >
             Hong Kong
           </button>
+          <button
+            id="market-jp"
+            className={`market-btn${p.market === 'JP' ? ' on' : ''}`}
+            onClick={() => p.onMarket('JP')}
+            aria-pressed={p.market === 'JP'}
+          >
+            Japan
+          </button>
         </div>
         <label className="zone">
           <span>Times shown in {p.zoneText}</span>
@@ -129,7 +137,7 @@ export function Header(p: Props) {
               {CAP_OPTIONS.map((o) => <option key={o.label} value={o.value ?? ''}>{o.label}</option>)}
             </select>
           )}
-          <input type="search" placeholder={p.market === 'IN' ? 'Find a symbol or company' : p.market === 'HK' ? 'Find a code or company' : 'Find a ticker or company'} value={p.query} onChange={(e) => p.onQuery(e.target.value)} aria-label="Search" />
+          <input type="search" placeholder={p.market === 'IN' ? 'Find a symbol or company' : p.market === 'HK' || p.market === 'JP' ? 'Find a code or company' : 'Find a ticker or company'} value={p.query} onChange={(e) => p.onQuery(e.target.value)} aria-label="Search" />
           <select value={p.sort} onChange={(e) => p.onSort(e.target.value as SortKey)} aria-label="Sort">
             <option value="date">Sort by date</option>
             <option value="cap">Sort by market cap</option>
