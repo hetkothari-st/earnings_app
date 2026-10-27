@@ -325,6 +325,8 @@ export interface ReaderOptions {
 export interface ReaderResult {
   /** Diluted GAAP EPS per share (US: per common share; HK: per ordinary share). Same as `epsGaap`. */
   epsShare: number | null;
+  /** A per-share GAAP candidate was found, even when candidates disagreed and `epsShare` is null. */
+  epsShareStated: boolean;
   /** Diluted GAAP EPS per ADS (profile 'hk' only). */
   epsAds: number | null;
   /** Adjusted / non-GAAP EPS (profile 'us' only; never read for 'hk'). */
@@ -348,7 +350,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
   const qe = new Date(`${opts.periodEnd}T00:00:00Z`);
   const found: Record<Field, Candidate[]> = { epsAdjusted: [], epsGaap: [], epsAds: [], revenue: [] };
   if (Number.isNaN(qe.getTime())) {
-    return { epsShare: null, epsAds: null, epsAdjusted: null, epsGaap: null, revenue: null, unit: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
+    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, revenue: null, unit: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
   }
 
   const tables = parseTables(html);
@@ -503,6 +505,7 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
   const ads = settle('epsAds');
   return {
     epsShare: gaap?.value ?? null,
+    epsShareStated: found.epsGaap.length > 0,
     epsAds: ads?.value ?? null,
     epsAdjusted: adj?.value ?? null,
     epsGaap: gaap?.value ?? null,
