@@ -16,7 +16,13 @@ import type { JobContext } from './jobs/context.js';
 import { startScheduler, warmUp } from './jobs/scheduler.js';
 import { BROWSER_UA, makeHttp } from './sources/http.js';
 import { createSources } from './sources/index.js';
-import { fetchIndexQuote, fetchStockQuote } from './sources/yahoo.js';
+import { fetchIndexQuote, fetchStockQuote, fetchYahooDailyCloses } from './sources/yahoo.js';
+import { HKT, todayHKT } from './hk/domain/hkCalendar.js';
+import type { HkJobContext } from './hk/jobs/context.js';
+import { startHkScheduler, warmUpHk } from './hk/jobs/scheduler.js';
+import { HkPrices } from './hk/live/hkPrices.js';
+import { HkSecWatch } from './hk/live/hkSecWatch.js';
+import { createYahooHkFetcher, yahooHkPastDates } from './hk/sources/yahooHk.js';
 import { todayIST } from './india/domain/nseCalendar.js';
 import type { InJobContext } from './india/jobs/context.js';
 import { startInScheduler, warmUpIndia } from './india/jobs/scheduler.js';
@@ -73,6 +79,21 @@ const kiteLogin = async () => {
   inPrices.refresh();
 };
 
+// Hong Kong: Yahoo `.HK` (summaries, past dates, closes, delayed prices), Cboe chains for the ADRs, and the
+// one shared SEC client for 6-Ks (null without SEC_USER_AGENT: full-level SEC features are off).
+const hkCtx: HkJobContext = {
+  db,
+  now: () => new Date().toISOString(),
+  todayHKT,
+  yahoo: createYahooHkFetcher(),
+  yahooPastDates: yahooHkPastDates,
+  yahooCloses: (s, f, t) => fetchYahooDailyCloses(yahoo, s, f, t, HKT),
+  optionChain: (adr) => sources.optionChain(adr), // the shared Cboe limiter
+  secHttp: sources.secHttp ?? null,
+};
+const hkPrices = new HkPrices(db, { quote: (s) => fetchStockQuote(yahoo, s), index: (s) => fetchIndexQuote(yahoo, s) },
+  (p) => live.publish('hk-prices', { prices: p }), (m) => live.publish('hk-indices', { indices: m }));
+
 // Search and validation lists for watchlists: built in memory, refreshed daily (started below).
 const symbolIndex = new SymbolIndex();
 // Watched stocks flow through the data jobs: US gets its past results once; India stocks join the matching cache.
@@ -95,7 +116,8 @@ const app = buildServer(db, {
         // An off-calendar stock gets its estimated next date now, not at the next 6-hourly run.
         void refreshWatchedEstimates(ctx).catch((e) => console.warn(`watch estimates ${symbol}:`, e instanceof Error ? e.message : e));
       }
-      else syncInWatched();
+      else if (market === 'IN') syncInWatched();
+      else if (market === 'HK') hkPrices.refresh();
     },
   },
   indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true, webRoot: config.webRoot, trustProxy: config.trustProxy,
@@ -118,6 +140,12 @@ const app = buildServer(db, {
       }
       return ok;
     } : undefined,
+  },
+  hk: {
+    prices: () => hkPrices.snapshot(),
+    indices: () => hkPrices.indices(),
+    indexQuote: (s) => fetchIndexQuote(yahoo, s),
+    setVisible: (u, c) => hkPrices.setVisible(u, c),
   },
 });
 // Live stream: signed-in users only (the HTTP routes check the same session cookie).
@@ -146,6 +174,8 @@ if (config.finnhubToken) prices.start();
 // One shared SEC client (<= 10 req/s overall). The 8-K watcher flips US reports to released within seconds.
 const secHttp = sources.secHttp;
 if (secHttp) {
+  // HK: the 6-K feed (2 s / 30 s); YUMC and ONC file 8-Ks, forwarded from the US feed below (no second 8-K request).
+  const hkWatch = new HkSecWatch(hkCtx, secHttp, (ids) => live.publish('hk-results', { ids }));
   // Quick read of the press release: preliminary values until an official source confirms them.
   const reader = async (exhibitUrl: string, reportId: number): Promise<void> => {
     const rep = getReport(db, reportId);
@@ -157,8 +187,16 @@ if (secHttp) {
     if (savePrelim(db, reportId, v, new Date().toISOString())) live.publish('results', { ids: [reportId] });
   };
   // Every 2 s: one feed request each (SEC allows 10/s); a release shows on screen within a few seconds of filing.
-  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids }), reader).start(2000);
+  new SecWatch(ctx, secHttp, (ids) => live.publish('results', { ids }), reader, (items) => hkWatch.onUsFeed(items)).start(2000);
+  hkWatch.start();
 }
+
+startHkScheduler(hkCtx, job, {
+  onResults: (ids) => live.publish('hk-results', { ids }),
+  onMoves: (ids) => live.publish('hk-moves', { ids }),
+});
+void warmUpHk(hkCtx, job);
+hkPrices.start();
 
 startInScheduler(inCtx, job, {
   onResults: (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); },
