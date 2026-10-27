@@ -793,8 +793,21 @@ const JP_EXPLICIT_SPAN = /\b(three|six|nine|twelve|3|6|9|12)[\s-]*months?\b|\b(f
 interface JpFiscal { quarter?: number; year?: number }
 /** Text naming the parent company alone, not the group ("Summary of Non-consolidated Financial Results", 単体, 非連結, 個別). */
 const JP_NON_CONSOLIDATED = /non[\s-]?consolidated|parent[\s-]only|単体|非連結|個別/i;
-/** A heading naming the group: "Consolidated" (capitalised, not "Non-consolidated") or 連結 (not 非連結). */
-const JP_CONSOLIDATED_HEADING = /(?<![Nn]on[\s-]?)\bConsolidated\b|(?<!非)連結/;
+/**
+ * Anchored allowlist of group-results headings, after `JP_HEADING_PREFIX` is stripped: "Consolidated Financial
+ * Results / Statements / Highlights", "Consolidated Results", "Consolidated Operating Results", "Consolidated
+ * Statement(s) of …", "Consolidated Balance Sheet(s)", "Consolidated Earnings", "Consolidated Summary Report", or a
+ * bare "<Company> Consolidated" heading (MUFG); 連結業績 / 連結財務諸表 / 連結経営成績 / 連結損益計算書 / 連結貸借対照表 / 連結決算.
+ */
+const JP_CONSOLIDATED_HEADING = new RegExp(
+  String.raw`^(?:[A-Z][\w&.\- ]{0,30}\s)?Consolidated` +
+  String.raw`(?:\s*[\]】）)］]?\s*$|\s(?:Financial (?:Results|Statements|Highlights)|Results|Operating Results|Statements? of|Balance Sheets?|Earnings|Summary Report))` +
+  String.raw`|^連結(?:業績|財務諸表|経営成績|損益計算書|貸借対照表|決算)`,
+);
+/** Leading numbering / brackets of a heading: "1.", "(2)", "[", "【", "Ⅱ", "Attachment 1:". */
+const JP_HEADING_PREFIX = /^(?:\s*(?:\d{1,2}\s*[.)．]|[(（]\s*\d{1,2}\s*[)）]|[\[【［(（]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s*[.．]?|Attachment\s*\d*\s*[:.]?)\s*)+/;
+/** Words that make a "Consolidated …" block a remark, not a heading. */
+const JP_NOT_HEADING = /subsidiar|basis|compar|note|子会社/i;
 /** Blocks of the text between two tables: paragraphs, divs, headings, line breaks, rows, list items. */
 const JP_BLOCK_END = /<\/p\s*>|<\/div\s*>|<\/h[1-6]\s*>|<br\s*\/?>|<\/tr\s*>|<\/li\s*>/i;
 
@@ -802,9 +815,9 @@ const JP_BLOCK_END = /<\/p\s*>|<\/div\s*>|<\/h[1-6]\s*>|<br\s*\/?>|<\/tr\s*>|<\/
  * Document sections, in order: for each table, whether it sits in a non-consolidated (parent-only) section. The text
  * between tables is split into blocks and read in order:
  * - ON (fail-safe): any block mentioning non-consolidated / parent-only / 単体 / 非連結 / 個別.
- * - OFF: only a heading-like block — it names "Consolidated" (capitalised) or 連結, is at most 120 characters, and
- *   holds no sentence break (". a", 。). Prose ("dividends from consolidated subsidiaries", 連結子会社からの配当金が
- *   増加しました。) never ends a non-consolidated section.
+ * - OFF: only a block that, after leading numbering / brackets, STARTS with a group-results heading
+ *   (`JP_CONSOLIDATED_HEADING`), is at most 120 characters and names no subsidiaries / basis / comparison / note /
+ *   子会社. Everything else ("Consolidated subsidiaries", 連結子会社数, prose) never ends a non-consolidated section.
  * Tables are found with the same pattern as `parseTables`, so the flags line up with its tables.
  */
 function jpNonConsolidatedSections(html: string): boolean[] {
@@ -816,7 +829,7 @@ function jpNonConsolidatedSections(html: string): boolean[] {
       const text = decode(block);
       if (!text) continue;
       if (JP_NON_CONSOLIDATED.test(text)) state = true;
-      else if (JP_CONSOLIDATED_HEADING.test(text) && text.length <= 120 && !/\.\s+[a-z]|。/.test(text)) state = false;
+      else if (text.length <= 120 && !JP_NOT_HEADING.test(text) && JP_CONSOLIDATED_HEADING.test(text.replace(JP_HEADING_PREFIX, ''))) state = false;
     }
     out.push(state);
   }

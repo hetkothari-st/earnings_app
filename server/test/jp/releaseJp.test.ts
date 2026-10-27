@@ -334,6 +334,29 @@ describe('review round 1', () => {
     expect(readJpRelease(html, Q4)).toMatchObject(parentNull);
   });
 
+  it('A1–A5: blocks merely mentioning consolidation never end a non-consolidated section', () => {
+    const nc = '<p>2. Summary of Non-consolidated Financial Results</p>';
+    const cases = [
+      `${nc}<p>Consolidated subsidiaries</p><table>${tr('Number', '12')}</table><p>(1) Operating Results</p><table>${ncBody}</table>`,
+      `${nc}<p>Consolidated subsidiaries</p><table>${ncBody}</table>`,
+      `${nc}<p>Consolidated basis comparison</p><table>${ncBody}</table>`,
+      `<p>単体業績</p><p>連結子会社数</p><table>${ncBody}</table>`,
+      `<p>Non-consolidated Financial Results</p><p>Note: Consolidated figures are shown above</p><table>${ncBody}</table>`,
+      `<p>Non-consolidated Financial Results<br>Compared with Consolidated results<br>(Millions of yen)</p><table>${ncBody}</table>`,
+    ];
+    for (const html of cases) expect(readJpRelease(html, Q4), html.slice(0, 80)).toMatchObject(parentNull);
+  });
+
+  it('a group-results heading (anchored allowlist) ends a non-consolidated section', () => {
+    // The unit sits inside the table, so the heading text just above is not mistaken for the caption.
+    const consTable = `<table>${tr('', 'Fiscal year ended March 31, 2026') + tr('', 'Millions of yen') +
+      tr('Net sales', '48,000,000') + tr('Basic earnings per share', '250.00')}</table>`;
+    const group = { revenue: 48_000_000_000_000, eps: 250, span: 'ytd', ytdMonths: 12 };
+    for (const heading of ['MUFG Consolidated', '[ MUFG Consolidated ]', '(2) Consolidated Statements of Income', 'Ⅱ. Consolidated Financial Results', '連結業績']) {
+      expect(readJpRelease(`<p>BK Non-consolidated</p><table>${ncBody}</table><p>${heading}</p>${consTable}`, Q4), heading).toMatchObject(group);
+    }
+  });
+
   it('X4: a "(Reference)" note row does not make a consolidated table non-consolidated', () => {
     const html = table('(Millions of yen, except per share amounts)',
       tr('', 'Fiscal year ended March 31, 2026') + tr('Net sales', '48,000,000') + tr('Basic earnings per share', '250.00') +
