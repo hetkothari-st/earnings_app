@@ -640,16 +640,38 @@ export function lastJpSecSeenAt(db: DatabaseSync): string | null {
 
 export type EdinetOutcome = 'merged' | 'no-row' | 'blank' | 'error';
 
-export function edinetSeen(db: DatabaseSync, docId: string): boolean {
-  return db.prepare('SELECT 1 FROM jp_edinet_seen WHERE doc_id = ?').get(docId) != null;
+/** Attempts after which an errored document is given up (it then counts as seen for good). */
+export const EDINET_MAX_ATTEMPTS = 5;
+/** Wait before retrying an errored document: 15 min, doubling per attempt. */
+const edinetRetryDelayMs = (attempts: number): number => 15 * 60_000 * 2 ** (attempts - 1);
+
+/**
+ * True when the document needs no (further) handling. Without `now`, any recorded outcome counts. With `now`, an
+ * 'error' outcome counts only while its retry is not yet due, or after EDINET_MAX_ATTEMPTS attempts.
+ */
+export function edinetSeen(db: DatabaseSync, docId: string, now?: string): boolean {
+  const r = db.prepare('SELECT outcome, attempts, retry_after FROM jp_edinet_seen WHERE doc_id = ?').get(docId) as
+    { outcome: string; attempts: number; retry_after: string | null } | undefined;
+  if (!r) return false;
+  if (now === undefined || r.outcome !== 'error' || r.attempts >= EDINET_MAX_ATTEMPTS) return true;
+  return r.retry_after != null && Date.parse(r.retry_after) > Date.parse(now);
 }
 
-/** Each EDINET document is handled once; the first outcome recorded is kept. */
+/**
+ * Each EDINET document is handled once: the first 'merged' / 'no-row' / 'blank' outcome is kept for good. An
+ * 'error' outcome is provisional: a later error counts one more attempt and pushes the retry out (backoff), and a
+ * later success replaces it.
+ */
 export function markEdinetSeen(
   db: DatabaseSync, docId: string, code: string | null, docType: string, periodEnd: string | null, outcome: EdinetOutcome, now: string,
 ): void {
-  db.prepare('INSERT OR IGNORE INTO jp_edinet_seen (doc_id, code, doc_type, period_end, outcome, seen_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(docId, code, docType, periodEnd, outcome, now);
+  const prev = db.prepare('SELECT outcome, attempts FROM jp_edinet_seen WHERE doc_id = ?').get(docId) as
+    { outcome: string; attempts: number } | undefined;
+  if (prev && prev.outcome !== 'error') return;
+  const attempts = outcome === 'error' ? (prev?.attempts ?? 0) + 1 : prev?.attempts ?? 1;
+  const retryAfter = outcome === 'error' ? new Date(Date.parse(now) + edinetRetryDelayMs(attempts)).toISOString() : null;
+  db.prepare(`INSERT OR REPLACE INTO jp_edinet_seen (doc_id, code, doc_type, period_end, outcome, seen_at, attempts, retry_after)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(docId, code, docType, periodEnd, outcome, now, attempts, retryAfter);
 }
 
 export function lastEdinetSeenAt(db: DatabaseSync): string | null {

@@ -112,4 +112,7 @@ CREATE TABLE IF NOT EXISTS jp_past_dates (
 `;
 
 /** Columns that databases created before they existed still need. */
-export const JP_ADDED_COLUMNS: Record<string, [string, string][]> = {};
+export const JP_ADDED_COLUMNS: Record<string, [string, string][]> = {
+  // An 'error' outcome is retried with backoff: attempts so far, and when the next attempt is due.
+  jp_edinet_seen: [['attempts', 'INTEGER NOT NULL DEFAULT 1'], ['retry_after', 'TEXT']],
+};
