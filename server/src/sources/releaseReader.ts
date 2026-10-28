@@ -1613,14 +1613,26 @@ const euStripNominal = (text: string) => EU_NOMINAL.reduce((t, [re, to]) => t.re
  * beside a major currency in the same text ("(€)(c)", "€ c", "(£ p)") may be a footnote letter or a minor unit: the
  * text is `ambiguous`.
  */
-interface EuEpsMarks { majors: Set<EuCurrency>; explicitCents: Set<'USD' | 'EUR'>; bareCents: boolean; pence: boolean; ambiguous: boolean }
+interface EuEpsMarks {
+  majors: Set<EuCurrency>;
+  explicitCents: Set<'USD' | 'EUR'>;
+  bareCents: boolean;
+  pence: boolean;
+  /** A lone letter "c" / "(c)": cents only as a whole column-mark cell; in a label it may be a footnote letter. */
+  letterC: boolean;
+  /** A lone letter "p" / "(p)" (not "pence"). */
+  letterP: boolean;
+  ambiguous: boolean;
+}
 
 /** Explicit cents forms (positive allowlist): "US cents", "US$ cents", "US$c", "USD cents", "euro cents", "EUR cents", "€c", "c€", "€ ct". */
 const EU_US_CENTS = /\bu\.?\s?s\.?\s*\$?\s*cents?\b|\busd\s*cents?\b|\bus\$\s?c\b|\busc\b|\bus\s+cts?\b/gi;
 const EU_EURO_CENTS = /\beuros?\s*(?:cents?|cts?)\b|\beur\s*(?:cents?|cts?)\b|€c\b|\bc€|€\s?(?:cents?|cts?)\b/gi;
-/** A bare minor-unit marker, once the explicit forms are taken out. */
-const EU_BARE_CENTS = /\bcents?\b|¢|\bcts?\b|(?:^|[\s(])c(?=[\s)]|$)/i;
-const EU_PENCE = /\bpence\b|(?:^|[\s(])p(?=[\s)]|$)/i;
+/** A bare minor-unit marker, once the explicit forms are taken out: a word form ("cents", "¢", "ct") or a lone letter. */
+const EU_CENTS_WORD = /\bcents?\b|¢|\bcts?\b/i;
+const EU_LETTER_C = /(?:^|[\s(])c(?=[\s)]|$)/i;
+const EU_PENCE_WORD = /\bpence\b/i;
+const EU_LETTER_P = /(?:^|[\s(])p(?=[\s)]|$)/i;
 
 function euEpsMarks(text: string): EuEpsMarks {
   let t = euStripNominal(text);
@@ -1635,9 +1647,11 @@ function euEpsMarks(text: string): EuEpsMarks {
   if (/\bdkk\b|danish kron/i.test(t)) majors.add('DKK');
   if (/\bsek\b|\bmsek\b|swedish kron/i.test(t)) majors.add('SEK');
   if (/\bnok\b|\bmnok\b|norwegian kron/i.test(t)) majors.add('NOK');
-  const bareCents = EU_BARE_CENTS.test(t);
-  const pence = EU_PENCE.test(t);
-  return { majors, explicitCents, bareCents, pence, ambiguous: (bareCents || pence) && (majors.size > 0 || explicitCents.size > 0) };
+  const letterC = EU_LETTER_C.test(t);
+  const letterP = EU_LETTER_P.test(t);
+  const bareCents = letterC || EU_CENTS_WORD.test(t);
+  const pence = letterP || EU_PENCE_WORD.test(t);
+  return { majors, explicitCents, bareCents, pence, letterC, letterP, ambiguous: (bareCents || pence) && (majors.size > 0 || explicitCents.size > 0) };
 }
 
 /**
@@ -1754,10 +1768,10 @@ const EU_YTD = /\byear[\s-]+to[\s-]+date\b|\bytd\b|\bcumulative\b/i;
  */
 const EU_QUARTER_HEAD = /^(?:for\s+the\s+)?(?:q[1-4]\s*'?\s*(?:\d{4}|\d{2})\b|[1-4]q\s*'?\s*(?:\d{4}|\d{2})\b|(?:first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\b|(?:three|3)[\s-]*months?\s+(?:ended|ending|to)\b|3m\b|quarter\s+(?:ended|ending|to)\b)/i;
 /**
- * Words that rule a head out as a quarter: quarter ranges ("Q1-Q3", "1-3Q"), accumulated / cumulative / YTD / year to
- * date / to date, six or nine months, 6M / 9M, H1 / H2, half.
+ * Words that rule a head out as a quarter: quarter ranges ("Q1-Q3", "1-3Q"), accumulated / accum. / cum. / cumulative /
+ * cumul / YTD / year to date / to date, six or nine months, 6M / 9M, H1 / H2, half.
  */
-const EU_NOT_QUARTER = /\bq[1-4]\s*[-–—~]\s*q?[1-4]\b|\b[1-4]\s*[-–—~]\s*[1-4]\s*q\b|accumulated|cumulative|\bytd\b|\byear[\s-]+to[\s-]+date\b|\bto[\s-]+date\b|\b(?:nine|six|9|6)[\s-]*months?\b|\b[69]m\b|\bh[12]\b|\b[12]h\b|\bhalf\b|\bfirst[\s-]half\b/i;
+const EU_NOT_QUARTER = /\bq[1-4]\s*[-–—~]\s*q?[1-4]\b|\b[1-4]\s*[-–—~]\s*[1-4]\s*q\b|\baccum|\bcum\.|\bcumul|\bytd\b|\byear[\s-]+to[\s-]+date\b|\bto[\s-]+date\b|\b(?:nine|six|9|6)[\s-]*months?\b|\b[69]m\b|\bh[12]\b|\b[12]h\b|\bhalf\b|\bfirst[\s-]half\b/i;
 
 /** A range / cumulative token, or a month range ("Jan-Sep", with or without a year) other than three months. */
 function euNotQuarter(text: string): boolean {
@@ -1855,7 +1869,7 @@ function euColumn(own: string, labelCol: string, block: string, pe: Date, span: 
 
 interface EuCandidate { value: number; cur: EuCurrency; continuing: boolean }
 
-interface EuRow { field: EuField; continuing: boolean; nums: Num[]; signs: Map<number, EuCurrency>; headers: Cell[][]; rawLabel: string }
+interface EuRow { field: EuField; continuing: boolean; nums: Num[]; signs: Map<number, EuCurrency>; headers: Cell[][]; rawLabel: string; sectionRaw: string }
 
 function readEu(html: string, opts: ReaderOptions): ReaderResult {
   const notes: string[] = [];
@@ -1882,6 +1896,9 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   for (const [ti, table] of tables.entries()) {
     const caption = captions[ti]!;
     if (EU_ADJUSTED.test(caption) || JP_FORECAST.test(caption)) continue;
+    // Period words in the caption ("Nine months to 30 September", "Six months ended", "Year to date", "H1"): no column
+    // of the table is the quarter.
+    if (span === 'quarter' && euNotQuarter(caption)) continue;
     // Revenue only from a table with a per-share line (the income statement or the results summary); a release with
     // no per-share line anywhere (a trading update) may give it from a table that is not a segment breakdown.
     const revenueOk = epsRow(table) || (!docHasEps && !EU_SEGMENT.test(caption));
@@ -1918,7 +1935,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
         if (/^(basic|diluted|basic and diluted)$/.test(euLabel(first.text)) && section) rawLabel = `${sectionRaw} ${first.text}`;
         const f = euField(rawLabel, bank);
         const vals = nums.filter((n) => !n.pct);
-        if (f && vals.length && !EU_ADJUSTED.test(section)) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel });
+        if (f && vals.length && !EU_ADJUSTED.test(section)) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel, sectionRaw });
         if (/:\s*$/.test(first.text)) { section = euLabel(first.text); sectionRaw = first.text; }
         continue;
       }
@@ -1974,6 +1991,20 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     if (statementTitle(caption) != null) for (const m of caption.matchAll(new RegExp(PAREN_GROUP, 'g'))) addCaption(euUnit(m[0]));
     const tableLevel = headUnits.size || headUnknown ? headUnits : captionUnits;
     const tableCur = new Set([...tableLevel.values()].map((u) => u.cur).filter((c): c is EuCurrency => c !== null));
+    // Every currency the table names (head and caption units, column marks, row-label units): a lone "(p)" in an EPS
+    // label is pence only when none of them is another currency than GBP.
+    const tableCurs = new Set<EuCurrency>();
+    const addCur = (c: EuCurrency | null | undefined) => { if (c) tableCurs.add(c); };
+    for (const r of nonData) {
+      for (const c of r) {
+        if (!c.text) continue;
+        addCur(euCellUnitInfo(c.text).unit?.cur);
+        if (EU_CURRENCY_MARK.test(c.text)) for (const x of euMarkFamily(euEpsMarks(c.text))) addCur(x);
+      }
+    }
+    for (const u of captionUnits.values()) addCur(u.cur);
+    for (const r of rowsOut) for (const m of euStripNominal(r.rawLabel).matchAll(new RegExp(PAREN_GROUP, 'g'))) addCur(euUnit(m[0])?.cur);
+    const otherCur = [...tableCurs].some((c) => c !== 'GBP');
     const noUnit = () => { if (!notes.includes('revenue: no unit stated for table')) notes.push('revenue: no unit stated for table'); };
 
     for (const row of rowsOut) {
@@ -1988,6 +2019,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
       const rowUnits = labelParens.map((p) => euUnit(p)).filter((u): u is EuUnit => u !== null);
       const rowUnknown = EU_UNIT_LIKE.test(label.replace(new RegExp(PAREN_GROUP, 'g'), (p) => (euUnit(p) ? ' ' : p)));
       const labelMarks = euEpsMarks(row.rawLabel);
+      const sectionMarks = euEpsMarks(row.sectionRaw);
       for (const n of row.nums) {
         const overCells = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && !(c.start === 0 && c.span === 1)));
         const own = overCells.map((c) => c.text).join(' ').trim();
@@ -2032,6 +2064,17 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
           // currency; US / euro cents converted /100; pence stay 'GBp'; any other pairing or conflict → not read).
           if (n.decimals < 1 || n.decimals > 3 || Math.abs(n.value) >= 100_000) continue;
           if (rowUnknown || colUnknown) continue;
+          // A lone letter "c" / "(c)" in the row or section label may be a footnote letter or cents: never read. Cents
+          // come only from "cents" / "¢" / "ct", the explicit forms, or a whole column-mark cell "c" / "(c)".
+          if (labelMarks.letterC || sectionMarks.letterC) continue;
+          // A lone "(p)" in a table that names another currency ("$m", "€m"): footnote or pence, never read.
+          if ((labelMarks.letterP || sectionMarks.letterP) && otherCur) continue;
+          // A minor unit in a head cell over the column that is not a whole mark ("Q3 2026 (c)"): never read.
+          if (overCells.some((c) => {
+            if (EU_CURRENCY_MARK.test(c.text)) return false;
+            const m = euEpsMarks(c.text);
+            return m.bareCents || m.pence || m.explicitCents.size > 0;
+          })) continue;
           const res = euEpsCurrency([labelMarks, ...marks], sign);
           if (!res) continue;
           const cur = res.cur;
