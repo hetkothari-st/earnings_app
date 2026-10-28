@@ -70,6 +70,11 @@ describe('createTradegate', () => {
       return impl(...a);
     }) as typeof fetch;
     const tg = createTradegate({ enabled: true, fetchImpl: f, limiter: createSlotLimiter(1000, () => Date.now()) });
+    const rp = tg.checkRobots();
+    await vi.advanceTimersByTimeAsync(1000);
+    await rp;
+    stamps.length = 0;
+    calls.length = 0;
     const ps = [tg.quote(SAP), tg.quote(SAP), tg.quote(SAP)];
     await vi.advanceTimersByTimeAsync(3000);
     const qs = await Promise.all(ps);
@@ -90,18 +95,19 @@ describe('createTradegate', () => {
         : { status, body: status === 200 ? fx('tradegate_DE0007164600.json') : '' },
     );
     const tg = createTradegate({ enabled: true, fetchImpl: impl, now: () => t, limiter: instant });
+    await tg.checkRobots();
     expect(tg.state()).toBe('on');
     expect(await tg.quote(SAP)).toBeNull();
     expect(tg.state()).toBe('backoff');
     expect(tg.backoffUntil()).toBe(new Date(t + 3_600_000).toISOString());
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2); // robots + the 429
     t += 3_599_999;
     expect(await tg.quote(SAP)).toBeNull();
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
     t += 1;
     status = 200;
     expect((await tg.quote(SAP))?.last).toBe(213.15);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
     expect(tg.state()).toBe('on');
     expect(tg.backoffUntil()).toBeNull();
     expect(tg.lastPollAt()).toBe(new Date(t).toISOString());
@@ -167,8 +173,51 @@ describe('createTradegate', () => {
   it('unknown ISIN (empty 200 body) → null and not an error', async () => {
     const { impl } = fakeFetch(() => ({ body: fx('tradegate_unknown.json') }));
     const tg = createTradegate({ enabled: true, fetchImpl: impl, limiter: instant });
+    await tg.checkRobots();
     expect(await tg.quote('XX0000000000')).toBeNull();
     expect(tg.state()).toBe('on');
+  });
+
+  it('fail-closed: quote() without a robots pass makes zero fetches and state is off-robots', async () => {
+    const { impl, calls } = fakeFetch(okHandler);
+    const tg = createTradegate({ enabled: true, fetchImpl: impl, limiter: instant });
+    expect(tg.state()).toBe('off-robots');
+    expect(await tg.quote(SAP)).toBeNull();
+    expect(calls).toHaveLength(0);
+    await tg.checkRobots();
+    expect(tg.state()).toBe('on');
+    expect((await tg.quote(SAP))?.last).toBe(213.15);
+  });
+
+  it('queued quotes do not fetch once a sibling got 429', async () => {
+    vi.useFakeTimers();
+    const { impl, calls } = fakeFetch((u) =>
+      isRobots(u) ? { body: fx('tradegate_robots.txt') } : { status: 429, body: '' },
+    );
+    const tg = createTradegate({ enabled: true, fetchImpl: impl, limiter: createSlotLimiter(1000, () => Date.now()) });
+    const rp = tg.checkRobots();
+    await vi.advanceTimersByTimeAsync(1000);
+    await rp;
+    calls.length = 0;
+    const ps = [tg.quote(SAP), tg.quote(AZN), tg.quote(SAP)];
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await Promise.all(ps)).toEqual([null, null, null]);
+    expect(calls).toHaveLength(1);
+    expect(tg.state()).toBe('backoff');
+  });
+
+  it('lastPollAt is set only after the body parses', async () => {
+    let body = '';
+    const { impl } = fakeFetch((u) => (isRobots(u) ? { body: fx('tradegate_robots.txt') } : { body }));
+    const tg = createTradegate({ enabled: true, fetchImpl: impl, limiter: instant });
+    await tg.checkRobots();
+    expect(await tg.quote(SAP)).toBeNull();
+    body = '<html>';
+    expect(await tg.quote(SAP)).toBeNull();
+    expect(tg.lastPollAt()).toBeNull();
+    body = fx('tradegate_DE0007164600.json');
+    await tg.quote(SAP);
+    expect(tg.lastPollAt()).not.toBeNull();
   });
 
   it('User-Agent has no @', async () => {

@@ -66,7 +66,7 @@ export function createTradegate(o: {
   const headers = { 'User-Agent': EUROPE_UA, Accept: 'application/json' };
 
   let backoffEnd = 0;
-  /** null until the first check: an unchecked client is allowed (the app checks at start and weekly). */
+  /** Fail-closed: null (never checked) behaves as disallowed until a check has passed. */
   let robotsOk: boolean | null = null;
   let lastPoll: string | null = null;
 
@@ -76,8 +76,10 @@ export function createTradegate(o: {
   };
   const isBlock = (status: number): boolean => status === 429 || status === 403;
 
-  async function get(url: string): Promise<Response | null> {
+  async function get(url: string, gated: boolean): Promise<Response | null> {
     await limiter.wait();
+    // a sibling queued ahead of us may have been told to back off while we waited for our slot
+    if (gated && (robotsOk !== true || inBackoff())) return null;
     try {
       return await doFetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
     } catch {
@@ -87,8 +89,8 @@ export function createTradegate(o: {
 
   return {
     async quote(isin) {
-      if (!o.enabled || robotsOk === false || inBackoff()) return null;
-      const res = await get(`${TRADEGATE_REFRESH}?isin=${encodeURIComponent(isin)}`);
+      if (!o.enabled || robotsOk !== true || inBackoff()) return null;
+      const res = await get(`${TRADEGATE_REFRESH}?isin=${encodeURIComponent(isin)}`, true);
       if (!res) return null;
       if (isBlock(res.status)) {
         startBackoff();
@@ -96,7 +98,6 @@ export function createTradegate(o: {
       }
       if (!res.ok) return null;
       const at = new Date(now()).toISOString();
-      lastPoll = at;
       let body: string;
       try {
         body = await res.text();
@@ -110,12 +111,13 @@ export function createTradegate(o: {
       } catch {
         return null;
       }
+      lastPoll = at;
       return parseTradegate(json, isin, at);
     },
 
     async checkRobots() {
       if (!o.enabled || inBackoff()) return;
-      const res = await get(TRADEGATE_ROBOTS);
+      const res = await get(TRADEGATE_ROBOTS, false);
       if (res && isBlock(res.status)) {
         startBackoff();
         if (robotsOk === null) robotsOk = false;
@@ -135,7 +137,7 @@ export function createTradegate(o: {
 
     state() {
       if (!o.enabled) return 'off-env';
-      if (robotsOk === false) return 'off-robots';
+      if (robotsOk !== true) return 'off-robots'; // includes never checked
       if (inBackoff()) return 'backoff';
       return 'on';
     },
