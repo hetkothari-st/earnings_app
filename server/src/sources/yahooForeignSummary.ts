@@ -10,8 +10,15 @@ export interface YahooForeignSummary {
   industry: string | null;
   /** Only when the quote is in the market's own currency (`capCurrency`). */
   marketCap: number | null;
+  /** The currency `marketCap` is in (null when there is no cap). Optional so hand-built summaries need not set it. */
+  marketCapCurrency?: string | null;
   /** Local date (in `zone`) of the quote the cap belongs to. */
   marketCapAsOf: string | null;
+  /**
+   * Month (1-12, in UTC) of `defaultKeyStatistics.lastFiscalYearEnd`; null when absent or the module was not
+   * requested. Optional so hand-built summaries need not set it.
+   */
+  fyEndMonth?: number | null;
   /** Next report date: a single date only (a range gives null), local date in `zone`. */
   nextDate: string | null;
   /**
@@ -40,6 +47,7 @@ const Schema = z.object({
         currency: z.string().nullish(), marketCap: Raw, regularMarketTime: z.number().nullish(),
         longName: z.string().nullish(), shortName: z.string().nullish(),
       }).nullish(),
+      defaultKeyStatistics: z.object({ lastFiscalYearEnd: Raw }).nullish(),
       assetProfile: z.object({ sector: z.string().nullish(), industry: z.string().nullish() }).nullish(),
       calendarEvents: z.object({
         earnings: z.object({
@@ -75,11 +83,19 @@ const Schema = z.object({
  * Parses a quoteSummary answer (modules price, assetProfile, calendarEvents, earningsTrend,
  * earningsHistory, earnings) for a stock listed in `zone`, whose own currency is `capCurrency`.
  */
-export function parseYahooSummaryFor(json: unknown, o: { zone: string; capCurrency: string }): YahooForeignSummary {
+export function parseYahooSummaryFor(
+  json: unknown,
+  o: { zone: string; capCurrency: string | ((priceCurrency: string | null) => string | null) },
+): YahooForeignSummary {
   const parsed = Schema.safeParse(json);
-  if (!parsed.success) throw new SourceFormatError(`Yahoo quoteSummary (${o.capCurrency}): ${parsed.error.message}`);
+  if (!parsed.success) throw new SourceFormatError(`Yahoo quoteSummary (${typeof o.capCurrency === 'string' ? o.capCurrency : 'cap'}): ${parsed.error.message}`);
   const r = parsed.data.quoteSummary.result[0]!;
-  const own = r.price?.currency === o.capCurrency;
+  const priceCur = r.price?.currency ?? null;
+  // A string: the cap is kept only when the quote is in that currency. A function: it names the currency the cap is in
+  // (null = unknown, so no cap is kept).
+  const capCur = typeof o.capCurrency === 'string' ? (priceCur === o.capCurrency ? o.capCurrency : null) : o.capCurrency(priceCur);
+  const own = capCur != null;
+  const fyEnd = r.defaultKeyStatistics?.lastFiscalYearEnd?.raw;
   const cap = r.price?.marketCap?.raw ?? null;
   const time = r.price?.regularMarketTime;
   const dates = r.calendarEvents?.earnings?.earningsDate ?? [];
@@ -89,6 +105,8 @@ export function parseYahooSummaryFor(json: unknown, o: { zone: string; capCurren
     sector: r.assetProfile?.sector || null,
     industry: r.assetProfile?.industry || null,
     marketCap: own ? cap : null,
+    marketCapCurrency: own && cap != null ? capCur : null,
+    fyEndMonth: fyEnd != null ? DateTime.fromSeconds(fyEnd, { zone: 'utc' }).month : null,
     marketCapAsOf: own && cap != null && time ? DateTime.fromSeconds(time, { zone: o.zone }).toISODate() : null,
     nextDate: dates.length === 1 ? DateTime.fromSeconds(dates[0]!.raw, { zone: o.zone }).toISODate() : null,
     nextDateEstimated: r.calendarEvents?.earnings?.isEarningsDateEstimate ?? null,
