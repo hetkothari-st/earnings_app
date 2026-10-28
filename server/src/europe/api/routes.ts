@@ -1,12 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { DateTime } from 'luxon';
 import type { DatabaseSync } from 'node:sqlite';
+import { isAdmin } from '../../auth/store.js';
+import { config } from '../../config.js';
 import type { IndexQuote } from '../../sources/yahoo.js';
-import { getEuropeReport, listEuropeRange } from '../db/europeRepo.js';
+import { getEuropeReport, lastEsefAt, lastEuropeSecSeenAt, lastSignalAt, listEuropeRange } from '../db/europeRepo.js';
 import { exchangesOf, type EuropeMarket, type ExchangeId } from '../exchanges.js';
 import { EUROPE_INDICES } from '../sources/yahooEurope.js';
 import { toEuropeDto } from './dto.js';
-import type { EuropeEarningsResponse, EuropeLivePriceDto, EuropeMarketDto } from './types.js';
+import type { EuropeAdminDto, EuropeEarningsResponse, EuropeLivePriceDto, EuropeMarketAdmin, EuropeMarketDto } from './types.js';
 
 const MAX_RANGE_DAYS = 400;
 const MARKETS_TTL_MS = 15_000;
@@ -79,5 +81,48 @@ export function registerEuropeRoutes(
     }));
     marketsCache = { at: nowFn(), body: { indices } };
     return marketsCache.body;
+  });
+}
+
+/**
+ * What only the running server knows for the admin page: the Tradegate poller and, once a universe build has run in
+ * this process, its left-out count and time per market (not stored; 0 and null until then).
+ */
+export type EuropeAdminSource = () => Pick<EuropeAdminDto, 'tradegate'> & {
+  universe?: Partial<Record<EuropeMarket, { leftOut: number; at: string }>>;
+};
+
+function marketAdmin(db: DatabaseSync, market: EuropeMarket, universe: { leftOut: number; at: string } | undefined): EuropeMarketAdmin {
+  const c = db.prepare(`SELECT COALESCE(SUM(active = 1 AND level = 'full'), 0) AS full, COALESCE(SUM(active = 1 AND level != 'full'), 0) AS basic,
+      COALESCE(SUM(active = 0), 0) AS inactive FROM europe_stocks WHERE market = ?`).get(market) as { full: number; basic: number; inactive: number };
+  return {
+    full: c.full, basic: c.basic, inactive: c.inactive,
+    leftOut: universe?.leftOut ?? 0, lastUniverseAt: universe?.at ?? null,
+    lastSixKAt: lastEuropeSecSeenAt(db, market),
+    // One PR Newswire feed serves both markets; DILA (the AMF) is EU only.
+    lastPrnAt: lastSignalAt(db, 'prn'),
+    lastDilaAt: market === 'EU' ? lastSignalAt(db, 'dila') : null,
+    lastEsefAt: lastEsefAt(db, market),
+    readerOn: market === 'UK' ? !!(config.fastFields.ukEps || config.fastFields.ukRevenue) : !!(config.fastFields.euEps || config.fastFields.euRevenue),
+  };
+}
+
+/** `GET /api/admin/europe`: both markets' counts and source times, Tradegate and key settings. Admins only. Never includes a key. */
+export function registerEuropeAdmin(
+  app: FastifyInstance, db: DatabaseSync, admin: EuropeAdminSource, currentUser: (req: FastifyRequest) => string | null,
+): void {
+  app.get('/api/admin/europe', async (req, reply) => {
+    const user = currentUser(req);
+    if (!user) return reply.code(401).send({ error: 'Not signed in' });
+    if (!isAdmin(db, user)) return reply.code(403).send({ error: 'Admins only' });
+    const live = admin();
+    const body: EuropeAdminDto = {
+      UK: marketAdmin(db, 'UK', live.universe?.UK),
+      EU: marketAdmin(db, 'EU', live.universe?.EU),
+      tradegate: { state: live.tradegate.state, backoffUntil: live.tradegate.backoffUntil, lastPollAt: live.tradegate.lastPollAt },
+      secConfigured: !!config.secUserAgent,
+      openFigiConfigured: !!config.openFigiApiKey,
+    };
+    return body;
   });
 }
