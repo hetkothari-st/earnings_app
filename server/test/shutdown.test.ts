@@ -41,4 +41,25 @@ describe('installShutdown', () => {
     log.mockRestore();
     warn.mockRestore();
   });
+
+  it('a close that never settles (an open WebSocket/SSE client) is given up after the timeout; later closes still run', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const order: string[] = [];
+    const handlers = new Map<string, () => void>();
+    let exited: (code: number) => void = () => {};
+    const done = new Promise<number>((r) => { exited = r; });
+    installShutdown({
+      stops: [],
+      closes: [() => new Promise<void>(() => {}), () => { order.push('close-db'); }],
+      on: (signal, fn) => handlers.set(signal, fn),
+      exit: exited,
+      closeTimeoutMs: 20,
+    });
+    handlers.get('SIGTERM')!();
+    expect(await done).toBe(0);
+    expect(order).toEqual(['close-db']);
+    log.mockRestore();
+    warn.mockRestore();
+  });
 });
