@@ -113,3 +113,60 @@ describe('readEuropeRelease (uk) — "Half-year to <date>" is six months, not a 
     expect(readEuropeRelease(one([['', 'Half-year to 30 Jun 2026', 'Half-year to 30 Jun 2025']]), { ...H1x, profile: 'eu' }).eps).toBeNull();
   });
 });
+
+describe('readEuropeRelease (uk) — a nil row ("—" in every figure column) is data, not a new header block', () => {
+  const Q3x = { periodEnd: '2025-09-30', fiscalQuarter: 3 as const, profile: 'uk' as const };
+  const statement = (nil: string) => doc(table('', [['For the quarter ended 30 September', '2025 $m', '2024 $m']], [
+    ['Total Revenue', '15,191', '13,565'],
+    ['Fair value movements related to own credit risk', nil, nil],
+    ['Basic earnings per $0.25 Ordinary Share', '$1.64', '$0.92'],
+    ['Diluted earnings per $0.25 Ordinary Share', '$1.62', '$0.91'],
+  ]));
+
+  it('the rows below it keep the table head', () => {
+    for (const nil of ['-', '—', '–']) {
+      expect(pick(readEuropeRelease(statement(nil), Q3x))).toEqual({
+        revenue: 15_191_000_000, revenueCurrency: 'USD', eps: 1.64, epsDiluted: 1.62, epsCurrency: 'USD', span: 'quarter', ytdMonths: null,
+      });
+    }
+  });
+
+  it('a real head row in the middle still starts a new block; the eu profile is unchanged', () => {
+    const twoBlocks = doc(table('', [['For the quarter ended 30 September', '2025 $m', '2024 $m']], [
+      ['Total Revenue', '15,191', '13,565'],
+      ['For the nine months ended 30 September', '2025 $m', '2024 $m'],
+      ['Basic earnings per $0.25 Ordinary Share', '$5.10', '$3.57'],
+    ]));
+    expect(readEuropeRelease(twoBlocks, Q3x).eps).toBeNull();
+    expect(readEuropeRelease(statement('-'), { ...Q3x, profile: 'eu' }).eps).toBeNull();
+  });
+});
+
+describe('readEuropeRelease (uk) — "&pound;" / "&euro;" are the currency signs', () => {
+  const Q1 = { periodEnd: '2026-03-31', fiscalQuarter: 1 as const, profile: 'uk' as const };
+  it('reads "&pound;m" heads and "&euro;" signs as £ / €', () => {
+    const html = doc(table('', [['', 'Q1 2026', 'Q1 2025'], ['', '&pound;m', '&pound;m']], [['Revenue', '4,358', '3,980'], ['Basic earnings per share (pence)', '17.9', '15.5']]));
+    expect(pick(readEuropeRelease(html, Q1))).toEqual({
+      revenue: 4_358_000_000, revenueCurrency: 'GBP', eps: 17.9, epsDiluted: null, epsCurrency: 'GBp', span: 'quarter', ytdMonths: null,
+    });
+    const eur = doc(table('', [['&euro;m', 'Q1 2026', 'Q1 2025']], [['Revenue', '5,723', '5,585'], ['Basic earnings per share', '&euro;1.10', '&euro;0.99']]));
+    expect([readEuropeRelease(eur, Q1).revenueCurrency, readEuropeRelease(eur, Q1).eps, readEuropeRelease(eur, Q1).epsCurrency]).toEqual(['EUR', 1.1, 'EUR']);
+  });
+});
+
+describe('readEuropeRelease (uk) — a row of figures with a unit suffix ("26bps") is data, not a new header block', () => {
+  const Q1 = { periodEnd: '2026-03-31', fiscalQuarter: 1 as const, profile: 'uk' as const };
+  const html = (row: string[]) => doc(table('', [['', 'Q1 2026', 'Q1 2025'], ['', '£m', '£m']], [
+    ['Total revenue', '4,358', '3,980'],
+    row,
+    ['Basic earnings per share (pence)', '17.9', '15.5'],
+  ]));
+  it('the EPS row below keeps the period heads', () => {
+    for (const row of [['Loan impairment rate', '26bps', '19bps'], ['Net interest margin change', '(5) bps', '7bps'], ['Change', '+2ppts', '(1)pp'], ['Cover', '2.1x', '1.9x']]) {
+      expect([row[0], readEuropeRelease(html(row), Q1).eps]).toEqual([row[0], 17.9]);
+    }
+  });
+  it('a row of words is still a head row', () => {
+    expect(readEuropeRelease(html(['Restated', 'Nine months 2026', 'Nine months 2025']), Q1).eps).toBeNull();
+  });
+});

@@ -1731,6 +1731,8 @@ const EU_EPS_EXCLUDE = /underlying|adjusted|\bcore\b|headline|normali[sz]ed|pre[
 const EU_CONTINUING = /continuing operations/;
 /** Captions, sections and column heads of figures that are not the reported ones. */
 const EU_ADJUSTED = /constant currency|\bcer\b|at constant|organic|pro forma|non[\s-]?(?:gaap|ifrs)|alternative performance|\bunderlying\b|\badjusted\b|\bcore\b|reconcil|excluding|notable items|like[\s-]for[\s-]like/i;
+/** 'uk': a figure cell that is a nil dash or a ratio with its unit ("26bps", "(5) bps", "+2ppts", "(1)pp", "2.1x"). */
+const EU_NIL_OR_RATIO = /^(?:[-–—]+|[+\-–−]?\(?[+\-–−]?\d[\d,]*(?:\.\d+)?\)?\s?(?:bps?|pps|ppts?|pp|x))$/i;
 /** A caption naming another breakdown than the group's: a segment, division, region or business. */
 const EU_SEGMENT = /segment|division|region|business|by\s+(?:product|geograph|market|country)/i;
 /** 'eu': "non-U.S. GAAP" (STMicroelectronics) is an adjusted measure like "non-GAAP". */
@@ -1901,6 +1903,9 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   // A self-closing cell ("<td/>", "<td colspan=\"3\"/>", Sanofi) is an empty cell; as written it would swallow the next
   // cell and shift every figure after it one column to the left (onto the comparative column).
   if (eu) html = html.replace(/<(td|th)\b([^>]*?)\s*\/>/gi, '<$1$2></$1>');
+  // Profile 'uk': the named entities "&pound;" / "&euro;" are the currency signs (NatWest's "&pound;m" heads); left
+  // undecoded, a head names no unit and its figures are never read.
+  if (opts.profile === 'uk') html = html.replace(/&pound;/gi, '£').replace(/&euro;/gi, '€');
   const adjusted = (text: string) => EU_ADJUSTED.test(text) || (eu && EU_NON_US_GAAP.test(text));
   /** Revenue row labels ruled out by a rival row (`EU_REVENUE_RIVAL`), for the whole document. */
   const rivalled = new Set<string>();
@@ -1995,6 +2000,14 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
         if (eu && f?.field === 'revenue') revenueLabels.push(euLabel(rawLabel));
         if (f && vals.length && !adjusted(section) && !(eu && EU_NON_US_GAAP.test(rawLabel))) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel, sectionRaw });
         if (/:\s*$/.test(first.text)) { section = euLabel(first.text); sectionRaw = first.text; }
+        continue;
+      }
+      // Profile 'uk': a labelled row whose figure cells are all nil dashes ("Fair value movements … | - | -") or figures
+      // with a ratio suffix ("Loan impairment rate | 26bps | 19bps", "+2ppts", "2.1x") is a data row with nothing to
+      // read; it does not start a new header block (which would drop the table's period heads for every row below it).
+      if (opts.profile === 'uk' && hasLabel && otherText && cells.slice(li + 1).every((c) => !c.text || EU_NIL_OR_RATIO.test(c.text))) {
+        lastWasData = true;
+        titles = [];
         continue;
       }
       nonData.push(cells);
