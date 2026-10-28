@@ -1,6 +1,7 @@
 import { schedule } from 'node-cron';
 import { ET } from '../../domain/marketCalendar.js';
 import type { JobRunner } from '../../jobs/scheduler.js';
+import { sweepTurns } from '../../sources/sweepTurns.js';
 import { jpPastDatesCount } from '../db/jpRepo.js';
 import { JST } from '../domain/jpCalendar.js';
 import { JP_DATE_SWEEP, refreshJpBulkCalendar, refreshJpCalendar } from './calendar.js';
@@ -74,7 +75,9 @@ const stocksJob = (ctx: JpJobContext, hooks: JpSchedulerHooks) => async () => {
   hooks.onStocks?.();
 };
 
-const calendarJob = (ctx: JpJobContext) => () => refreshJpCalendar(ctx, { perRun: jpDateSweepPerRun(ctx.todayJST()) });
+/** The date sweep takes its turn on the shared Yahoo budget (with the UK and EU sweeps). */
+const calendarJob = (ctx: JpJobContext) => () =>
+  sweepTurns.run('jp', () => refreshJpCalendar(ctx, { perRun: jpDateSweepPerRun(ctx.todayJST()) }));
 
 /**
  * Japan jobs. Each job name (prefixed `jp-`) is guarded against overlapping runs by `job`; both EDINET schedules
