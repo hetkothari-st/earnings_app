@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { createFailover } from './failover.js';
 import type { Http } from './http.js';
 import { fetchSecFeed, type SecFeedItem } from './secFeed.js';
+import type { SixKSession } from './sixKClassify.js';
 
 /** One SEC filing of a full-level foreign stock, as handed to its market. */
 export interface ForeignFiling {
@@ -10,6 +11,11 @@ export interface ForeignFiling {
   indexUrl: string;
   acceptedAt: string; // ISO UTC
   form: string;
+  /**
+   * The CIK's exchange session in this market, from `SixKMarket.sessionFor` (null: unknown). Absent for a market
+   * without `sessionFor` (HK, Japan).
+   */
+  session?: SixKSession | null;
 }
 
 /** One market the shared 6-K watcher serves (HK, Japan, UK, Europe). */
@@ -25,6 +31,8 @@ export interface SixKMarket {
   /** Handles one filing; returns the changed report ids. Fetch errors throw (the watcher retries). */
   handle(f: ForeignFiling): Promise<number[]>;
   onChanged(ids: number[]): void;
+  /** UK / Europe: the trading session of the CIK's stock in this market, handed on as `ForeignFiling.session`. */
+  sessionFor?(cik: number): SixKSession | null;
 }
 
 /** The feed every 2 s while any market has a full-level report due, else every 30 s. */
@@ -138,7 +146,10 @@ export class SixKWatch {
     const cik = cikOf(item);
     const key = SixKWatch.key(market, item.accession);
     try {
-      const ids = [...new Set(await market.handle({ cik, accession: item.accession, indexUrl: item.indexUrl, acceptedAt: item.acceptedAt, form: item.form }))];
+      const filing: ForeignFiling = { cik, accession: item.accession, indexUrl: item.indexUrl, acceptedAt: item.acceptedAt, form: item.form };
+      // Each market times the release against its own session for the CIK (HSBC: HKEX for HK, LSE for UK).
+      if (market.sessionFor) filing.session = market.sessionFor(cik);
+      const ids = [...new Set(await market.handle(filing))];
       this.tries.delete(key);
       if (ids.length > 0) market.onChanged(ids);
       return ids;

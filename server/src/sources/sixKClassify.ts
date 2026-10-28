@@ -7,7 +7,7 @@ import type { FilingDoc } from './secFeed.js';
  * Shared 6-K classifier for the foreign markets. Profile `'hk'` is the Hong Kong classifier exactly as built (every
  * regex and branch); profile `'jp'` adds the Japanese results phrases, month-range headers, the nine-month span,
  * Tokyo clock / exchange phrases in date notices, and treats EDINET report translations as `other`. Profiles `'uk'`
- * and `'eu'` (one rule set; they differ only in the home zone of clock times) add the UK / European results phrases,
+ * and `'eu'` (one rule set; clock times are judged against the caller's per-stock session) add the UK / European results phrases,
  * "months / half year / year to" periods, "Q3 2026" quarter labels, "period 1 January to 30 September" ranges, the
  * nine-month span, London / CET clocks and session phrases in date notices, and treat RNS housekeeping notices
  * (own shares, voting rights, PDMR dealings, dividends, Form 20-F filings) as `other`.
@@ -87,8 +87,21 @@ const HK_EXCHANGE = '(?:the\\s+)?(?:HKEX|Hong Kong Stock Exchange|Hong Kong mark
 const JP_EXCHANGE = '(?:the\\s+)?(?:Tokyo Stock Exchange|TSE)';
 const EU_EXCHANGE = '(?:the\\s+)?(?:London Stock Exchange|LSE)';
 
-/** One local clock time found in a sentence: minutes after midnight and where it ends. */
-type ClockHit = { index: number; length: number; mins: number };
+/**
+ * One local clock time found in a sentence: minutes after midnight and where it ends. `zone`: the IANA zone the
+ * clock is stated in (`'uk'` / `'eu'` only; hk / jp clocks are local by construction).
+ */
+type ClockHit = { index: number; length: number; mins: number; zone?: string };
+
+/**
+ * A stock's trading session as `europe/exchanges.ts` rows give it: IANA zone, open and close in minutes after local
+ * midnight. `'uk'` / `'eu'` clock times are judged against it; without one their timing is UNKNOWN.
+ */
+export interface SixKSession {
+  zone: string;
+  openMin: number;
+  closeMin: number;
+}
 
 /** Explicit Hong Kong clock times ("at 4:30 p.m. Hong Kong time [on]"). */
 function hkClocks(window: string): ClockHit[] {
@@ -118,10 +131,9 @@ function jpClocks(window: string): ClockHit[] {
 /**
  * UK and European clock times: "at 7.00am (UK time)", "07:00 CET", "4.30pm BST", "08:00 Central European Summer
  * Time". A UK zone (`UK|London time`, `BST`, `GMT`) is Europe/London wall time, a CET zone (`CET`, `CEST`, `Central
- * European (Summer) Time`) Europe/Paris wall time. The minutes are in the profile's home zone (`'uk'` London, `'eu'`
- * Paris): the two zones change clocks at the same instant, so Paris is always London + 1 h.
+ * European (Summer) Time`) Europe/Paris wall time; `zone` says which.
  */
-function euClocks(window: string, profile: 'uk' | 'eu'): ClockHit[] {
+function euClocks(window: string): ClockHit[] {
   const clock = /(?:\bat\s+)?\b(\d{1,2})(?:[:.](\d{2}))?\s*(?:([ap])\.?\s?m\.?)?,?\s*\(?((?:UK|London)\s+time|BST|GMT|CES?T|Central\s+European\s+(?:Summer\s+)?Time)\b\)?(?:\s+on\s+)?/gi;
   const out: ClockHit[] = [];
   for (const t of window.matchAll(clock)) {
@@ -130,27 +142,38 @@ function euClocks(window: string, profile: 'uk' | 'eu'): ClockHit[] {
     if (t[3] ? h < 1 || h > 12 : h > 23) continue;
     if (Number(t[2] ?? 0) > 59) continue;
     const hour = t[3] ? (h % 12) + (t[3].toLowerCase() === 'p' ? 12 : 0) : h;
-    const london = /^(?:UK|London|BST|GMT)/i.test(t[4]!);
-    const shift = london === (profile === 'uk') ? 0 : london ? 60 : -60;
-    out.push({ index: t.index!, length: t[0].length, mins: hour * 60 + Number(t[2] ?? 0) + shift });
+    const zone = /^(?:UK|London|BST|GMT)/i.test(t[4]!) ? 'Europe/London' : 'Europe/Paris';
+    out.push({ index: t.index!, length: t[0].length, mins: hour * 60 + Number(t[2] ?? 0), zone });
   }
   return out;
 }
 
-/**
- * HK: BMO before 09:30, DMH to 16:00. JP: BMO before 09:00, DMH 09:00–15:29 (lunch counts), AMC from 15:30 (the close).
- * UK (London): BMO before 08:00, DMH 08:00–16:29, AMC from 16:30. EU (Paris): BMO before 09:00, DMH 09:00–17:29, AMC
- * from 17:30 (`europe/exchanges.ts`: BMO < open, AMC ≥ close).
- */
+/** HK: BMO before 09:30, DMH to 16:00. JP: BMO before 09:00, DMH 09:00–15:29 (lunch counts), AMC from 15:30 (the close). */
 function clockTiming(mins: number, profile: SixKProfile): LocalTiming {
   if (profile === 'jp') return mins < 9 * 60 ? 'BMO' : mins < 15 * 60 + 30 ? 'DMH' : 'AMC';
-  if (profile === 'uk') return mins < 8 * 60 ? 'BMO' : mins < 16 * 60 + 30 ? 'DMH' : 'AMC';
-  if (profile === 'eu') return mins < 9 * 60 ? 'BMO' : mins < 17 * 60 + 30 ? 'DMH' : 'AMC';
   return mins < 9 * 60 + 30 ? 'BMO' : mins <= 16 * 60 ? 'DMH' : 'AMC';
 }
-/** `'uk'` / `'eu'` session phrases: "before the London Stock Exchange opens", "after the close" (of the home market). */
-const EU_BEFORE_OPEN = /\bbefore\s+(?:the\s+)?(?:London\s+Stock\s+Exchange|LSE|market)\s+opens?\b/i;
-const EU_AFTER_CLOSE = /\bafter\s+(?:the\s+)?close\b(?!\s+of\s+(?:the\s+)?(?:U\.?S\.?|Nasdaq|NYSE|New\s+York)\b)/i;
+
+/**
+ * `'uk'` / `'eu'`: a clock stated on `date` in `hit.zone`, read in the stock's session zone. BMO before the open, DMH
+ * open..close-1, AMC from the close (`europe/exchanges.ts`). No session: UNKNOWN (the date still stands).
+ */
+function sessionTiming(date: string, hit: ClockHit, session: SixKSession | undefined): LocalTiming {
+  if (!session) return 'UNKNOWN';
+  const [year, month, day] = date.split('-').map(Number);
+  const local = DateTime.fromObject({ year, month, day, hour: Math.floor(hit.mins / 60), minute: hit.mins % 60 }, { zone: hit.zone })
+    .setZone(session.zone);
+  if (!local.isValid) return 'UNKNOWN';
+  const mins = local.hour * 60 + local.minute;
+  return mins < session.openMin ? 'BMO' : mins < session.closeMin ? 'DMH' : 'AMC';
+}
+
+/**
+ * `'uk'` / `'eu'` session phrase naming the exchange: "before the London Stock Exchange / LSE opens" (08:00 London,
+ * the same instant as every continental open in `exchanges.ts`). A bare "before the market opens" / "after the close"
+ * names no exchange (a dual-listed filer's market may be the US one), so it gives no timing.
+ */
+const EU_BEFORE_OPEN = /\bbefore\s+(?:the\s+)?(?:London\s+Stock\s+Exchange|LSE)\s+opens?\b/i;
 /** Words just before "on D" that make D a dividend date ("payable on", "holders of record on", "register … closed on"). */
 const DIVIDEND_DATE = /\b(?:payable|paid|payment|record|register|closed|closure|ex-dividend|ex-entitlement)\b[^.]{0,30}$/i;
 /** HKEX Rule 13.43 notice: "a meeting of [a committee of] the Board … will be held on D … to consider|approve … results|earnings release". */
@@ -176,20 +199,24 @@ function ownSentence(text: string): string {
  * dividend payment / record dates. Failing those, an HKEX board-meeting notice ("a meeting of the Board will be
  * held on D to consider … results") gives D.
  * Timing, first match wins:
- * - "before the U.S. market opens [on D]" / "before the opening of the U.S. market": D, AMC.
+ * - "before the U.S. market opens [on D]" / "before the opening of the U.S. market": D, AMC (`'uk'` / `'eu'`: D,
+ *   UNKNOWN; the US pre-open falls inside the European session).
  * - "after the U.S. market closes [on D]": D+1, BMO.
  * - An explicit local clock time (Hong Kong; for `'jp'` Japan / Tokyo time or JST): by the local thresholds.
+ *   `'uk'` / `'eu'`: a UK or CET clock, read in `session`'s zone against its open / close; no session: UNKNOWN.
  * - "before the opening / trading hours of the HKEX" (`'jp'`: the Tokyo Stock Exchange / TSE): BMO;
  *   "after the close / trading hours of …": AMC. (`'uk'` / `'eu'`: the London Stock Exchange / LSE.)
- * - `'uk'` / `'eu'`: "before the London Stock Exchange / LSE / market opens": BMO; "after the close" (not of a US
- *   market): AMC.
+ * - `'uk'` / `'eu'`: "before the London Stock Exchange / LSE opens": BMO. A bare "before the market opens" / "after
+ *   the close" gives UNKNOWN.
  * - Otherwise UNKNOWN. Returns null when no such statement is found.
  * `'uk'` / `'eu'` also take a UK / European results phrase ("will publish Q3 2026 results on D") as the earnings word.
  */
-export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: string; timing: LocalTiming } | null {
+export function parseDateNoticeFor(text: string, profile: SixKProfile, session?: SixKSession): { date: string; timing: LocalTiming } | null {
   const best: { rank: number; date: string; timing: LocalTiming }[] = [];
   const exchange = profile === 'jp' ? JP_EXCHANGE : isEurope(profile) ? EU_EXCHANGE : HK_EXCHANGE;
-  const clocks = profile === 'jp' ? jpClocks : isEurope(profile) ? (w: string) => euClocks(w, profile) : hkClocks;
+  const clocks = profile === 'jp' ? jpClocks : isEurope(profile) ? euClocks : hkClocks;
+  // 'uk' / 'eu': the US pre-open is inside the European session, so it says nothing about local timing.
+  const usOpen: LocalTiming = isEurope(profile) ? 'UNKNOWN' : 'AMC';
   // Each verb is tried on its own ("earnings release. Acme will report its results on D": the "release" with no
   // "results" in its sentence must not swallow the "report" clause after it).
   const verbs = /\b(?:(?:to|will(?:\s+further)?)\s+)?(?:announce|report|release|upload|publish)\b/gi;
@@ -211,8 +238,8 @@ export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: 
     let found: { date: string; timing: LocalTiming } | null = null;
 
     const open = datesAfter(window, 'before the U\\.?S\\.? market opens?\\s+on\\s+')[0]?.date;
-    if (open) found = { date: open, timing: 'AMC' };
-    else if (nearest && /before\s+(?:the\s+)?(?:U\.?S\.?\s+market\s+opens?|opening\s+of\s+the\s+U\.?S\.?\s+market)/i.test(window)) found = { date: nearest, timing: 'AMC' };
+    if (open) found = { date: open, timing: usOpen };
+    else if (nearest && /before\s+(?:the\s+)?(?:U\.?S\.?\s+market\s+opens?|opening\s+of\s+the\s+U\.?S\.?\s+market)/i.test(window)) found = { date: nearest, timing: usOpen };
     if (!found) {
       const close = datesAfter(window, 'after the U\\.?S\\.? market closes?\\s+on\\s+')[0]?.date
         ?? (nearest && /after\s+the\s+U\.?S\.?\s+market\s+closes?/i.test(window) ? nearest : undefined);
@@ -224,9 +251,8 @@ export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: 
       for (const t of clocks(window)) {
         const around = window.slice(Math.max(0, t.index - 120), t.index + 40);
         if (CALL_WORDS.test(around)) continue;
-        const timing = clockTiming(t.mins, profile);
         const date = dateAt(window, t.index + t.length)?.date ?? nearest; // "on D at 4:30 p.m. Hong Kong time"
-        if (date) { found = { date, timing }; break; }
+        if (date) { found = { date, timing: isEurope(profile) ? sessionTiming(date, t, session) : clockTiming(t.mins, profile) }; break; }
       }
     }
 
@@ -237,7 +263,6 @@ export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: 
       else if (profile === 'jp' && new RegExp(`before\\s+(?:the\\s+)?(?:opening|start)\\s+of\\s+trading\\s+on\\s+${exchange}`, 'i').test(window)) found = { date: nearest, timing: 'BMO' };
       else if (profile === 'jp' && new RegExp(`after\\s+(?:the\\s+)?(?:close|end)\\s+of\\s+trading\\s+on\\s+${exchange}`, 'i').test(window)) found = { date: nearest, timing: 'AMC' };
       else if (isEurope(profile) && EU_BEFORE_OPEN.test(window)) found = { date: nearest, timing: 'BMO' };
-      else if (isEurope(profile) && EU_AFTER_CLOSE.test(window)) found = { date: nearest, timing: 'AMC' };
     }
     if (found) best.push({ rank: 3, ...found });
     else if (nearest) best.push({ rank: 1, date: nearest, timing: 'UNKNOWN' });
@@ -508,9 +533,10 @@ const RESULTS_PHRASE: Record<SixKProfile, RegExp> = {
 
 /**
  * `'uk'` / `'eu'` housekeeping notices (RNS titles): own-share transactions and buyback programmes, total voting
- * rights, director / PDMR dealings, dividend declarations, Form 20-F filing notices. One counts only when it comes
- * before any results phrase in the opening: a results release names its results first and may then mention its
- * dividend or buyback. The 6-K cover's "annual reports under cover of Form 20-F" is not a filing notice.
+ * rights, director / PDMR dealings, dividend declarations, Form 20-F filing notices, and the DTR "Annual Financial
+ * Report" publication (the annual report is not a results release). One counts only when it comes no later than any
+ * results phrase in the opening: a results release names its results first and may then mention its dividend or
+ * buyback. The 6-K cover's "annual reports under cover of Form 20-F" is not a filing notice.
  */
 const EU_NOTICE_TITLE = new RegExp([
   String.raw`\btransactions?\s+in\s+own\s+shares\b`,
@@ -521,6 +547,7 @@ const EU_NOTICE_TITLE = new RegExp([
   String.raw`\bdividend\s+declaration\b`,
   String.raw`\b(?:filing|publication|availability|submission)\s+of\s+(?:the\s+|its\s+|our\s+)?(?:\d{4}\s+)?(?:annual\s+report\s+(?:on|and)\s+)?Form\s+20-F\b`,
   String.raw`\bannual\s+report\s+and\s+Form\s+20-F\b`,
+  String.raw`\bannual\s+financial\s+report\b`,
   String.raw`\bForm\s+20-F\b[^.]{0,40}\b(?:filed|published|now\s+available)\b`,
 ].join('|'), 'i');
 
@@ -529,7 +556,7 @@ function isEuropeNotice(opening: string, profile: 'uk' | 'eu'): boolean {
   const notice = opening.search(EU_NOTICE_TITLE);
   if (notice < 0) return false;
   const results = opening.search(RESULTS_PHRASE[profile]);
-  return results < 0 || notice < results;
+  return results < 0 || notice <= results; // "Annual Financial Report" is both: the notice wins
 }
 
 /**
@@ -614,16 +641,20 @@ function hasResultsTable(html: string, profile: SixKProfile): boolean {
 /**
  * Classify an exhibit (or 6-K main document) as an earnings release, a results-date notice, or something else.
  * `filedOn` is the local acceptance date. Profile `'hk'` is the Hong Kong classifier as built. `fyEndMonth` (1–12, the
- * issuer's fiscal year end) places `'uk'` / `'eu'` "Q3 2026" labels; without it they are calendar quarters.
+ * issuer's fiscal year end) places `'uk'` / `'eu'` "Q3 2026" labels; without it they are calendar quarters. `session`
+ * (the stock's exchange session) times `'uk'` / `'eu'` clock statements; without it their timing is UNKNOWN.
  */
-export function classifySixK(html: string, opts: { filedOn?: string; profile: SixKProfile; fyEndMonth?: number }): SixKExhibit {
+export function classifySixK(
+  html: string,
+  opts: { filedOn?: string; profile: SixKProfile; fyEndMonth?: number; session?: SixKSession },
+): SixKExhibit {
   const { profile } = opts;
   const text = htmlToText(html);
   if (profile === 'jp' && isJpEdinetReport(text.slice(0, 5000))) return { kind: 'other' };
   if (isEurope(profile) && isEuropeNotice(text.slice(0, 5000), profile)) return { kind: 'other' };
   // A notice whose opening names a results date after it was filed is a date notice, even with a "Revenue
   // guidance" row. (A release's own "next results on D" line sits deep in the body: HSBC at ~110k chars.)
-  const opening = parseDateNoticeFor(text.slice(0, 5000), profile);
+  const opening = parseDateNoticeFor(text.slice(0, 5000), profile, opts.session);
   if (opening && opts.filedOn && opening.date > opts.filedOn) return { kind: 'date-notice', ...opening };
 
   if (profile === 'jp') {
@@ -647,7 +678,7 @@ export function classifySixK(html: string, opts: { filedOn?: string; profile: Si
     }
   }
 
-  const notice = parseDateNoticeFor(text, profile);
+  const notice = parseDateNoticeFor(text, profile, opts.session);
   // 'jp': a "notice" naming a date before the filing is about something past (Takeda's revision of results
   // "announced on May 19"), not a results date.
   if (notice && profile === 'jp' && opts.filedOn && notice.date < opts.filedOn) return { kind: 'other' };

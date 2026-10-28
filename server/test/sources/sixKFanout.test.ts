@@ -126,6 +126,25 @@ describe('SixKWatch fan-out', () => {
     expect(hk.handled.length).toBe(2);
   });
 
+  it("each market's filing carries that market's session for the CIK; hk / jp filings carry none", async () => {
+    const { http } = stubHttp();
+    const LSE = { zone: 'Europe/London', openMin: 480, closeMin: 990 };
+    const hk = stubMarket('hk', [SHARED_CIK]);
+    const uk = stubMarket('uk', [SHARED_CIK]);
+    const asked: number[] = [];
+    uk.market.sessionFor = (cik) => { asked.push(cik); return LSE; };
+    const eu = stubMarket('eu', [SHARED_CIK]);
+    eu.market.sessionFor = () => null;
+    await new SixKWatch([hk.market, uk.market, eu.market], http, base()).tick();
+
+    expect(uk.handled.length).toBeGreaterThan(0);
+    expect(uk.handled.every((f) => f.session === LSE)).toBe(true);
+    expect(asked.length).toBe(uk.handled.length);
+    expect(asked.every((c) => c === SHARED_CIK)).toBe(true);
+    expect(hk.handled.every((f) => !('session' in f))).toBe(true);
+    expect(eu.handled.every((f) => f.session === null)).toBe(true);
+  });
+
   it('one feed request per tick', async () => {
     const { http, requested } = stubHttp();
     const hk = stubMarket('hk', [SHARED_CIK]);
