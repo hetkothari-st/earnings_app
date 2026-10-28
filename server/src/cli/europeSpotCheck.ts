@@ -41,6 +41,8 @@ if (envFile) process.loadEnvFile(envFile);
 const { config } = await import('../config.js');
 const { openDb } = await import('../db/repo.js');
 const { createJobRunner } = await import('../jobs/scheduler.js');
+const { createSources } = await import('../sources/index.js');
+const { todayET } = await import('../domain/marketCalendar.js');
 const { BROWSER_UA, makeHttp } = await import('../sources/http.js');
 const { fetchCboeChain } = await import('../sources/cboe.js');
 const { cachedChains } = await import('../sources/cboeCache.js');
@@ -206,7 +208,8 @@ const ctx: EuropeJobContext = {
 const resetSweep = db.prepare('DELETE FROM europe_date_sweep WHERE symbol = ?');
 for (const s of symbols) resetSweep.run(s);
 
-const job = createJobRunner({ db, now: ctx.now } as unknown as Parameters<typeof createJobRunner>[0]);
+// A full typed JobContext: the US sources are built but never called here (the runner only records failures in the db).
+const job = createJobRunner({ db, sources: createSources(config), now: ctx.now, today: () => todayET() });
 const p = market === 'UK' ? 'uk' : 'eu';
 const started = Date.now();
 await warmUpEurope(ctx, job);
