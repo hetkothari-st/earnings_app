@@ -170,3 +170,24 @@ describe('readEuropeRelease (uk) — a row of figures with a unit suffix ("26bps
     expect(readEuropeRelease(html(['Restated', 'Nine months 2026', 'Nine months 2025']), Q1).eps).toBeNull();
   });
 });
+
+describe('readEuropeRelease (uk) — EPS stated in two currencies (a convenience translation) is blank', () => {
+  const FYx = { periodEnd: '2024-12-31', fiscalQuarter: 4 as const, profile: 'uk' as const };
+  // As RELX: the GBP statement, then the same statement translated into euros (and US dollars) on a summary page.
+  const stmt = (unit: string, rev: string[], eps: string[]) => table('', [['Condensed consolidated income statement', '', ''], ['', 'Year ended 31 December 2023', 'Year ended 31 December 2024'], ['', unit, unit]], [
+    ['Revenue', ...rev], ['Basic earnings per share', ...eps],
+  ]);
+  const gbp = stmt('GBPm', ['9,161', '9,434'], ['94.1p', '103.6p']);
+  const eur = stmt('EURm', ['10,535', '11,132'], ['€1.083', '€1.223']);
+
+  it('the euro translation is never the EPS', () => {
+    const v = readEuropeRelease(doc(gbp, eur), FYx);
+    expect([v.eps, v.epsDiluted, v.epsCurrency]).toEqual([null, null, null]);
+  });
+
+  it('one currency only: read as before', () => {
+    expect([readEuropeRelease(doc(eur), FYx).eps, readEuropeRelease(doc(eur), FYx).epsCurrency]).toEqual([1.223, 'EUR']);
+    const usd = stmt('US$m', ['4,900', '5,000'], ['$1.20', '$1.25']);
+    expect(readEuropeRelease(doc(usd), FYx).eps).toBe(1.25);
+  });
+});

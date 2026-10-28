@@ -1915,6 +1915,8 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   const fiscal: JpFiscal = { quarter: opts.fiscalQuarter, year: opts.fiscalYear };
   const bank = opts.issuer !== undefined && EUROPE_BANK_TICKERS.has(opts.issuer.ticker);
   const found: Record<'revenue' | 'basic' | 'diluted', EuCandidate[]> = { revenue: [], basic: [], diluted: [] };
+  // Profile 'uk': every currency an EPS figure of the period is stated in (pence counted as pounds), read or not.
+  const epsCurs = new Set<EuCurrency>();
 
   const tables = parseTables(html, { rowspan: true });
   // A table's caption: the last block of text right above it (empty when another table stands right above). Split
@@ -2150,6 +2152,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
           const res = euEpsCurrency([labelMarks, ...marks], sign);
           if (!res) continue;
           const cur = res.cur;
+          epsCurs.add(cur === 'GBp' ? 'GBP' : cur);
           // Pence ("(p)", "(pence)", a "p" mark, "12.3p") only when the document names no other currency than GBP.
           if (cur === 'GBp' && docOtherCur) continue;
           const value = res.div === 100 ? Number((n.value / 100).toFixed(n.decimals + 2)) : n.value;
@@ -2191,6 +2194,12 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   let diluted = settle('diluted');
   if (basic && diluted && basic.cur !== diluted.cur) {
     notes.push(`eps: basic in ${basic.cur}, diluted in ${diluted.cur}`);
+    basic = diluted = null;
+  }
+  // Profile 'uk': the period's EPS stated in two currencies (a summary page translated into euros / US dollars, RELX)
+  // leaves no telling which is the reported figure: blank, even when one of them was not read (pence beside euros).
+  if (opts.profile === 'uk' && epsCurs.size > 1 && (basic || diluted)) {
+    notes.push(`eps: stated in ${[...epsCurs].join(', ')}`);
     basic = diluted = null;
   }
   return {
