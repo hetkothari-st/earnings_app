@@ -40,7 +40,7 @@ describe('europe source facts', () => {
     expect(GOVUK_BANK_HOLIDAYS_URL).toBe('https://www.gov.uk/bank-holidays.json');
     expect(TRADEGATE_REFRESH).toBe('https://www.tradegatebsx.com/refresh.php');
     expect(TRADEGATE_ROBOTS).toBe('https://www.tradegatebsx.com/robots.txt');
-    expect(DILA_BASE.startsWith('https://echanges.dila.gouv.fr/OPENDATA/')).toBe(true);
+    expect(DILA_BASE).toBe('https://echanges.dila.gouv.fr/OPENDATA/AMF/');
     expect(XBRL_FILINGS_URL.startsWith('https://filings.xbrl.org/api/filings')).toBe(true);
     for (const u of [...PRN_FEEDS.UK, ...PRN_FEEDS.EU]) {
       expect(u).toMatch(/^https:\/\/www\.prnewswire\.(com|co\.uk)\/rss\/.+\.rss$/);
