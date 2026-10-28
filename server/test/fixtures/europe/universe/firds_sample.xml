@@ -1,0 +1,2131 @@
+<?xml version="1.0" encoding="UTF-8"?> <BizData xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:head.003.001.01 head.003.001.01.xsd" xmlns="urn:iso:std:iso:20022:tech:xsd:head.003.001.01" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><Hdr><AppHdr xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="urn:iso:std:iso:20022:tech:xsd:head.001.001.01" xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:head.001.001.01 head.001.001.01_ESMAUG_1.0.0.xsd"> <Fr> <OrgId> <Id> <OrgId> <Othr> <Id>EU</Id> </Othr> </OrgId> </Id> </OrgId> </Fr> <To> <OrgId> <Id> <OrgId> <Othr> <Id>Public</Id> </Othr> </OrgId> </Id> </OrgId> </To> <BizMsgIdr>FULINS_E_20261024_01of01</BizMsgIdr> <MsgDefIdr>auth.017.001.02</MsgDefIdr> <CreDt>2026-10-24T07:34:05Z</CreDt> </AppHdr></Hdr><Pyld><Document xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:auth.017.001.02 auth.017.001.02_ESMAUG_FULINS_1.1.0.xsd" xmlns="urn:iso:std:iso:20022:tech:xsd:auth.017.001.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><FinInstrmRptgRefDataRpt><RptHdr><RptgNtty><NtlCmptntAuthrty>EU</NtlCmptntAuthrty></RptgNtty><RptgPrd><Dt>2026-10-24</Dt></RptgPrd></RptHdr><RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000JZ83W87</Id>
+        <FullNm>Siemens Energy AG Reverse Capped Bonus Zertifikat</FullNm>
+        <ShrtNm>JPM STR.PRO./ZT 20261228</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>XZYUUT6IYN31D9K77X08</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-02-23T13:42:05Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-02-24T08:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000ENER6Y0</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-04-14Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>STUB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000JZ83W87</Id>
+        <FullNm>Siemens Energy AG Reverse Capped Bonus Zertifikat</FullNm>
+        <ShrtNm>JPM STR.PRO./ZT 20261228</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>XZYUUT6IYN31D9K77X08</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-02-23T13:42:05Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-02-24T08:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000ENER6Y0</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-04-14Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>STUB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK3L316</Id>
+        <FullNm>ABBOTT LABORATORIES Capped Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20270325</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2025-11-20T10:34:39Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2025-11-21T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-19T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>US0028241000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-05-20Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK3L316</Id>
+        <FullNm>ABBOTT LABORATORIES Capped Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20270325</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2025-11-20T10:34:39Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2025-11-21T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-19T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>US0028241000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-31Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK3L316</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbH CA.BO.Z 25.03.27 Abbott L</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20270325</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-27T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-27T10:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>US0028241000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK3L316</Id>
+        <FullNm>BNP BON.CAP.CERT. 03/27 ABL</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20270325</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2025-11-20T09:45:09Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2025-11-21T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-19T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>US0028241000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-06-05Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK3L316</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbHCA.BO.Z 25.03.27 Abbott L</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20270325</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2025-11-20T09:34:39Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2025-11-21T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-19T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>US0028241000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-06-03Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000FG0ZDR1</Id>
+        <FullNm>Capped Bonus-Zertifikat auf BASF SE</FullNm>
+        <ShrtNm>SG EFFEKTEN/ZT 20270330 BASFSE BARR</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900W18LQJJN6SJ336</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-01T07:30:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-01T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000BASF111</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-02Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000FG0ZDR1</Id>
+        <FullNm>Société Générale Effekten GmbH BO.C.Z 30.03.27 BASF</FullNm>
+        <ShrtNm>SG EFFEKTEN/ZT 20270330 BASFSE BARR</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900W18LQJJN6SJ336</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-27T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-27T10:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000BASF111</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-26Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000FG0ZDR1</Id>
+        <FullNm>Société Générale Effekten GmbHBO.C.Z 30.03.27 BASF</FullNm>
+        <ShrtNm>SG EFFEKTEN/ZT 20270330 BASFSE BARR</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900W18LQJJN6SJ336</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-06-30T22:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-01T05:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000BASF111</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-02Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000FG27MC5</Id>
+        <FullNm>Société Générale Effekten GmbH BO.C.Z 28.12.26 Coba</FullNm>
+        <ShrtNm>SG EFFEKTEN/ZT 20261228 COBA BARR</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900W18LQJJN6SJ336</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-12T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-12T10:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-17T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000CBK1001</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-13Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000FG27MC5</Id>
+        <FullNm>Capped Bonus-Zertifikat auf Commerzbank AG</FullNm>
+        <ShrtNm>SG EFFEKTEN/ZT 20261228 COBA BARR</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900W18LQJJN6SJ336</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-12T07:30:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-12T08:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-17T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000CBK1001</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-13Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000FG27MC5</Id>
+        <FullNm>Société Générale Effekten GmbHBO.C.Z 28.12.26 Coba</FullNm>
+        <ShrtNm>SG EFFEKTEN/ZT 20261228 COBA BARR</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900W18LQJJN6SJ336</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-11T22:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-12T05:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-17T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE000CBK1001</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-13Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000GN37BY5</Id>
+        <FullNm>Bonus-Zertifikat auf Volkswagen AG Vz. (Cap: 80,0 EUR)</FullNm>
+        <ShrtNm>GOLDM.S.BK EURO/ZT 20270324</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>8IBZUGJ7JPLH368JE346</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-02T07:30:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-04T09:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T20:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0007664039</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-05Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000GN37BY5</Id>
+        <FullNm>GS BON.CAP.CERT. 03/27 VOW3</FullNm>
+        <ShrtNm>GOLDM.S.BK EURO/ZT 20270324</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>8IBZUGJ7JPLH368JE346</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-02T15:15:07Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-04T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0007664039</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-05Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000GN37BY5</Id>
+        <FullNm>Bonus-Zertifikat auf Volkswagen AG Vz. (Cap: 80,0 EUR)</FullNm>
+        <ShrtNm>GOLDM.S.BK EURO/ZT 20270324</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>8IBZUGJ7JPLH368JE346</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-02T07:30:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-04T09:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T20:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0007664039</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-05Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK8PEV7</Id>
+        <FullNm>EUROSTOXX 50 Reverse Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-03-06T10:27:31Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-03-09T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK8PEV7</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbH R.BO.Z 23.12.27 ESTX50</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-27T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-27T10:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-16T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK8PEV7</Id>
+        <FullNm>BNP BON.CERT. SX5E</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-03-06T10:05:24Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-03-09T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK8PEV7</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbHR.BO.Z 23.12.27 ESTX50</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-03-06T09:27:31Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-03-09T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PK8PEV7</Id>
+        <FullNm>EUROSTOXX 50 Reverse Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-03-06T10:27:31Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-03-09T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000VY9BRS9</Id>
+        <FullNm>Vontobel Financial Products BOC.Z 28.12.26 DAX</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20261228</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-20T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-20T10:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-18T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>DE0008469008</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>DAX</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-27Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000VY9BRS9</Id>
+        <FullNm>Vontobel Financial Products BOC.Z 28.12.26 DAX</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20261228</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-01T08:46:40Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-02T05:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-18T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>DE0008469008</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>DAX</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-27Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000VY9BRS9</Id>
+        <FullNm>Bonus Cap-Zertifikat auf DAX</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20261228</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-01T10:46:40Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-02T08:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>DE0008469008</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>DAX</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-27Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000VY9BRS9</Id>
+        <FullNm>Bonus Cap-Zertifikat auf DAX</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20261228</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-01T10:46:40Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-02T08:00:00Z</FrstTradDt>
+        <TermntnDt>2026-12-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>DE0008469008</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>DAX</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-27Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000JE5E6Q1</Id>
+        <FullNm>Airbus SE Bonus Zertifikat</FullNm>
+        <ShrtNm>JPM STR.PRO./ZT 20270625</ShrtNm>
+        <ClssfctnTp>EYCYFS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>XZYUUT6IYN31D9K77X08</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-03T13:43:52Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-06T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-06-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>NL0000235190</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>FR</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-07Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>STUB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000FG14JW7</Id>
+        <FullNm>Société Générale Effekten GmbHBO.C.Z 30.03.27 Luftha.</FullNm>
+        <ShrtNm>SG EFFEKTEN/ZT 20270330 LUFTHA BARR</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900W18LQJJN6SJ336</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-21T22:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-22T05:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0008232125</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM61X55</Id>
+        <FullNm>BNP BON.CAP.CERT. 12/27 SX5E</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-28T07:45:21Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-29T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-30Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM61X55</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbHCA.BO.Z 23.12.27 ESTX50</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-28T07:26:33Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-29T05:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-30Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM61X55</Id>
+        <FullNm>EUROSTOXX 50 Capped Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-28T09:26:33Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-29T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-30Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM61X55</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbH CA.BO.Z 23.12.27 ESTX50</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-27T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-27T10:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-16T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM61X55</Id>
+        <FullNm>EUROSTOXX 50 Capped Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-07-28T09:26:33Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-07-29T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-07-30Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM7G869</Id>
+        <FullNm>EUROSTOXX 50 Capped Reverse Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-04T11:33:28Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-05T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-06Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM7G869</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbHREVBONC 23.12.27 ESTX50</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-04T09:33:28Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-05T05:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-06Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM7G869</Id>
+        <FullNm>EUROSTOXX 50 Capped Reverse Bonus</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-04T11:33:28Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-05T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-06Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM7G869</Id>
+        <FullNm>BNP Paribas Em.-u.Handelsg.mbH REVBONC 23.12.27 ESTX50</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-27T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-27T10:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-16T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000PM7G869</Id>
+        <FullNm>BNP BON.CAP.CERT. 12/27 SX5E</FullNm>
+        <ShrtNm>BNP PARIBAS EM/ZT 20271223</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300TS3U4JKMR1B479</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-04T09:45:16Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-05T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-12-17T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>EURO STOXX 50</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-08-06Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000GN2AS76</Id>
+        <FullNm>GS BON.CAP.CERT. 03/27 SX5E</FullNm>
+        <ShrtNm>GOLDM.S.BK EURO/ZT 20270324</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>8IBZUGJ7JPLH368JE346</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-12T14:20:04Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-14T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000GN2AS76</Id>
+        <FullNm>Bonus-Zertifikat auf EURO STOXX 50 (Cap: 14000,0 EUR)</FullNm>
+        <ShrtNm>GOLDM.S.BK EURO/ZT 20270324</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>8IBZUGJ7JPLH368JE346</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-12T07:30:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-14T09:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T20:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000GN2AS76</Id>
+        <FullNm>Bonus-Zertifikat auf EURO STOXX 50 (Cap: 14000,0 EUR)</FullNm>
+        <ShrtNm>GOLDM.S.BK EURO/ZT 20270324</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>8IBZUGJ7JPLH368JE346</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-08-12T07:30:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-08-14T09:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T20:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>EU0009658145</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>ESTX 50 PR.EUR</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000UR2TCA6</Id>
+        <FullNm>UC BON.CAP.CERT. 03/27 N100</FullNm>
+        <ShrtNm>UNICREDIT/ZT 20270330 NASDAQ BARR</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>2ZCNRR8UK83OBTEK2170</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-16T09:05:33Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-17T06:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>US6311011026</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>NASDAQ</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000UR2TCA6</Id>
+        <FullNm>Bonus Cap Zertifikat auf den Nasdaq 100 Index Quanto</FullNm>
+        <ShrtNm>UNICREDIT/ZT 20270330 NASDAQ BARR</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>2ZCNRR8UK83OBTEK2170</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-16T10:52:45Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-17T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>US6311011026</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>NASDAQ</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000UR2TCA6</Id>
+        <FullNm>Bonus Cap Zertifikat auf den Nasdaq 100 Index Quanto</FullNm>
+        <ShrtNm>UNICREDIT/ZT 20270330 NASDAQ BARR</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>2ZCNRR8UK83OBTEK2170</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-16T10:52:45Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-17T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>US6311011026</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>NASDAQ</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-23Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000JE5WZ06</Id>
+        <FullNm>DAX Reverse Bonus Zertifikat</FullNm>
+        <ShrtNm>JPM STR.PRO./ZT 20270330</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>XZYUUT6IYN31D9K77X08</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-04T13:41:26Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-07T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-19T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>DE0008469008</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>DAX</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-26Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>STUB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000JE5WZ06</Id>
+        <FullNm>DAX Reverse Bonus Zertifikat</FullNm>
+        <ShrtNm>JPM STR.PRO./ZT 20270330</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>XZYUUT6IYN31D9K77X08</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-04T13:41:26Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-07T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-03-19T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>DE0008469008</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>DAX</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-26Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>STUB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000BD75B45</Id>
+        <FullNm>Vontobel Financial Products BOC.Z 25.06.27 Beiersd.</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20270625</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-25T07:42:44Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-28T05:00:00Z</FrstTradDt>
+        <TermntnDt>2027-06-18T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0005200000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000BD75B45</Id>
+        <FullNm>Vontobel Financial Products BOC.Z 25.06.27 Beiersd.</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20270625</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>HAND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-28T06:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-28T10:00:00Z</FrstTradDt>
+        <TermntnDt>2027-06-18T21:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0005200000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000BD75B45</Id>
+        <FullNm>Bonus Cap-Zertifikat auf Beiersdorf AG</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20270625</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUH</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-25T09:42:44Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-28T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-06-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0005200000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000BD75B45</Id>
+        <FullNm>Bonus Cap-Zertifikat auf Beiersdorf AG</FullNm>
+        <ShrtNm>VONT.FINL PROD/ZT 20270625</ShrtNm>
+        <ClssfctnTp>EYCYMS</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>5299009N4N61DPCDHR97</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>STUB</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-25T09:42:44Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-28T08:00:00Z</FrstTradDt>
+        <TermntnDt>2027-06-18T22:00:00Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <ISIN>DE0005200000</ISIN>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>FRAB</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE000UR2JXV9</Id>
+        <FullNm>UC BON.CAP.CERT. 11/26 DAX</FullNm>
+        <ShrtNm>UNICREDIT/ZT 20261127 DTBOER BARR</ShrtNm>
+        <ClssfctnTp>EYCYFI</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>2ZCNRR8UK83OBTEK2170</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>MUND</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2026-09-03T11:14:06Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2026-09-07T06:00:00Z</FrstTradDt>
+        <TermntnDt>2026-11-19T23:59:59Z</TermntnDt>
+    </TradgVnRltdAttrbts>
+    <DerivInstrmAttrbts>
+        <UndrlygInstrm>
+            <Sngl>
+                <Indx>
+                    <ISIN>DE0008469008</ISIN>
+                    <Nm>
+                        <RefRate>
+                            <Nm>DAX</Nm>
+                        </RefRate>
+                    </Nm>
+                </Indx>
+            </Sngl>
+        </UndrlygInstrm>
+    </DerivInstrmAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>DE</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2026-09-29Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>MUND</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>GB0009895292</Id>
+        <FullNm>ASTRAZENECA PLC ORD SHS $0.25</FullNm>
+        <ShrtNm>ASTRAZENE/PAR VTG FPD 0.25</ShrtNm>
+        <ClssfctnTp>ESVUFR</ClssfctnTp>
+        <NtnlCcy>GBP</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>PY6ZZQWO2IZFZC3IOL08</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XLON</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2006-01-12T00:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>2006-01-12T00:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>2006-01-13T00:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>XLON</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>GB0030913577</Id>
+        <FullNm>BT GROUP PLC ORD 5P</FullNm>
+        <ShrtNm>BT GROU/PAR VTG FPD 0.05</ShrtNm>
+        <ClssfctnTp>ESVUFR</ClssfctnTp>
+        <NtnlCcy>GBP</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>213800LRO7NS5CYQMN21</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XLON</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2006-01-12T00:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>2006-01-12T00:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>2006-01-13T00:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>XLON</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>GB0005405286</Id>
+        <FullNm>HSBC HLDGS PLC ORD $0.50 (UK REG)</FullNm>
+        <ShrtNm>HSBC HLDG/PAR VTG FPD 0.5</ShrtNm>
+        <ClssfctnTp>ESVUFR</ClssfctnTp>
+        <NtnlCcy>GBP</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>MLU0ZO3ML4LN2LL2TL39</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XLON</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2006-01-12T00:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>2006-01-12T00:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>2006-01-13T00:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>XLON</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>GB00BRJQ8J25</Id>
+        <FullNm>HAMMERSON PLC ORD 5P</FullNm>
+        <ShrtNm>HAMMERSON/PAR VTG FPD 0.05</ShrtNm>
+        <ClssfctnTp>ESVUFR</ClssfctnTp>
+        <NtnlCcy>GBP</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>213800G1C9KKVVDN1A60</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XLON</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2024-09-27T00:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>2024-09-27T00:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>2024-09-30T00:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>XLON</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>GB00BRJQ8J25</Id>
+        <FullNm>HAMMERSON PLC Ordinary Shares</FullNm>
+        <ShrtNm>HAMMERSON/PAR VTG FPD 0.05</ShrtNm>
+        <ClssfctnTp>ESVUFR</ClssfctnTp>
+        <NtnlCcy>GBP</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>213800G1C9KKVVDN1A60</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XMSM</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2020-12-23T08:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>2020-12-23T08:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>2020-12-23T08:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>XLON</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>GB00BYQDPD80</Id>
+        <FullNm>YU GROUP PLC ORD GBP0.005</FullNm>
+        <ShrtNm>YU GRP/PAR VTG FPD 0.005</ShrtNm>
+        <ClssfctnTp>ESVUFR</ClssfctnTp>
+        <NtnlCcy>GBP</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>213800ACO9GDDBM7DS35</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>AIMX</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2017-11-17T00:00:00Z</AdmssnApprvlDtByIssr>
+        <FrstTradDt>2017-11-20T00:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>AIMX</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE0007164600</Id>
+        <FullNm>SAP SE Inhaber-Aktien o.N.</FullNm>
+        <ShrtNm>SAP SE/AKT O.N.</ShrtNm>
+        <ClssfctnTp>ESVUFB</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900D6BF99LW9R2E68</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XETA</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>1988-04-03T22:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>1988-04-03T22:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>1997-11-28T06:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2020-12-22Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>TRQM</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>DE0007164600</Id>
+        <FullNm>SAP SE Inhaber-Aktien o.N.</FullNm>
+        <ShrtNm>SAP SE/AKT O.N.</ShrtNm>
+        <ClssfctnTp>ESVUFB</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900D6BF99LW9R2E68</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>FRAA</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>1988-04-03T22:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>1988-04-03T22:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>1988-04-11T05:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2020-12-22Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>TRQM</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>FR0000120271</Id>
+        <FullNm>TOTALENERGIES</FullNm>
+        <ShrtNm>TOTALENERGIES S/SH VTG FPD</ShrtNm>
+        <ClssfctnTp>ESVUFN</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900S21EQ1BO4ESM68</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XPAR</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2000-09-25T00:01:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>2000-09-25T00:01:00Z</ReqForAdmssnDt>
+        <FrstTradDt>2000-09-25T00:01:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>XLON</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>FR0000120271</Id>
+        <FullNm>TOTALENERGIES SE TOTALENERGIES ORD SHS</FullNm>
+        <ShrtNm>TOTALENERGIES S/SH VTG FPD</ShrtNm>
+        <ClssfctnTp>ESVUFN</ClssfctnTp>
+        <NtnlCcy>EUR</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>529900S21EQ1BO4ESM68</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XLON</Id>
+        <IssrReq>true</IssrReq>
+        <AdmssnApprvlDtByIssr>2007-11-06T00:00:00Z</AdmssnApprvlDtByIssr>
+        <ReqForAdmssnDt>2007-11-06T00:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>2007-11-07T00:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2025-04-09Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>XLON</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+<RefData>
+    <FinInstrmGnlAttrbts>
+        <Id>SE0000108656</Id>
+        <FullNm>Ericsson, Telefonab. L M ser. B</FullNm>
+        <ShrtNm>ERICSSON/SH B</ShrtNm>
+        <ClssfctnTp>ESRUFR</ClssfctnTp>
+        <NtnlCcy>SEK</NtnlCcy>
+        <CmmdtyDerivInd>false</CmmdtyDerivInd>
+    </FinInstrmGnlAttrbts>
+    <Issr>549300W9JLPW15XIFM52</Issr>
+    <TradgVnRltdAttrbts>
+        <Id>XSTO</Id>
+        <IssrReq>true</IssrReq>
+        <ReqForAdmssnDt>1998-03-02T00:00:00Z</ReqForAdmssnDt>
+        <FrstTradDt>1998-03-02T07:00:00Z</FrstTradDt>
+    </TradgVnRltdAttrbts>
+    <TechAttrbts>
+        <IncnsstncyInd>false</IncnsstncyInd>
+        <RlvntCmptntAuthrty>GB</RlvntCmptntAuthrty>
+        <PblctnPrd>
+            <FrDt>2020-12-22Z</FrDt>
+        </PblctnPrd>
+        <RlvntTradgVn>TRQM</RlvntTradgVn>
+    </TechAttrbts>
+</RefData>
+</FinInstrmRptgRefDataRpt></Document></Pyld></BizData>
