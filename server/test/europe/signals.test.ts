@@ -249,6 +249,58 @@ describe('refreshDilaSignals', () => {
     expect(await refreshDilaSignals(ctx('EU'))).toEqual([crossject]);
   });
 
+  it("the 07:00 run reads yesterday's evening batch (19:05, published about 20:05) that the last run missed", async () => {
+    const tar = new Uint8Array(fx('dila_sample_press.tar.gz'));
+    const asked: string[] = [];
+    const opened: string[] = [];
+    const dila = {
+      list: async (day: string) => { asked.push(day); return day === '2026-03-25' ? ['amf-gz_25032026_1905.tar.gz'] : []; },
+      archive: async (name: string) => { opened.push(name); return chunks(tar, 64 * 1024); },
+    };
+    const { db, ctx, outcome } = setup({ dila, today: '2026-03-26' });
+    const crossject = upsertEuropeCalendarRow(db, 'EU', {
+      symbol: 'ALCJ.PA', name: 'Crossject', exchange: 'PAR', period: { periodEnd: '2025-12-31', fiscalQuarter: 4, fyEnd: '2025-12-31' },
+      periodLabel: 'FY25', periodConfirmed: false, reportDate: '2026-03-25', dateStatus: 'estimated',
+    }, NOW);
+    expect(await refreshDilaSignals(ctx('EU'))).toEqual([crossject]);
+    expect(asked).toEqual(['2026-03-25', '2026-03-26']);
+    expect(outcome('dila-file', 'amf-gz_25032026_1905.tar.gz')).toBe('done');
+    // Already processed: skipped on the next run.
+    expect(await refreshDilaSignals(ctx('EU'))).toEqual([]);
+    expect(opened).toEqual(['amf-gz_25032026_1905.tar.gz']);
+  });
+
+  it('a batch listed for both days is read once', async () => {
+    const tar = new Uint8Array(fx('dila_sample_press.tar.gz'));
+    const opened: string[] = [];
+    const dila = { list: async () => ['amf-gz_25032026_0800.tar.gz'], archive: async (n: string) => { opened.push(n); return chunks(tar, 64 * 1024); } };
+    const { ctx } = setup({ dila, today: '2026-03-25' });
+    await refreshDilaSignals(ctx('EU'));
+    expect(opened).toEqual(['amf-gz_25032026_0800.tar.gz']);
+  });
+
+  it('a batch that fails 3 times in a day is marked error for that day and not downloaded again', async () => {
+    quiet();
+    let today = '2026-03-25';
+    let downloads = 0;
+    const tar = new Uint8Array(fx('dila_sample_press.tar.gz'));
+    const dila = {
+      list: async () => ['amf-gz_25032026_0800.tar.gz'],
+      archive: async () => { downloads++; return (async function* () { yield tar.subarray(0, 1000); throw new Error('reset'); })(); },
+    };
+    const db = setup({ dila }).db;
+    const ctx = { ...setup({ dila }).ctx('EU'), db, today: () => today } as EuropeJobContext;
+    for (let i = 0; i < 5; i++) await refreshDilaSignals(ctx);
+    expect(downloads).toBe(3);
+    expect(db.prepare("SELECT outcome FROM europe_signal_seen WHERE source = 'dila-file-error' AND item_id = ?")
+      .get('2026-03-25|amf-gz_25032026_0800.tar.gz')).toEqual({ outcome: 'error' });
+    expect(db.prepare("SELECT 1 FROM europe_signal_seen WHERE source = 'dila-file'").get()).toBeUndefined();
+    // The next day it gets its own three tries.
+    today = '2026-03-26';
+    await refreshDilaSignals(ctx);
+    expect(downloads).toBe(4);
+  });
+
   it('an ISIN can name only one EU line (schema UNIQUE (market, isin)); the job flips only that line', async () => {
     const tar = new Uint8Array(fx('dila_sample_press.tar.gz'));
     const dila = { list: async () => ['amf-gz_25032026_0800.tar.gz'], archive: async () => chunks(tar, 64 * 1024) };

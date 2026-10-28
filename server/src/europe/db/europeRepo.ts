@@ -853,7 +853,7 @@ export function lastEuropeSecSeenAt(db: DatabaseSync, market: EuropeMarket): str
 // ---------- Fast-signal bookkeeping (PR Newswire, DILA) ----------
 
 /** `timing`: a PRN item whose row an earlier signal already released; only its timing was used. */
-export type SignalOutcome = 'flipped' | 'timing' | 'no-match' | 'ambiguous' | 'not-results' | 'no-row' | 'done';
+export type SignalOutcome = 'flipped' | 'timing' | 'no-match' | 'ambiguous' | 'not-results' | 'no-row' | 'done' | 'failed' | 'error';
 
 /** Every active stock of both markets, with its universe and Yahoo profile names (the fast-signal issuer index). */
 export function europeIssuerStocks(db: DatabaseSync): {
@@ -879,6 +879,12 @@ export function signalSeen(db: DatabaseSync, source: string, itemId: string): bo
 export function markSignalSeen(db: DatabaseSync, source: string, itemId: string, symbol: string | null, outcome: SignalOutcome, now: string): void {
   db.prepare('INSERT OR IGNORE INTO europe_signal_seen (source, item_id, symbol, outcome, seen_at) VALUES (?, ?, ?, ?, ?)')
     .run(source, itemId, symbol, outcome, now);
+}
+
+/** Rows of `source` whose item id starts with `prefix` (the DILA per-day failure count). */
+export function signalCountWithPrefix(db: DatabaseSync, source: string, prefix: string): number {
+  const rows = db.prepare('SELECT item_id FROM europe_signal_seen WHERE source = ?').all(source) as { item_id: string }[];
+  return rows.filter((r) => r.item_id.startsWith(prefix)).length;
 }
 
 export function lastSignalAt(db: DatabaseSync, source: string): string | null {

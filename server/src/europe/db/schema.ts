@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS europe_past_dates (
 
 -- Fast signals (PR Newswire, DILA): each item handled once.
 CREATE TABLE IF NOT EXISTS europe_signal_seen (
-  source TEXT NOT NULL,              -- 'prn' | 'dila' (and 'dila-file' for a whole day file)
+  source TEXT NOT NULL,              -- 'prn' | 'dila' (and 'dila-file' for a whole day file; 'dila-file-fail' / 'dila-file-error' per day)
   item_id TEXT NOT NULL,
   symbol TEXT,
   outcome TEXT NOT NULL,
