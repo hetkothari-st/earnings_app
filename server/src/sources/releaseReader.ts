@@ -461,6 +461,11 @@ export interface ReaderResult {
   revenueCurrency: Currency | null;
   /** Profiles 'uk' / 'eu': the currency of `epsBasic` / `epsGaap` ('GBp' for pence; null for the other profiles). */
   epsCurrency: Currency | null;
+  /**
+   * Profiles 'uk' / 'eu', span 'quarter': some table states a figure in the release's own three-month column (any
+   * labelled, non-percent row, read or not). Unset for the other profiles and spans.
+   */
+  quarterStated?: boolean;
   notes: string[];
 }
 
@@ -1790,7 +1795,8 @@ function euQuarterHead(text: string): boolean {
   return ranges.length > 0 && ranges.every((r) => r.span === 'quarter') && new RegExp(String.raw`^${MONTH_RE}`, 'i').test(text.trim());
 }
 
-function euKinds(text: string): Set<EuSpan | 'h2' | 'ambiguous'> {
+/** `uk`: "half-year to / ended" is the half-year's own wording, not also a "year to / ended" (profile 'uk'). */
+function euKinds(text: string, uk = false): Set<EuSpan | 'h2' | 'ambiguous'> {
   const { ranges, rest } = jpRanges(text);
   const out = new Set<EuSpan | 'h2' | 'ambiguous'>();
   for (const r of ranges) out.add(r.span ?? 'ambiguous');
@@ -1799,7 +1805,7 @@ function euKinds(text: string): Set<EuSpan | 'h2' | 'ambiguous'> {
   if (EU_HALF.test(r2)) out.add('half');
   if (EU_NINE.test(r2)) out.add('nine');
   if (EU_QUARTER.test(r2)) out.add('quarter');
-  if (EU_YEAR.test(r2)) out.add('year');
+  if (EU_YEAR.test(uk ? r2.replace(/\bhalf[\s-]*years?\b/gi, ' ') : r2)) out.add('year');
   // "Year to date" / "cumulative" without stated months (six / nine) is no span: never a full year, and a quarter token
   // beside it ("Q3 2026 YTD") names the quarter the period runs to, not a three-month span.
   if (EU_YTD.test(r2) && !out.has('half') && !out.has('nine')) { out.delete('year'); out.delete('quarter'); out.add('ambiguous'); }
@@ -1835,16 +1841,18 @@ function euDayMonth(text: string): [number, number] | null {
  * column's own tokens must carry a year: "Q3 2026" is read only for a calendar-aligned fiscal year (the period end
  * falls in the year the fiscal year ends) and the release's own quarter. Comparative years never match.
  */
-function euColumn(own: string, labelCol: string, block: string, pe: Date, span: EuSpan, fiscal: JpFiscal, ownHead = own): boolean {
+function euColumn(own: string, labelCol: string, block: string, pe: Date, span: EuSpan, fiscal: JpFiscal, ownHead = own, uk = false): boolean {
   if (!own) return false;
   if (NOT_PERIOD.test(own) || ADJUSTMENT_COL.test(own) || EU_ADJUSTED.test(own) || JP_FORECAST.test(own)) return false;
-  let kinds = euKinds(own);
-  if (!kinds.size) kinds = euKinds(labelCol);
-  if (!kinds.size) kinds = euKinds(block);
+  let kinds = euKinds(own, uk);
+  if (!kinds.size) kinds = euKinds(labelCol, uk);
+  if (!kinds.size) kinds = euKinds(block, uk);
   if (kinds.size !== 1 || !kinds.has(span)) return false;
   // A quarter only by the positive allowlist (`euQuarterHead`): the column's own head (`ownHead`: without table-wide
   // title rows such as "PRELIMINARY RESULTS*"), or — when that head is only a year and units ("2026 $m") — the label
   // column's head ("For the three months ended 31 March"). No range / cumulative token anywhere over the column.
+  // `uk` (profile 'uk'): the whole head with its title cells may also be the allowlisted form — a "Quarter
+  // ended" title alone on its row, spanning "31 Mar 2026 | 31 Dec 2025 | 31 Mar 2025" (HSBC 1Q).
   if (span === 'quarter') {
     if (euNotQuarter(own) || euNotQuarter(labelCol)) return false;
     const bare = ownHead
@@ -1852,7 +1860,7 @@ function euColumn(own: string, labelCol: string, block: string, pe: Date, span: 
       .replace(/(?:^|\s)(?:us\$|\$|€|£|p|pence|cents?)(?=\s|$)/gi, ' ')
       .replace(/\b(?:19|20)\d{2}\b/g, ' ')
       .trim();
-    if (!(euQuarterHead(ownHead) || (bare === '' && euQuarterHead(labelCol)))) return false;
+    if (!(euQuarterHead(ownHead) || (uk && euQuarterHead(own)) || (bare === '' && euQuarterHead(labelCol)))) return false;
   }
   const near = ([y, m, d]: [number, number, number]) => m > 0 && daysApart(y, m, d, pe) <= 15;
   let dates = jpDates(own);
@@ -1911,9 +1919,14 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   const unitCell = (t: string) => EU_UNIT_LIKE.test(t) || EU_CURRENCY_MARK.test(t) || t === '%';
   const unitRow = (r: Cell[]) => r.some((c) => c.text) && r.every((c) => !c.text || unitCell(c.text));
 
+  let quarterStated = false;
   for (const [ti, table] of tables.entries()) {
     const caption = captions[ti]!;
-    if (EU_ADJUSTED.test(caption) || JP_FORECAST.test(caption)) continue;
+    if (JP_FORECAST.test(caption)) continue;
+    // An adjusted / non-GAAP caption: nothing in the table is read, but a three-month column in it still shows that
+    // the release states quarter figures (`quarterStated`).
+    const adjustedCaption = EU_ADJUSTED.test(caption);
+    if (adjustedCaption && span !== 'quarter') continue;
     // Period words in the caption ("Nine months to 30 September", "Six months ended", "Year to date", "H1"): no column
     // of the table is the quarter.
     if (span === 'quarter' && euNotQuarter(caption)) continue;
@@ -1928,6 +1941,8 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     let sectionRaw = '';
     const nonData: Cell[][] = [];
     const rowsOut: EuRow[] = [];
+    // Every labelled data row with a figure that is no percentage, for `quarterStated`.
+    const dataRows: Array<{ nums: Num[]; headers: Cell[][] }> = [];
 
     for (const rawCells of table.rows) {
       // A row of unit cells only ("€000 | €000", "$ | $") is a unit row under the period heads, never data.
@@ -1953,6 +1968,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
         if (/^(basic|diluted|basic and diluted)$/.test(euLabel(first.text)) && section) rawLabel = `${sectionRaw} ${first.text}`;
         const f = euField(rawLabel, bank);
         const vals = nums.filter((n) => !n.pct);
+        if (vals.length) dataRows.push({ nums: vals, headers });
         if (f && vals.length && !EU_ADJUSTED.test(section)) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel, sectionRaw });
         if (/:\s*$/.test(first.text)) { section = euLabel(first.text); sectionRaw = first.text; }
         continue;
@@ -1977,7 +1993,8 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
       section = '';
       sectionRaw = '';
     }
-    if (!rowsOut.length) continue;
+    if (span === 'quarter' && !quarterStated) quarterStated = euStatesQuarter(dataRows, pe, fiscal);
+    if (adjustedCaption || !rowsOut.length) continue;
 
     const figureCols = new Set(rowsOut.flatMap((r) => r.nums.map((n) => n.start)));
     const firstFigure = Math.min(...figureCols);
@@ -2029,7 +2046,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
         const own = overCells.map((c) => c.text).join(' ').trim();
         // The column's own head for the quarter allowlist, without the table's title cells.
         const ownHead = overCells.filter((c) => !titleCells.has(c)).map((c) => c.text).join(' ').trim();
-        if (!euColumn(own, labelCol, blockText, pe, span, fiscal, ownHead)) continue;
+        if (!euColumn(own, labelCol, blockText, pe, span, fiscal, ownHead, opts.profile === 'uk')) continue;
         // The column's currency: its unit cells ("€m", "US$m") and currency marks ("$", "pence", "cents").
         const infos = overCells.map((c) => euCellUnitInfo(c.text));
         const colUnits = infos.map((i) => i.unit).filter((u): u is EuUnit => u !== null);
@@ -2128,6 +2145,33 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     unit: null,
     revenueCurrency: rev?.cur ?? null,
     epsCurrency: basic?.cur ?? diluted?.cur ?? null,
+    ...(span === 'quarter' ? { quarterStated } : {}),
     notes,
   };
+}
+
+/**
+ * Does a table state a figure in the release's own three-month column, whatever the row's label? Looser than reading
+ * (it only ever blanks a release): a column counts when its head names the quarter and nothing else (`euKinds`), with
+ * no range / cumulative token, and is dated within 15 days of the period end — the date from its own head or from the
+ * head cells left of the figures ("Quarter ended 30 September 2025" over "Q2 FY26 | Q2 FY25") — or, undated, carries
+ * the release's own "Qn yyyy" token.
+ */
+function euStatesQuarter(rows: Array<{ nums: Num[]; headers: Cell[][] }>, pe: Date, fiscal: JpFiscal): boolean {
+  if (!rows.length) return false;
+  const firstFigure = Math.min(...rows.flatMap((r) => r.nums.map((n) => n.start)));
+  const peYear = pe.getUTCFullYear();
+  return rows.some((row) => {
+    const left = row.headers.flatMap((r) => r.filter((c) => c.text && c.start + c.span <= firstFigure)).map((c) => c.text).join(' ').trim();
+    return row.nums.some((n) => {
+      const own = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && c.start + c.span > firstFigure)).map((c) => c.text).join(' ').trim();
+      if (euNotQuarter(own) || euNotQuarter(left)) return false;
+      const kinds = euKinds(own).size ? euKinds(own) : euKinds(left);
+      if (kinds.size !== 1 || !kinds.has('quarter')) return false;
+      const dates = jpDates(own).length ? jpDates(own) : jpDates(left);
+      if (dates.length) return dates.every(([y, m, d]) => m > 0 && daysApart(y, m, d, pe) <= 15);
+      const tokens = euTokens(own);
+      return fiscal.year === peYear && tokens.length > 0 && tokens.every((t) => t.span === 'quarter' && t.year === peYear && t.q === fiscal.quarter);
+    });
+  });
 }

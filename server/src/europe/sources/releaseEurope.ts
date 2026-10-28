@@ -9,6 +9,9 @@
  *   the period is the 2nd / 3rd quarter, the six / nine-month column is read instead (`span: 'ytd'`, 6 / 9). A 4th
  *   quarter is read from the full-year column only (`ytd`, 12): standalone Q4 / H2 / second-half columns are never
  *   read. A 1st-quarter document is quarter-only. One span per release; nothing is ever computed from another span.
+ *   Profile 'uk': when the release states a figure in its own three-month column anywhere (`quarterStated`; e.g. a
+ *   quarter revenue table with no per-share line, or under a non-GAAP caption) but the quarter pass reads nothing, the
+ *   six / nine-month column is not read in its place: the release's span is the quarter, and it stays blank.
  * - Uncertain means blank: no unit, disagreeing candidates, ambiguous headers → null.
  */
 import { jpFiscalYear } from '../../jp/sources/releaseJp.js';
@@ -81,6 +84,10 @@ export function readEuropeRelease(
     notes = q.notes;
     if (q.revenue !== null || q.epsBasic !== null) return values(q, 'quarter', null, notes);
   }
+  if (period.profile === 'uk' && q?.quarterStated) {
+    if (any(q)) return values(q, 'quarter', null, notes);
+    return { ...BLANK, notes: [...notes, 'quarter figures stated but not read: the year-to-date column is not read in their place'] };
+  }
   if (period.fiscalQuarter > 1) {
     const ytd = YTD[period.fiscalQuarter as 2 | 3 | 4];
     const y = readRelease(html, { ...base, span: ytd.span });
@@ -88,5 +95,7 @@ export function readEuropeRelease(
     if (any(y)) return values(y, 'ytd', ytd.months, notes);
   }
   if (q && any(q)) return values(q, 'quarter', null, notes);
-  return { revenue: null, revenueCurrency: null, eps: null, epsDiluted: null, epsCurrency: null, span: null, ytdMonths: null, notes };
+  return { ...BLANK, notes };
 }
+
+const BLANK = { revenue: null, revenueCurrency: null, eps: null, epsDiluted: null, epsCurrency: null, span: null, ytdMonths: null } as const;
