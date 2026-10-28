@@ -1550,7 +1550,8 @@ const EU_CODE_CUR: Record<string, EuCurrency> = { eur: 'EUR', sek: 'SEK', nok: '
  * "(in) millions / thousands / billions of <currency>" — with an optional "(Figures / Amounts) (are) (in)" lead,
  * ", except per share …" and "unless otherwise indicated". Nothing else is a unit.
  */
-interface EuUnit { mult: number; cur: EuCurrency }
+/** `cur` null: a bare millions scale ("m", "(in m)", "in millions"), whose currency must come from another unit. */
+interface EuUnit { mult: number; cur: EuCurrency | null }
 
 function euUnit(text: string): EuUnit | null {
   let core = text.trim().toLowerCase();
@@ -1561,6 +1562,7 @@ function euUnit(text: string): EuUnit | null {
     .replace(/^(?:(?:all\s+)?(?:figures|amounts)\s+(?:are\s+)?(?:stated\s+|expressed\s+|shown\s+)?)?(?:in\s+)?/, '')
     .replace(/\s+/g, ' ')
     .trim();
+  if (/^(?:m|mn|millions?)$/.test(core)) return { mult: 1e6, cur: null };
   const code = core.match(EU_SCALE_CODE);
   if (code) return { mult: code[1] === 'm' ? 1e6 : code[1] === 'b' ? 1e9 : 1e3, cur: EU_CODE_CUR[code[2]!]! };
   for (const [cur, c] of EU_UNIT_CUR) {
@@ -1579,7 +1581,7 @@ function euUnit(text: string): EuUnit | null {
  * or the non-English "mio", "mln", "mrd", "tsd" … A text carrying one that is not wholly an allowlisted unit statement
  * names an unknown unit, and the figure it governs is blank (the caption never stands in for it).
  */
-const EU_UNIT_LIKE = /\b(?:thousands?|millions?|billions?|mio|mill|mln|mn|bn|bln|mrd|mia|md|tsd|tkr|mkr|mdkr|mdr)\b|['’]\s?000|(?:^|[^\d.,])000s?\b|\b[tkmb](?:eur|sek|nok|dkk|chf|usd|gbp)\b|(?:\$|€|£|\b(?:eur|sek|nok|dkk|chf|usd|gbp))\s?(?:[tkmb]|bn|mn)(?![a-z])/i;
+const EU_UNIT_LIKE = /^\(?\s*(?:in\s+)?mn?\s*\)?$|\b(?:thousands?|millions?|billions?|mio|mill|mln|mn|bn|bln|mrd|mia|md|tsd|tkr|mkr|mdkr|mdr)\b|['’]\s?000|(?:^|[^\d.,])000s?\b|\b[tkmb](?:eur|sek|nok|dkk|chf|usd|gbp)\b|(?:\$|€|£|\b(?:eur|sek|nok|dkk|chf|usd|gbp))\s?(?:[tkmb]|bn|mn)(?![a-z])/i;
 
 /** Period words a column head cell may carry next to its unit ("Q3 2026 €m", "2026 $m"). */
 const EU_PERIOD_WORDS = /\b(?:19|20)\d{2}\b|\b(?:q[1-4]|[1-4]q|h[12]|[12]h|fy|9m)\b/gi;
@@ -1592,7 +1594,7 @@ function euCellUnitInfo(text: string): { unit: EuUnit | null; unknown: boolean }
 }
 
 /** A header cell that is only a currency or minor-unit mark ("$", "£", "€", "p", "pence", "(DKK)", "cents", "¢", "US c"). */
-const EU_CURRENCY_MARK = /^\(?\s*(?:£|€|\$|us\$|p|pence|eur|euros?|usd|gbp|dkk|sek|chf|nok|cents?|¢|c|cts?|(?:us\$?|usd|us|euro|eur|€)\s*(?:cents?|c|cts?))\s*\)?$/i;
+const EU_CURRENCY_MARK = /^\(?\s*(?:£|€|\$|us\$|p|pence|eur|euros?|usd|gbp|dkk|sek|chf|nok|cents?|¢|c|cts?|(?:us\$?|usd|us|euro|eur|€)\s*(?:cents?|c|cts?)|c\s?€)\s*\)?$/i;
 
 /** An amount in a nominal / par value: "US$0.50", "€0.10", "CHF 0.10", "10 pence", "25p", "25 US cents", "0.10 euros". */
 const EU_AMOUNT = String.raw`(?:(?:us\$|\$|€|£|eur|usd|gbp|chf|sek|nok|dkk)\s?\d[\d.,]*(?:\s*(?:us\s+cents?|euro\s+cents?|cents?|pence|p\b|¢|cts?\b|c\b))?` +
@@ -1605,54 +1607,72 @@ const EU_NOMINAL: Array<[RegExp, string]> = [
 /** Nominal / par share values are dropped before any unit or currency is looked for: they state neither. */
 const euStripNominal = (text: string) => EU_NOMINAL.reduce((t, [re, to]) => t.replace(re, to), text);
 
-/** What a text says about an EPS figure's currency: major currencies, and a cents / pence minor-unit marker. */
-interface EuEpsMarks { majors: Set<EuCurrency>; cents: boolean; pence: boolean }
+/**
+ * What one text (a row label or a head cell) says about an EPS figure's currency: its major currencies, explicit cents
+ * forms (US / euro cents), a bare minor-unit marker ("c", "(c)", "ct", "¢", "cents") and pence. A bare marker or pence
+ * beside a major currency in the same text ("(€)(c)", "€ c", "(£ p)") may be a footnote letter or a minor unit: the
+ * text is `ambiguous`.
+ */
+interface EuEpsMarks { majors: Set<EuCurrency>; explicitCents: Set<'USD' | 'EUR'>; bareCents: boolean; pence: boolean; ambiguous: boolean }
 
-const EU_PENCE = /\bpence\b|\(\s*p\s*\)|^\s*p\s*$|\sp\s*$/i;
-const EU_CENTS = /\bcents?\b|¢|\bcts?\b|\(\s*c\s*\)|^\s*\(?\s*c\s*\)?\s*$|(?:us)?\$\s?c\b|\bus\s*c\b|€\s?cts?\b|\beuro?\s?cts?\b/i;
+/** Explicit cents forms (positive allowlist): "US cents", "US$ cents", "US$c", "USD cents", "euro cents", "EUR cents", "€c", "c€", "€ ct". */
+const EU_US_CENTS = /\bu\.?\s?s\.?\s*\$?\s*cents?\b|\busd\s*cents?\b|\bus\$\s?c\b|\busc\b|\bus\s+cts?\b/gi;
+const EU_EURO_CENTS = /\beuros?\s*(?:cents?|cts?)\b|\beur\s*(?:cents?|cts?)\b|€c\b|\bc€|€\s?(?:cents?|cts?)\b/gi;
+/** A bare minor-unit marker, once the explicit forms are taken out. */
+const EU_BARE_CENTS = /\bcents?\b|¢|\bcts?\b|(?:^|[\s(])c(?=[\s)]|$)/i;
+const EU_PENCE = /\bpence\b|(?:^|[\s(])p(?=[\s)]|$)/i;
 
 function euEpsMarks(text: string): EuEpsMarks {
-  const t = euStripNominal(text);
+  let t = euStripNominal(text);
+  const explicitCents = new Set<'USD' | 'EUR'>();
+  t = t.replace(EU_US_CENTS, () => { explicitCents.add('USD'); return ' '; });
+  t = t.replace(EU_EURO_CENTS, () => { explicitCents.add('EUR'); return ' '; });
   const majors = new Set<EuCurrency>();
   if (/£|\bgbp\b|\bpounds?\b|\bsterling\b/i.test(t)) majors.add('GBP');
   if (/€|\beur\b|\beuros?\b/i.test(t)) majors.add('EUR');
-  if (/\$|\busd\b|\bu\.\s?s\.\s?dollars?\b|\bus dollars?\b|\bus\b(?=\s*(?:cents?|c\b|¢))/i.test(t)) majors.add('USD');
+  if (/\$|\busd\b|\bu\.\s?s\.\s?dollars?\b|\bus dollars?\b/i.test(t)) majors.add('USD');
   if (/\bchf\b|swiss francs?/i.test(t)) majors.add('CHF');
   if (/\bdkk\b|danish kron/i.test(t)) majors.add('DKK');
   if (/\bsek\b|\bmsek\b|swedish kron/i.test(t)) majors.add('SEK');
   if (/\bnok\b|\bmnok\b|norwegian kron/i.test(t)) majors.add('NOK');
-  return { majors, cents: EU_CENTS.test(t), pence: EU_PENCE.test(t) };
+  const bareCents = EU_BARE_CENTS.test(t);
+  const pence = EU_PENCE.test(t);
+  return { majors, explicitCents, bareCents, pence, ambiguous: (bareCents || pence) && (majors.size > 0 || explicitCents.size > 0) };
 }
 
 /**
  * An EPS figure's currency from every source that states one (row label, column marks, the figure's own sign), or
- * null. Minor units only on a closed list: US / euro cents (converted to the major unit, /100) and pence ('GBp', not
- * converted). Cents and pence together, a minor unit beside any other currency, a minor-unit marker on a figure signed
- * in the major unit ("$1.777" under "cents", "£1.23" with "(pence)") or two major currencies → null.
+ * null. Positive pairings only:
+ * - US / euro cents (converted /100): an explicit form, or a bare marker that is the only unit indication of its text
+ *   and pairs with exactly one currency (US$ or €) stated elsewhere.
+ * - Pence ('GBp', not converted): only when no major currency is stated anywhere (a "(£)" label under a "p" mark
+ *   conflicts).
+ * - Otherwise exactly one major currency.
+ * An ambiguous text, cents and pence together, or a minor unit on a figure signed in the major unit → null.
  */
 function euEpsCurrency(marks: EuEpsMarks[], sign: EuCurrency | undefined): { cur: EuCurrency; div: number } | null {
+  if (marks.some((m) => m.ambiguous)) return null;
   const majors = new Set<EuCurrency>(marks.flatMap((m) => [...m.majors]));
-  const cents = marks.some((m) => m.cents);
-  let pence = marks.some((m) => m.pence);
+  const explicit = new Set<EuCurrency>(marks.flatMap((m) => [...m.explicitCents]));
   const signedMajor = sign !== undefined && sign !== 'GBp';
-  if (sign === 'GBp') pence = true;
-  else if (sign) majors.add(sign);
+  if (signedMajor) majors.add(sign);
+  const cents = explicit.size > 0 || marks.some((m) => m.bareCents);
+  const pence = sign === 'GBp' || marks.some((m) => m.pence);
   if (cents && pence) return null;
+  if (pence) return majors.size === 0 ? { cur: 'GBp', div: 1 } : null;
   if (cents) {
-    if (signedMajor || majors.size !== 1) return null;
-    const cur = [...majors][0]!;
+    if (signedMajor) return null;
+    const curs = new Set([...explicit, ...majors]);
+    if (curs.size !== 1) return null;
+    const cur = [...curs][0]!;
     return cur === 'USD' || cur === 'EUR' ? { cur, div: 100 } : null;
-  }
-  if (pence) {
-    if (signedMajor || majors.size > 1 || (majors.size === 1 && !majors.has('GBP'))) return null;
-    return { cur: 'GBp', div: 1 };
   }
   return majors.size === 1 ? { cur: [...majors][0]!, div: 1 } : null;
 }
 
-/** The currency family a column mark names, for the convenience-column check (pence → GBP; cents name none). */
+/** The currency family a column mark names, for the convenience-column check (pence → GBP, explicit cents → theirs). */
 function euMarkFamily(m: EuEpsMarks): Set<EuCurrency> {
-  const out = new Set(m.majors);
+  const out = new Set<EuCurrency>([...m.majors, ...m.explicitCents]);
   if (m.pence) out.add('GBP');
   return out;
 }
@@ -1722,12 +1742,39 @@ function euField(label: string, bank: boolean): { field: EuField; continuing: bo
 const EU_H2 = /\bh2\b|\b2h\b|\bsecond[\s-]half\b/i;
 const EU_HALF = /\b(?:six|6)[\s-]*months?\b|\bh1\b|\b1h\b|\bhalf[\s-]*year\b|\bfirst[\s-]half\b/i;
 const EU_NINE = /\b(?:nine|9)[\s-]*months?\b|\b9m\b/i;
-const EU_QUARTER = /\b(?:three|3)[\s-]*months?\b|\bquarter\b|\bq[1-4](?![a-z])|\b[1-4]q(?![a-z])/i;
+const EU_QUARTER = /\b(?:three|3)[\s-]*months?\b|\b3m\b|\bquarter\b|\bq[1-4](?![a-z])|\b[1-4]q(?![a-z])/i;
 const EU_YEAR = /\bfy(?![a-z])|\bfull[\s-]*year\b|\byears?\s+ended\b|\byears?\s+to\b(?![\s-]+date)|\b(?:twelve|12)[\s-]*months?\b/i;
 /** "Year to date" / "YTD" states no months of its own. */
 const EU_YTD = /\byear[\s-]+to[\s-]+date\b|\bytd\b|\bcumulative\b/i;
 /** Words that rule a column out as a quarter: it is year-to-date, cumulative, six or nine months. */
-const EU_NOT_QUARTER = /\bytd\b|\byear[\s-]+to[\s-]+date\b|\bcumulative\b|\b(?:nine|six|9|6)[\s-]*months?\b|\b9m\b|\bh1\b|\b1h\b|\bhalf[\s-]*year\b|\bfirst[\s-]half\b/i;
+/**
+ * A quarter head, positive allowlist: it starts with "Qn yyyy" / "nQ yy", "nth quarter (yyyy)", "three months ended / to
+ * <date>", "3M", "quarter ended / to <date>" (optionally after "For the"), or is a three-month range ("July–September
+ * 2026"). Anything else is no quarter.
+ */
+const EU_QUARTER_HEAD = /^(?:for\s+the\s+)?(?:q[1-4]\s*'?\s*(?:\d{4}|\d{2})\b|[1-4]q\s*'?\s*(?:\d{4}|\d{2})\b|(?:first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\b|(?:three|3)[\s-]*months?\s+(?:ended|ending|to)\b|3m\b|quarter\s+(?:ended|ending|to)\b)/i;
+/**
+ * Words that rule a head out as a quarter: quarter ranges ("Q1-Q3", "1-3Q"), accumulated / cumulative / YTD / year to
+ * date / to date, six or nine months, 6M / 9M, H1 / H2, half.
+ */
+const EU_NOT_QUARTER = /\bq[1-4]\s*[-–—~]\s*q?[1-4]\b|\b[1-4]\s*[-–—~]\s*[1-4]\s*q\b|accumulated|cumulative|\bytd\b|\byear[\s-]+to[\s-]+date\b|\bto[\s-]+date\b|\b(?:nine|six|9|6)[\s-]*months?\b|\b[69]m\b|\bh[12]\b|\b[12]h\b|\bhalf\b|\bfirst[\s-]half\b/i;
+
+/** A range / cumulative token, or a month range ("Jan-Sep", with or without a year) other than three months. */
+function euNotQuarter(text: string): boolean {
+  if (EU_NOT_QUARTER.test(text)) return true;
+  for (const m of text.matchAll(new RegExp(String.raw`\b${MONTH_RE}\.?\s*[-–—~]\s*${MONTH_RE}\b`, 'gi'))) {
+    if (((month(m[2]!) - month(m[1]!) + 12) % 12) + 1 !== 3) return true;
+  }
+  return false;
+}
+
+/** A quarter head by the positive allowlist, with no range / cumulative token. */
+function euQuarterHead(text: string): boolean {
+  if (euNotQuarter(text)) return false;
+  if (EU_QUARTER_HEAD.test(text.trim())) return true;
+  const { ranges } = jpRanges(text);
+  return ranges.length > 0 && ranges.every((r) => r.span === 'quarter') && new RegExp(String.raw`^${MONTH_RE}`, 'i').test(text.trim());
+}
 
 function euKinds(text: string): Set<EuSpan | 'h2' | 'ambiguous'> {
   const { ranges, rest } = jpRanges(text);
@@ -1751,6 +1798,8 @@ function euTokens(text: string): Array<{ span: EuSpan; q?: number; year: number 
   const Y = String.raw`\s*'?\s*(\d{4}|\d{2})\b`;
   for (const m of text.matchAll(new RegExp(String.raw`\bq([1-4])${Y}`, 'gi'))) out.push({ span: 'quarter', q: Number(m[1]), year: fullYear(m[2]!) });
   for (const m of text.matchAll(new RegExp(String.raw`\b([1-4])q${Y}`, 'gi'))) out.push({ span: 'quarter', q: Number(m[1]), year: fullYear(m[2]!) });
+  const ORD: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, '1st': 1, '2nd': 2, '3rd': 3, '4th': 4 };
+  for (const m of text.matchAll(/\b(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\s+(?:of\s+)?(\d{4})\b/gi)) out.push({ span: 'quarter', q: ORD[m[1]!.toLowerCase()]!, year: Number(m[2]) });
   for (const m of text.matchAll(new RegExp(String.raw`\b(?:h1|1h|half[\s-]*year|first[\s-]half)${Y}`, 'gi'))) out.push({ span: 'half', year: fullYear(m[1]!) });
   for (const m of text.matchAll(new RegExp(String.raw`\b(?:9m|nine[\s-]*months)${Y}`, 'gi'))) out.push({ span: 'nine', year: fullYear(m[1]!) });
   for (const m of text.matchAll(new RegExp(String.raw`\b(?:fy|full[\s-]*year)${Y}`, 'gi'))) out.push({ span: 'year', year: fullYear(m[1]!) });
@@ -1772,15 +1821,25 @@ function euDayMonth(text: string): [number, number] | null {
  * column's own tokens must carry a year: "Q3 2026" is read only for a calendar-aligned fiscal year (the period end
  * falls in the year the fiscal year ends) and the release's own quarter. Comparative years never match.
  */
-function euColumn(own: string, labelCol: string, block: string, pe: Date, span: EuSpan, fiscal: JpFiscal): boolean {
+function euColumn(own: string, labelCol: string, block: string, pe: Date, span: EuSpan, fiscal: JpFiscal, ownHead = own): boolean {
   if (!own) return false;
   if (NOT_PERIOD.test(own) || ADJUSTMENT_COL.test(own) || EU_ADJUSTED.test(own) || JP_FORECAST.test(own)) return false;
   let kinds = euKinds(own);
   if (!kinds.size) kinds = euKinds(labelCol);
   if (!kinds.size) kinds = euKinds(block);
   if (kinds.size !== 1 || !kinds.has(span)) return false;
-  // A quarter only when the head unambiguously denotes three months (a longer date range is another span already).
-  if (span === 'quarter' && EU_NOT_QUARTER.test(`${own} ${labelCol}`)) return false;
+  // A quarter only by the positive allowlist (`euQuarterHead`): the column's own head (`ownHead`: without table-wide
+  // title rows such as "PRELIMINARY RESULTS*"), or — when that head is only a year and units ("2026 $m") — the label
+  // column's head ("For the three months ended 31 March"). No range / cumulative token anywhere over the column.
+  if (span === 'quarter') {
+    if (euNotQuarter(own) || euNotQuarter(labelCol)) return false;
+    const bare = ownHead
+      .replace(/(?:us\$|\$|€|£|eur|usd|gbp|chf|dkk|sek|nok)\s?(?:m|mn|bn|million|millions|thousands?|'?000)(?![a-z])/gi, ' ')
+      .replace(/(?:^|\s)(?:us\$|\$|€|£|p|pence|cents?)(?=\s|$)/gi, ' ')
+      .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+      .trim();
+    if (!(euQuarterHead(ownHead) || (bare === '' && euQuarterHead(labelCol)))) return false;
+  }
   const near = ([y, m, d]: [number, number, number]) => m > 0 && daysApart(y, m, d, pe) <= 15;
   let dates = jpDates(own);
   if (!dates.length) dates = jpDates(labelCol);
@@ -1887,6 +1946,13 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
 
     const figureCols = new Set(rowsOut.flatMap((r) => r.nums.map((n) => n.start)));
     const firstFigure = Math.min(...figureCols);
+    // Title cells: alone on their head row, and starting in the label column or spanning every figure column.
+    const titleCells = new Set<Cell>();
+    for (const r of nonData) {
+      const texts = r.filter((c) => c.text);
+      const t = texts[0];
+      if (texts.length === 1 && t && (t.start < firstFigure || [...figureCols].every((f) => f >= t.start && f < t.start + t.span))) titleCells.add(t);
+    }
     // The table's own head units: whole-unit cells left of the figures (the label column's head) or alone on their row.
     // A head cell with a scale word that is no unit statement ("(In thousands, except per share amounts)") names no
     // unit, and the caption never stands in for it. The caption counts only when the table states no unit itself:
@@ -1907,7 +1973,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     addCaption(euUnit(caption));
     if (statementTitle(caption) != null) for (const m of caption.matchAll(new RegExp(PAREN_GROUP, 'g'))) addCaption(euUnit(m[0]));
     const tableLevel = headUnits.size || headUnknown ? headUnits : captionUnits;
-    const tableCur = new Set([...tableLevel.values()].map((u) => u.cur));
+    const tableCur = new Set([...tableLevel.values()].map((u) => u.cur).filter((c): c is EuCurrency => c !== null));
     const noUnit = () => { if (!notes.includes('revenue: no unit stated for table')) notes.push('revenue: no unit stated for table'); };
 
     for (const row of rowsOut) {
@@ -1925,13 +1991,15 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
       for (const n of row.nums) {
         const overCells = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && !(c.start === 0 && c.span === 1)));
         const own = overCells.map((c) => c.text).join(' ').trim();
-        if (!euColumn(own, labelCol, blockText, pe, span, fiscal)) continue;
+        // The column's own head for the quarter allowlist, without the table's title cells.
+        const ownHead = overCells.filter((c) => !titleCells.has(c)).map((c) => c.text).join(' ').trim();
+        if (!euColumn(own, labelCol, blockText, pe, span, fiscal, ownHead)) continue;
         // The column's currency: its unit cells ("€m", "US$m") and currency marks ("$", "pence", "cents").
         const infos = overCells.map((c) => euCellUnitInfo(c.text));
         const colUnits = infos.map((i) => i.unit).filter((u): u is EuUnit => u !== null);
         const colUnknown = infos.some((i) => i.unknown);
         const marks = overCells.filter((c) => EU_CURRENCY_MARK.test(c.text)).map((c) => euEpsMarks(c.text));
-        const colCurs = new Set([...colUnits.map((u) => u.cur), ...marks.flatMap((m) => [...euMarkFamily(m)])]);
+        const colCurs = new Set([...colUnits.map((u) => u.cur).filter((c): c is EuCurrency => c !== null), ...marks.flatMap((m) => [...euMarkFamily(m)])]);
         if (colCurs.size > 1) continue;
         // A column in another currency than the table's (a convenience translation) is skipped.
         if (colCurs.size === 1 && tableCur.size === 1 && [...colCurs][0] !== [...tableCur][0]) continue;
@@ -1942,15 +2010,20 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
           // Scale precedence: the table's own units (row label, column head, table head) beat the caption; in-table
           // units that disagree, or an in-table scale that is no unit statement, leave the figure blank.
           if (headUnknown || rowUnknown || colUnknown) { noUnit(); continue; }
+          // The scale: the in-table units' (all must agree), else the caption's. The currency: the in-table units'
+          // (all that name one must agree), else — for a bare in-table "m" — the caption's; it must be exactly one.
           const inTable = [...rowUnits, ...colUnits, ...headUnits.values()];
-          const units = inTable.length ? inTable : [...captionUnits.values()];
-          const distinct = new Set(units.map((u) => `${u.cur}:${u.mult}`));
-          if (!distinct.size) { noUnit(); continue; }
-          if (distinct.size > 1) {
+          const caps = [...captionUnits.values()];
+          const scaleFrom = inTable.length ? inTable : caps;
+          const mults = new Set(scaleFrom.map((u) => u.mult));
+          const inCurs = new Set(inTable.map((u) => u.cur).filter((c): c is EuCurrency => c !== null));
+          const curs = inCurs.size ? inCurs : new Set(caps.map((u) => u.cur).filter((c): c is EuCurrency => c !== null));
+          if (!mults.size || !curs.size) { noUnit(); continue; }
+          if (mults.size > 1 || curs.size > 1) {
             if (!notes.includes('revenue: units disagree')) notes.push('revenue: units disagree');
             continue;
           }
-          const unit = units[0]!;
+          const unit = { mult: [...mults][0]!, cur: [...curs][0]! };
           if (sign && (sign === 'GBp' ? 'GBP' : sign) !== unit.cur) continue;
           found.revenue.push({ value: Math.round(n.value * unit.mult), cur: unit.cur, continuing: row.continuing });
         } else {

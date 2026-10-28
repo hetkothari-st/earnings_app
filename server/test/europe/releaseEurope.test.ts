@@ -318,3 +318,64 @@ describe('readEuropeRelease — fix round 2: fail closed (review N1–N4)', () =
     expect([nine.span, nine.ytdMonths, nine.revenue]).toEqual(['ytd', 9, 15_000_000_000]);
   });
 });
+
+describe('readEuropeRelease — fix round 3: positive allowlists (re-review 2)', () => {
+  const EU_Q3 = { ...Q3, profile: 'eu' as const };
+  const epsOf = (html: string, p: Parameters<typeof readEuropeRelease>[1] = EU_Q3) => {
+    const v = readEuropeRelease(html, p);
+    return [v.eps, v.epsCurrency];
+  };
+  const t = (head: string, label: string, fig: string, mark = '') =>
+    doc(table('', [[head, 'Q3 2026', 'Q3 2025'], ...(mark ? [['', mark, mark]] : [])], [['Revenue', '5,000', '4,800'], [label, fig, '40.1']]));
+
+  it('R2-1: a minor-unit marker beside a major currency in the same label / head is ambiguous (footnote or cents) → blank', () => {
+    expect(epsOf(t('€m', 'Basic EPS (€)(c)', '45.3'))).toEqual([null, null]);
+    expect(epsOf(t('US$m', 'Basic EPS ($) (c)', '177.7'), Q3)).toEqual([null, null]);
+    expect(epsOf(doc(table('', [['€m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS €<sup>c</sup>', '45.3', '40.1']])))).toEqual([null, null]);
+    expect(epsOf(t('€m', 'Basic EPS', '45.3', '€ c'))).toEqual([null, null]);
+    expect(epsOf(t('€m', 'Basic EPS ¢ (€)', '45.3'))).toEqual([null, null]);
+    // The sole unit indication, paired with a currency stated elsewhere: cents.
+    expect(epsOf(t('US$m', 'Basic EPS (c)', '177.7', '$'), Q3)).toEqual([1.777, 'USD']);
+    // Explicit forms.
+    expect(epsOf(t('US$m', 'Basic EPS (US cents)', '177.7'), Q3)).toEqual([1.777, 'USD']);
+    expect(epsOf(t('€m', 'Basic EPS (euro cents)', '45.3'))).toEqual([0.453, 'EUR']);
+    expect(epsOf(t('€m', 'Basic EPS (€ ct)', '45.3'))).toEqual([0.453, 'EUR']);
+    expect(epsOf(t('US$m', 'Basic EPS (US$c)', '177.7'), Q3)).toEqual([1.777, 'USD']);
+  });
+
+  it('R2-3: "€c" and "c€" are euro cents (/100)', () => {
+    expect(epsOf(t('€m', 'Basic EPS (€c)', '45.3'))).toEqual([0.453, 'EUR']);
+    expect(epsOf(t('€m', 'Basic EPS (c€)', '45.3'))).toEqual([0.453, 'EUR']);
+    expect(epsOf(t('€m', 'Basic EPS', '45.3', '€c'))).toEqual([0.453, 'EUR']);
+  });
+
+  it('R2-2: a quarter only by an explicit three-month form with no range / cumulative token', () => {
+    const q = (head: string, label = '') => {
+      const v = readEuropeRelease(doc(table('', [[label || '€m', head]], [['Revenue', '5,000'], ['Basic EPS (€)', '1.25']])), EU_Q3);
+      return v.span === 'quarter' ? v.revenue : null;
+    };
+    // Read: Qn yyyy, nQ yy, nth quarter yyyy, three months ended <date>, quarter ended <date>, 3M to <date>, a three-month range.
+    for (const head of ['Q3 2026', '3Q26', 'Third quarter 2026', 'Three months ended 30 September 2026', 'Quarter ended 30 Sep 2026',
+      '3M to 30 September 2026', 'July–September 2026']) expect([head, q(head)]).toEqual([head, 5_000_000_000]);
+    // Never the quarter: ranges, cumulative / accumulated / to-date words, six / nine months, halves, longer month ranges.
+    for (const head of ['Q1-Q3 2026', 'Q1–Q3 2026', '1-3Q 2026', 'Q3 2026 accumulated', 'Q3 2026 cumulative', 'Q3 2026 YTD',
+      'Q3 2026 year to date', 'Q3 2026 to date', 'Quarter to date 30 September 2026', 'Nine months Q3 2026', '9M Q3 2026', '6M Q3 2026',
+      'H1 Q3 2026', 'Q3 2026 Jan-Sep', 'Jan–Sep 2026', 'Third quarter half 2026', 'Reported Q3 2026 2026']) {
+      expect([head, q(head)]).toEqual([head, null]);
+    }
+    // A label-column head naming the three months dates a year-only column (AZN); a cumulative label column never.
+    expect(q('2026 $m', 'For the three months ended 30 September')).toBe(5_000_000_000);
+    expect(q('2026', 'Cumulative three months ended 30 September')).toBeNull();
+  });
+
+  it('minors: "(£)" label with a "p" column mark → blank; an in-table "m" / "(in m)" head beats a thousands caption', () => {
+    expect(epsOf(t('£m', 'Basic EPS (£)', '12.3', 'p'), Q3)).toEqual([null, null]);
+    expect(epsOf(t('£m', 'Basic EPS (p)', '12.3', '£'), Q3)).toEqual([null, null]);
+    for (const head of ['m', '(in m)', 'in millions']) {
+      const v = readEuropeRelease(doc(table('(in thousands of euros)', [[head, 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS (€)', '1.25', '1.10']])), EU_Q3);
+      expect([head, v.revenue, v.revenueCurrency]).toEqual([head, 5_000_000_000, 'EUR']);
+    }
+    // A bare scale with no currency anywhere stays blank.
+    expect(readEuropeRelease(doc(table('', [['m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS (€)', '1.25', '1.10']])), EU_Q3).revenue).toBeNull();
+  });
+});
