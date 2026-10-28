@@ -498,6 +498,19 @@ export function nearestUnreleasedEurope(
   return r ?? null;
 }
 
+/**
+ * Released reports of `symbol` (released as `nearestUnreleasedEurope` defines it: a release signal or an EPS figure)
+ * dated within `windowDays` of `day`, nearest first. `releasedAt` is null when only an EPS figure marks the release.
+ */
+export function releasedEuropeNear(
+  db: DatabaseSync, symbol: string, day: string, windowDays = 3,
+): { id: number; releasedAt: string | null }[] {
+  return db.prepare(`SELECT id, released_at AS releasedAt FROM europe_reports
+    WHERE symbol = ? AND ${RELEASED_SQL} AND abs(julianday(report_date) - julianday(?)) <= ?
+    ORDER BY abs(julianday(report_date) - julianday(?)), report_date`).all(symbol, day, windowDays, day) as
+    { id: number; releasedAt: string | null }[];
+}
+
 export function findEuropeReportId(db: DatabaseSync, symbol: string, periodEnd: string): number | null {
   return findReport(db, symbol, periodEnd)?.id ?? null;
 }
@@ -820,7 +833,24 @@ export function lastEuropeSecSeenAt(db: DatabaseSync, market: EuropeMarket): str
 
 // ---------- Fast-signal bookkeeping (PR Newswire, DILA) ----------
 
-export type SignalOutcome = 'flipped' | 'no-match' | 'ambiguous' | 'not-results' | 'no-row' | 'done';
+/** `timing`: a PRN item whose row an earlier signal already released; only its timing was used. */
+export type SignalOutcome = 'flipped' | 'timing' | 'no-match' | 'ambiguous' | 'not-results' | 'no-row' | 'done';
+
+/** Every active stock of both markets, with its universe and Yahoo profile names (the fast-signal issuer index). */
+export function europeIssuerStocks(db: DatabaseSync): {
+  symbol: string; market: EuropeMarket; exchange: ExchangeId; isin: string | null; lei: string | null; name: string; profileName: string | null;
+}[] {
+  return db.prepare(`SELECT symbol, market, exchange, isin, lei, name, profile_name AS profileName FROM europe_stocks WHERE active = 1
+    ORDER BY symbol`).all() as unknown as {
+    symbol: string; market: EuropeMarket; exchange: ExchangeId; isin: string | null; lei: string | null; name: string; profileName: string | null;
+  }[];
+}
+
+/** Active stocks of the market carrying this ISIN (more than one means the ISIN cannot name one line). */
+export function activeEuropeStocksByIsin(db: DatabaseSync, market: EuropeMarket, isin: string): { symbol: string; exchange: ExchangeId }[] {
+  return db.prepare('SELECT symbol, exchange FROM europe_stocks WHERE market = ? AND active = 1 AND isin = ? ORDER BY symbol')
+    .all(market, isin) as unknown as { symbol: string; exchange: ExchangeId }[];
+}
 
 export function signalSeen(db: DatabaseSync, source: string, itemId: string): boolean {
   return db.prepare('SELECT 1 FROM europe_signal_seen WHERE source = ? AND item_id = ?').get(source, itemId) != null;
@@ -838,8 +868,18 @@ export function lastSignalAt(db: DatabaseSync, source: string): string | null {
 
 // ---------- ESEF bookkeeping ----------
 
-/** `merged`: actuals written. `no-row` / `blank`: final. A fetch error is never recorded (retried next run). */
-export type EsefOutcome = 'merged' | 'superseded' | 'no-row' | 'blank';
+/**
+ * `merged`: actuals written. `no-row` / `blank`: final. A fetch error is not recorded while the filing can still be
+ * retried; once it falls behind the job's paging window it is recorded `error-dropped` (a trace, never retried).
+ */
+export type EsefOutcome = 'merged' | 'superseded' | 'no-row' | 'blank' | 'error-dropped';
+
+/** True when an annual period later than `periodEnd` was already handled (with a 12-month figure) for any of `symbols`. */
+export function esefLaterPeriodHeld(db: DatabaseSync, symbols: readonly string[], periodEnd: string): boolean {
+  if (symbols.length === 0) return false;
+  return db.prepare(`SELECT 1 FROM europe_esef_seen WHERE symbol IN (${symbols.map(() => '?').join(', ')}) AND period_end > ?
+    AND outcome IN ('merged', 'superseded', 'no-row') LIMIT 1`).get(...symbols, periodEnd) != null;
+}
 
 export function esefSeen(db: DatabaseSync, fxoId: string): boolean {
   return db.prepare('SELECT 1 FROM europe_esef_seen WHERE fxo_id = ?').get(fxoId) != null;

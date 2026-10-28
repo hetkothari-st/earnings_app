@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import {
-  esefSeen, europeStocksByLei, getEuropeReport, lastEsefDateAdded, markEsefSeen, mergeEuropeActuals, setEuropeProfile,
+  esefLaterPeriodHeld, esefSeen, europeStocksByLei, getEuropeReport, lastEsefDateAdded, markEsefSeen, mergeEuropeActuals, setEuropeProfile,
   findEuropeReportId, type EsefOutcome,
 } from '../db/europeRepo.js';
 import { EXCHANGES, exchangesOf, type EuropeMarket } from '../exchanges.js';
@@ -39,15 +39,18 @@ export function esefSinceFor(ctx: EuropeJobContext): string {
  * the market: the 12-month revenue and EPS ending the filing's period end are merged into each share line's report
  * for that period end (a fiscal-Q4 row only: a 12-month figure is never put in an H1 or quarter row), as
  * `esef` / `ytd` / 12 months with the report URL. Outcomes: `merged`; `superseded` (figures present but SEC holds every
- * field; the report link is still added when the row has none); `no-row` (nothing created); `blank` (no 12-month fact). A facts fetch
- * error is not marked, so it is retried. The filing's period end month becomes the fiscal year end (source esef)
- * when the filing carries a 12-month fact (a 9-month interim ESEF filing never does) and no later period is held.
+ * field; the report link is still added when the row has none); `no-row` (nothing created); `blank` (no 12-month fact).
+ * A facts fetch error is not marked while the filing can be retried; one whose date_added the next `esefSinceFor`
+ * no longer reaches is recorded `error-dropped`, so it leaves a trace. The filing's period end month becomes the
+ * fiscal year end (source esef) of every share line of the issuer when the filing carries a 12-month fact (a 9-month
+ * interim ESEF filing never does) and no later annual period is held for any line of that issuer (LEI).
  * Returns the ids changed.
  */
 export async function refreshEsefResults(ctx: EuropeJobContext, since: string): Promise<number[]> {
   const filings = await trackIn(ctx, 'esef', () => ctx.esef.recent(esefCountries(ctx.market), since));
   if (!filings) return [];
   const changed = new Set<number>();
+  const failed: { fxoId: string; symbol: string; periodEnd: string; dateAdded: string }[] = [];
   for (const f of filings) {
     if (esefSeen(ctx.db, f.fxoId)) continue;
     const stocks = europeStocksByLei(ctx.db, f.lei).filter((s) => s.active && s.market === ctx.market);
@@ -57,6 +60,7 @@ export async function refreshEsefResults(ctx: EuropeJobContext, since: string): 
       json = await ctx.esef.facts(f.jsonUrl);
     } catch (err) {
       console.warn(`[esef] ${f.fxoId}: ${(err as Error).message}`);
+      failed.push({ fxoId: f.fxoId, symbol: stocks[0]!.symbol, periodEnd: f.periodEnd, dateAdded: f.dateAdded });
       continue;
     }
     const now = ctx.now();
@@ -69,12 +73,11 @@ export async function refreshEsefResults(ctx: EuropeJobContext, since: string): 
     if (!revenue && !eps) { mark('blank'); continue; }
 
     const month = Number(f.periodEnd.slice(5, 7));
+    // A later annual period already held for any line of the issuer keeps the month (filings are marked under one line).
+    const later = esefLaterPeriodHeld(ctx.db, europeStocksByLei(ctx.db, f.lei).map((s) => s.symbol), f.periodEnd);
     let anyRow = false;
     let merged = false;
     for (const s of stocks) {
-      // A later annual period already held for this line keeps its month.
-      const later = ctx.db.prepare(`SELECT 1 FROM europe_esef_seen WHERE symbol = ? AND period_end > ? AND outcome != 'blank'`)
-        .get(s.symbol, f.periodEnd);
       if (!later) {
         setEuropeProfile(ctx.db, s.symbol, {
           name: null, sector: null, industry: null, marketCap: null, marketCapCurrency: null, asOf: null, fyEndMonth: { month, source: 'esef' },
@@ -89,6 +92,11 @@ export async function refreshEsefResults(ctx: EuropeJobContext, since: string): 
       if (r.revenueSource === 'esef' || r.epsSource === 'esef') merged = true;
     }
     mark(!anyRow ? 'no-row' : merged ? 'merged' : 'superseded');
+  }
+  // A failure the next run's window no longer reaches would vanish: record it instead (never retried).
+  const nextSince = esefSinceFor(ctx);
+  for (const e of failed) {
+    if (e.dateAdded < nextSince) markEsefSeen(ctx.db, e.fxoId, e.symbol, e.periodEnd, 'error-dropped', ctx.now(), e.dateAdded);
   }
   return [...changed];
 }
