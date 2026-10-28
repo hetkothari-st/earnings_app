@@ -59,6 +59,9 @@ export async function handleEuropeFiling(
   if (!http || !stock) return out;
   const market = ctx.market;
   const profile = market === 'UK' ? 'uk' : 'eu';
+  const deferKey = `${market}:${f.accession}`;
+  const deferredAt = deferredOf(ctx).get(deferKey);
+  if (deferredAt != null && stock.fyEndMonth == null && Date.parse(ctx.now()) - deferredAt < EUROPE_DEFER_RETRY_MS) return out;
 
   const docs = parseFilingDocs(await http.text(f.indexUrl), f.indexUrl);
   const picked = pickReleaseDoc(docs);
@@ -72,16 +75,10 @@ export async function handleEuropeFiling(
   const classify = (html: string): SixKExhibit => classifySixK(html, {
     profile, filedOn: localDate, fyEndMonth: stock.fyEndMonth ?? undefined, session: session ?? undefined,
   });
-  let docUrl = picked;
-  let html = await http.text(picked);
-  let ex = classify(html);
   const main = docs.find((d) => /^[68]-K(\/A)?$/i.test(d.type))?.url;
-  if (ex.kind === 'other' && main && main !== picked) {
-    const mainHtml = await http.text(main);
-    const mainEx = classify(mainHtml);
-    if (mainEx.kind !== 'other') { docUrl = main; html = mainHtml; ex = mainEx; }
-  }
+  let { url: docUrl, html, ex } = await classifyEuropeDocs(http, docs, picked, classify);
 
+  let rowFound = false;
   if (ex.kind === 'results') {
     let id = findEuropeReportId(ctx.db, stock.symbol, ex.periodEnd);
     if (id == null) {
@@ -100,6 +97,7 @@ export async function handleEuropeFiling(
       }
     }
     if (id != null) {
+      rowFound = true;
       const rep = getEuropeReport(ctx.db, id)!;
       const unreleased = rep.releasedAt == null && rep.epsActual == null && rep.epsDilutedActual == null;
       const isConfirmed = rep.dateStatus === 'confirmed';
@@ -153,8 +151,50 @@ export async function handleEuropeFiling(
       out.dated.push(id);
     }
   }
-  markEuropeSecSeen(ctx.db, market, f.accession, f.cik, ex.kind, ctx.now());
+  // With no fiscal year end yet (a first boot sweeps SEC before Yahoo or ESEF supplied it), a future notice or a
+  // results 6-K that found no row cannot be placed: it stays unseen (never marked), and is remembered so that later
+  // sweeps skip it without a download until the stock has a year end, or for at most a day.
+  const unplaced = stock.fyEndMonth == null
+    && ((ex.kind === 'date-notice' && ex.date >= localDate) || (ex.kind === 'results' && !rowFound));
+  if (unplaced) deferredOf(ctx).set(deferKey, Date.parse(ctx.now()));
+  else {
+    deferredOf(ctx).delete(deferKey);
+    markEuropeSecSeen(ctx.db, market, f.accession, f.cik, ex.kind, ctx.now());
+  }
   return out;
+}
+
+/** A deferred filing is downloaded again at most this often while its stock still has no fiscal year end. */
+export const EUROPE_DEFER_RETRY_MS = 24 * 3_600_000;
+/** Deferred accessions (`market:accession` → time deferred), per database (process memory; a restart retries once). */
+const deferred = new WeakMap<object, Map<string, number>>();
+function deferredOf(ctx: Pick<EuropeJobContext, 'db'>): Map<string, number> {
+  let m = deferred.get(ctx.db);
+  if (!m) deferred.set(ctx.db, (m = new Map()));
+  return m;
+}
+
+/**
+ * The document of a 6-K / 8-K that carries its classification: the picked release document, else the main 6-K / 8-K
+ * document, else each other EX-99 exhibit in filing order (Shell files a cover EX-99.1 and its interim report as
+ * EX-99.2). The first one that is not `other` wins; with none, the picked document's `other`.
+ */
+export async function classifyEuropeDocs(
+  http: { text(url: string): Promise<string> }, docs: { type: string; url: string }[], picked: string,
+  classify: (html: string) => SixKExhibit,
+): Promise<{ url: string; html: string; ex: SixKExhibit }> {
+  const html = await http.text(picked);
+  const first = { url: picked, html, ex: classify(html) };
+  if (first.ex.kind !== 'other') return first;
+  const main = docs.find((d) => /^[68]-K(\/A)?$/i.test(d.type))?.url;
+  const rest = [main, ...docs.filter((d) => /^EX-99/i.test(d.type)).map((d) => d.url)]
+    .filter((u, i, all): u is string => !!u && u !== picked && all.indexOf(u) === i);
+  for (const url of rest) {
+    const h = await http.text(url);
+    const ex = classify(h);
+    if (ex.kind !== 'other') return { url, html: h, ex };
+  }
+  return first;
 }
 
 /** UK or Europe as a market of the shared 6-K watcher and sweep. `onChanged` gets the released and re-dated ids. */

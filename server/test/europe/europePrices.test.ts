@@ -15,8 +15,8 @@ const entry = (market: 'UK' | 'EU', symbol: string, isin: string, exchange: 'LSE
   currency: exchange === 'LSE' ? 'GBp' : 'EUR', adr: null, adrRatio: null, adrRatioVerified: false, cik: null, secForm: null,
 });
 
-const yq = (symbol: string, price: number, prevClose: number, currency: string): EuropeQuote => ({
-  symbol, price, prevClose, time: NOW - 15 * 60_000, currency, marketCap: null, marketCapCurrency: null, name: null,
+const yq = (symbol: string, price: number, prevClose: number, currency: string, time = NOW - 15 * 60_000): EuropeQuote => ({
+  symbol, price, prevClose, time, currency, marketCap: null, marketCapCurrency: null, name: null,
 });
 
 const tq = (isin: string, last: number | null, close: number | null, at: number): TradegateQuote => ({
@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
-function setup(o: { state?: TradegateState; tg?: Record<string, TradegateQuote>; now?: number } = {}) {
+function setup(o: { state?: TradegateState; tg?: Record<string, TradegateQuote>; now?: number; yahooAt?: number } = {}) {
   const db = openDb(':memory:');
   syncEuropeUniverse(db, 'UK', [entry('UK', 'AZN.L', 'GB0009895292', 'LSE'), entry('UK', 'BT-A.L', 'GB0030913577', 'LSE')], '2026-10-28T00:00:00.000Z');
   syncEuropeUniverse(db, 'EU', [entry('EU', 'SAP.DE', 'DE0007164600', 'XET')], '2026-10-28T00:00:00.000Z');
@@ -36,9 +36,9 @@ function setup(o: { state?: TradegateState; tg?: Record<string, TradegateQuote>;
   const tg = { snapshot: () => o.tg ?? {}, state: () => state.value };
   const published: Record<string, EuropeLivePriceDto>[] = [];
   const quotes = new Map([
-    ['AZN.L', yq('AZN.L', 12_000, 11_900, 'GBp')],
-    ['BT-A.L', yq('BT-A.L', 1234.5, 1240, 'GBp')],
-    ['SAP.DE', yq('SAP.DE', 212.5, 210, 'EUR')],
+    ['AZN.L', yq('AZN.L', 12_000, 11_900, 'GBp', o.yahooAt)],
+    ['BT-A.L', yq('BT-A.L', 1234.5, 1240, 'GBp', o.yahooAt)],
+    ['SAP.DE', yq('SAP.DE', 212.5, 210, 'EUR', o.yahooAt)],
   ]);
   const deps = {
     quotes: async (symbols: string[]) => new Map(symbols.flatMap((s) => (quotes.has(s) ? [[s, quotes.get(s)!] as const] : []))),
@@ -140,6 +140,41 @@ describe('EuropePrices', () => {
     expect(s.uk.snapshot()['BT-A.L']).toEqual({
       price: 1234.5, prevClose: 1240, changePct: -0.44, at: new Date(NOW - 15 * 60_000).toISOString(), currency: 'GBp', venue: 'yahoo',
     });
+  });
+
+  it('in hours with no trade yet (last null): the previous close is served with that close time, so a newer Yahoo quote wins', async () => {
+    // 11:00 Berlin: Tradegate answers only close 11.04 (the previous session's), no last.
+    const s = setup({ tg: { 'BT-A.L': tq('GB0030913577', null, 11.04, NOW - 5_000) } });
+    expect(s.uk.snapshot()['BT-A.L']).toEqual({
+      price: 11.04, prevClose: 11.04, changePct: null, at: '2026-10-27T21:00:00.000Z', currency: 'EUR', venue: 'tradegate',
+    });
+    await s.uk.tick();
+    expect(s.uk.snapshot()['BT-A.L']).toMatchObject({ price: 1234.5, currency: 'GBp', venue: 'yahoo' });
+  });
+
+  it('no trade all session, after hours: the close is the session before, so the fresher Yahoo close wins', async () => {
+    // Fri 2026-10-30 22:30 Berlin (21:30Z): no Tradegate trade on Friday; close is Thursday's (22:00 Berlin = 21:00Z).
+    const late = Date.parse('2026-10-30T21:30:00.000Z');
+    const s = setup({ now: late + 60_000, yahooAt: Date.parse('2026-10-30T15:35:00.000Z'), tg: { 'BT-A.L': tq('GB0030913577', null, 2.55, late) } });
+    expect(s.uk.snapshot()['BT-A.L']).toMatchObject({ price: 2.55, at: '2026-10-29T21:00:00.000Z', venue: 'tradegate' });
+    await s.uk.tick();
+    expect(s.uk.snapshot()['BT-A.L']).toMatchObject({ price: 1234.5, currency: 'GBp', venue: 'yahoo' });
+  });
+
+  it('no trade, at the weekend and before the next session: timed at the close of the session before the last one', () => {
+    // Sat and Sun after a no-trade Friday: Thursday's close.
+    for (const at of ['2026-10-31T12:00:00.000Z', '2026-11-01T20:00:00.000Z']) {
+      const s = setup({ now: Date.parse(at) + 60_000, tg: { 'BT-A.L': tq('GB0030913577', null, 2.55, Date.parse(at)) } });
+      expect(s.uk.snapshot()['BT-A.L']).toMatchObject({ at: '2026-10-29T21:00:00.000Z' });
+    }
+    // Mon 2026-11-02 07:00 Berlin, before the open and the daily roll: still Thursday's close (Friday had no trade).
+    const early = Date.parse('2026-11-02T06:00:00.000Z');
+    const s = setup({ now: early + 60_000, tg: { 'BT-A.L': tq('GB0030913577', null, 2.55, early) } });
+    expect(s.uk.snapshot()['BT-A.L']).toMatchObject({ at: '2026-10-29T21:00:00.000Z' });
+    // A weekend answer with a Friday trade keeps Friday's 22:00 close time.
+    const sat = Date.parse('2026-10-31T12:00:00.000Z');
+    const t = setup({ now: sat + 60_000, tg: { 'BT-A.L': tq('GB0030913577', 2.6, 2.55, sat) } });
+    expect(t.uk.snapshot()['BT-A.L']).toMatchObject({ price: 2.6, at: '2026-10-30T21:00:00.000Z' });
   });
 
   it('outside 08:00–22:00 Berlin the last Tradegate close is served with its time', async () => {

@@ -29,6 +29,30 @@ export function tradegateInHours(ms: number): boolean {
 export function tradegatePriceTime(fetchedAt: string): string {
   const ms = Date.parse(fetchedAt);
   if (tradegateInHours(ms)) return fetchedAt;
+  return tradegateLastCloseTime(fetchedAt);
+}
+
+/** `close` rolls to the newest session's reference once a day between 06:50 and 08:12 Berlin (sourceUrls.ts). */
+const CLOSE_ROLLED_MIN = 8 * 60 + 15;
+
+/**
+ * The time of an answer's `close` when it has no `last` (no Tradegate trade in the latest session): `close` is the
+ * close of the session BEFORE the latest one that has opened, so in hours, after hours and at weekends it is the
+ * 22:00 Berlin close of the trading day before the latest trading day whose close has rolled (08:15 Berlin). Before
+ * the roll the true close is one session older still, so the stamp is never newer than the price.
+ */
+export function tradegateNoTradeCloseTime(fetchedAt: string): string {
+  let d = DateTime.fromMillis(Date.parse(fetchedAt), { zone: BERLIN });
+  if (d.hour * 60 + d.minute < CLOSE_ROLLED_MIN) d = d.minus({ days: 1 });
+  for (let i = 0; i < 14 && !TRADEGATE_CAL.isTradingDay(d.toISODate()!); i++) d = d.minus({ days: 1 });
+  d = d.minus({ days: 1 }); // the session before it
+  for (let i = 0; i < 14 && !TRADEGATE_CAL.isTradingDay(d.toISODate()!); i++) d = d.minus({ days: 1 });
+  return d.set({ hour: 22, minute: 0, second: 0, millisecond: 0 }).toUTC().toISO()!;
+}
+
+/** The close (22:00 Berlin) of the last session that ended at or before `fetchedAt`. */
+export function tradegateLastCloseTime(fetchedAt: string): string {
+  const ms = Date.parse(fetchedAt);
   let d = DateTime.fromMillis(ms, { zone: BERLIN });
   // Before 22:00 the day's session (if any) has not closed yet: the last close is an earlier day's.
   if (d.hour * 60 + d.minute < CLOSE_MIN) d = d.minus({ days: 1 });

@@ -777,11 +777,15 @@ export function europeReportsNeedingPrevMove(
 /** The latest earlier report of `symbol` whose results are out. */
 export function priorEuropeReleased(
   db: DatabaseSync, symbol: string, before: string,
-): { reportDate: string; timing: LocalTiming; known: boolean } | null {
-  const r = db.prepare(`SELECT report_date, timing, released_at FROM europe_reports
+): { reportDate: string; timing: LocalTiming; known: boolean; releasedAt: string | null; releasedSource: EuropeReleaseSource | null } | null {
+  const r = db.prepare(`SELECT report_date, timing, released_at, released_source FROM europe_reports
     WHERE symbol = ? AND report_date < ? AND ${RELEASED_SQL}
-    ORDER BY report_date DESC LIMIT 1`).get(symbol, before) as { report_date: string; timing: string; released_at: string | null } | undefined;
-  return r ? { reportDate: r.report_date, timing: r.timing as LocalTiming, known: r.released_at != null && r.timing !== 'UNKNOWN' } : null;
+    ORDER BY report_date DESC LIMIT 1`).get(symbol, before) as
+    { report_date: string; timing: string; released_at: string | null; released_source: string | null } | undefined;
+  return r ? {
+    reportDate: r.report_date, timing: r.timing as LocalTiming, known: r.released_at != null && r.timing !== 'UNKNOWN',
+    releasedAt: r.released_at, releasedSource: r.released_source as EuropeReleaseSource | null,
+  } : null;
 }
 
 /**
