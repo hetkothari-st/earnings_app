@@ -8,13 +8,13 @@ const ready = new WeakSet<Db>();
 
 const WATCH_COLUMNS = `
       user_id TEXT NOT NULL,
-      market TEXT NOT NULL CHECK (market IN ('US','IN','HK','JP')),
+      market TEXT NOT NULL CHECK (market IN ('US','IN','HK','JP','UK','EU')),
       symbol TEXT NOT NULL,
       added_at TEXT NOT NULL,
       PRIMARY KEY (user_id, market, symbol)
     `;
 
-/** Older databases have a CHECK without 'HK' or 'JP'. Copy every row into a new table, then swap, all in one transaction. */
+/** Older databases have a CHECK without 'HK', 'JP', 'UK' or 'EU'. Copy every row into a new table, then swap, all in one transaction. */
 function rebuildWatchlists(db: Db): void {
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -34,7 +34,7 @@ export function ensureWatchSchema(db: Db): void {
   if (ready.has(db)) return;
   db.exec(`CREATE TABLE IF NOT EXISTS watchlists (${WATCH_COLUMNS});`);
   const have = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'watchlists'").get() as { sql: string } | undefined)?.sql ?? '';
-  if (!have.includes("'JP'")) rebuildWatchlists(db);
+  if (!have.includes("'EU'")) rebuildWatchlists(db);
   ready.add(db);
 }
 

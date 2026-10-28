@@ -43,7 +43,7 @@ describe('market HK plumbing', () => {
     expect((await app.inject({ url: '/api/prefs', headers: h })).json()).toEqual({ market: 'HK' });
     const bad = await app.inject({ method: 'PUT', url: '/api/prefs', headers: h, payload: { market: 'XX' } });
     expect(bad.statusCode).toBe(400);
-    expect(bad.json().error).toBe('market must be "US", "IN", "HK" or "JP"');
+    expect(bad.json().error).toBe('market must be "US", "IN", "HK", "JP", "UK" or "EU"');
   });
 
   test('old watchlists table without HK is rebuilt and keeps rows', () => {
