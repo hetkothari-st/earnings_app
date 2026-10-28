@@ -1976,7 +1976,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
         const f = euField(rawLabel, bank);
         const vals = nums.filter((n) => !n.pct);
         if (eu && EU_REVENUE_RIVAL.test(euLabel(first.text))) for (const l of revenueLabels) rivalled.add(l);
-        if (f?.field === 'revenue') revenueLabels.push(euLabel(rawLabel));
+        if (eu && f?.field === 'revenue') revenueLabels.push(euLabel(rawLabel));
         if (f && vals.length && !adjusted(section) && !(eu && EU_NON_US_GAAP.test(rawLabel))) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel, sectionRaw });
         if (/:\s*$/.test(first.text)) { section = euLabel(first.text); sectionRaw = first.text; }
         continue;
@@ -2132,14 +2132,6 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
 
   const settle = (field: 'revenue' | 'basic' | 'diluted'): EuCandidate | null => {
     let c = found[field];
-    // 'eu': a rival-ruled label is never revenue; a figure rounded coarser than the same line elsewhere in the document
-    // ("Net sales" 55.0 SEK b. in the summary, 55,025 SEK million in a statement whose column cannot be placed) is not
-    // the exact revenue.
-    if (eu && field === 'revenue') {
-      const before = c.length;
-      c = c.filter((x) => !rivalled.has(x.label!) && x.step! <= (finest.get(x.label!) ?? Infinity));
-      if (c.length < before && !c.length) notes.push('revenue: only rounded or rivalled figures');
-    }
     // A continuing-operations row is read only when no total row is.
     if (c.some((x) => !x.continuing)) c = c.filter((x) => !x.continuing);
     if (!c.length) return null;
@@ -2150,9 +2142,18 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
       notes.push(`${field}: candidates disagree (${distinct.map((d) => `${d.value} ${d.cur}`).join(', ')})`);
       return null;
     }
-    // 'eu': agreeing revenue figures ("SEK 55.0 b." in a summary, "55,025" SEK million in the statement): the most
-    // precise one, never the rounded one.
-    if (eu && field === 'revenue') return c.reduce((a, b) => (b.step! < a.step! ? b : a));
+    // 'eu', only once every candidate agrees (the filters below can never turn a disagreement into another line's
+    // figure): a rival-ruled label is never revenue; a figure rounded coarser than the same line elsewhere in the
+    // document ("Net sales" 55.0 SEK b. in the summary, 55,025 SEK million in a statement whose column cannot be placed)
+    // is not the exact revenue; of the rest, the most precise one.
+    if (eu && field === 'revenue') {
+      c = c.filter((x) => !rivalled.has(x.label!) && x.step! <= (finest.get(x.label!) ?? Infinity));
+      if (!c.length) {
+        notes.push('revenue: only rounded or rivalled figures');
+        return null;
+      }
+      return c.reduce((a, b) => (b.step! < a.step! ? b : a));
+    }
     return c[0]!;
   };
   const rev = settle('revenue');

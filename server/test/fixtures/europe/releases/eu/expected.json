@@ -543,22 +543,6 @@
     "checked": true,
     "note": "Fiscal Q4: full-year column. Figure 1. Consolidated performance, \"in USD Mio, except EPS in USD per share\", column \"FY25\": \"Revenue\" 59 320; \"Basic EPS\" 3.45. No diluted EPS anywhere in the release."
   },
-  "BUD_2024-12-31.htm": {
-    "adr": "BUD",
-    "cik": 1668717,
-    "accession": "0001193125-25-115972",
-    "periodEnd": "2024-12-31",
-    "fiscalQuarter": 4,
-    "revenue": null,
-    "revenueCurrency": null,
-    "eps": null,
-    "epsDiluted": null,
-    "epsCurrency": null,
-    "span": null,
-    "ytdMonths": null,
-    "checked": true,
-    "note": "Mis-dated by the classifier: this is the \"Unaudited Interim Report for the three-month period ended 31 March 2025\"; it states no figure for the period ending 2024-12-31 (fiscal Q4, full year). All fields null."
-  },
   "BUD_2025-06-30.htm": {
     "adr": "BUD",
     "cik": 1668717,
@@ -574,22 +558,6 @@
     "ytdMonths": null,
     "checked": true,
     "note": "Figure 1. Consolidated performance, \"in USD Mio, except EPS in USD per share\", column \"2Q25\": \"Revenue\" 15 004; \"Basic EPS\" 0.84 (HY25: 28 632 / 1.92, not the span read). No diluted EPS in the release."
-  },
-  "STM_2025-12-31.htm": {
-    "adr": "STM",
-    "cik": 932787,
-    "accession": "0000932787-26-000069",
-    "periodEnd": "2025-12-31",
-    "fiscalQuarter": 4,
-    "revenue": null,
-    "revenueCurrency": null,
-    "eps": null,
-    "epsDiluted": null,
-    "epsCurrency": null,
-    "span": null,
-    "ytdMonths": null,
-    "checked": true,
-    "note": "Mis-dated by the classifier: the IFRS semi-annual report dated August 19, 2026 (six months ended June 27, 2026). It states no figure for the full year ending 2025-12-31 (only a balance-sheet comparative at that date). All fields null."
   },
   "STM_2026-06-27.htm": {
     "adr": "STM",
@@ -782,5 +750,37 @@
     "ytdMonths": 9,
     "checked": true,
     "note": "Nine-month interim report (filed 2023-10-31; added by hand to the main set for nine-month coverage, as the collector saves it, outside its 24-month window): no three-month column. Unaudited condensed consolidated income statements for the nine months ended September 30, 2023, \"(Millions of Euros)\", column \"September 2023\": \"GROSS INCOME\" 22,104; \"EARNINGS (LOSSES) PER SHARE (Euros)\" 0.96 — basic and diluted from continuing operations 0.96, discontinued \"—\"."
+  },
+  "BUD_2025-03-31.htm": {
+    "adr": "BUD",
+    "cik": 1668717,
+    "accession": "0001193125-25-115972",
+    "periodEnd": "2025-03-31",
+    "fiscalQuarter": 1,
+    "revenue": 13628000000,
+    "revenueCurrency": "USD",
+    "eps": 1.08,
+    "epsDiluted": null,
+    "epsCurrency": "USD",
+    "span": "quarter",
+    "ytdMonths": null,
+    "note": "Re-dated in fix round 1 (was BUD_2024-12-31: the classifier took the incidental \"year ended 31 December 2024\"). \"Unaudited Interim Report for the three-month period ended 31 March 2025\" (Regulation G version, filed 2025-05-08). Results of operations table, \"(USD Million, except volumes)\", column \"Three-month period ended 31 March 2025\": \"Revenue\" 13,628. EPS table \"(USD per share)\": \"Basic earnings per share\" 1.08 in the first column (both heads print \"Three-month period ended 31 March 2025\"; the prose confirms \"Basic earnings per share of USD 1.08 for the three-month period ended 31 March 2025\"). No diluted EPS stated.",
+    "checked": true
+  },
+  "STM_2026-06-27_ifrs.htm": {
+    "adr": "STM",
+    "cik": 932787,
+    "accession": "0000932787-26-000069",
+    "periodEnd": "2026-06-27",
+    "fiscalQuarter": 2,
+    "revenue": 6582000000,
+    "revenueCurrency": "USD",
+    "eps": -0.19,
+    "epsDiluted": -0.19,
+    "epsCurrency": "USD",
+    "span": "ytd",
+    "ytdMonths": 6,
+    "note": "Re-dated in fix round 1 (was STM_2025-12-31: the classifier took the incidental \"year ended December 31, 2025\"; the file keeps an _ifrs suffix because STM_2026-06-27.htm is the US GAAP Q2 6-K). IFRS Semi Annual Report 2026 (filed 2026-08-19): no three-month column. 3.1 Consolidated income statement, \"In millions of U.S. dollars, except per share amounts\", column \"Six-month period ended June 27, 2026\": \"Total revenues\" 6,582 (= \"Sales\" 6,570 + \"Other revenues\" 12); \"Earnings per share (Basic)\" (0.19); \"Earnings per share (Diluted)\" (0.19).",
+    "checked": true
   }
 }

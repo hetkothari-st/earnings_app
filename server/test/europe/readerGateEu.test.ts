@@ -74,6 +74,18 @@ describe('EU reader fixes (profile eu)', () => {
     expect(readEuropeRelease(page(summary), Q1).revenue).toBe(55_000_000_000);
   });
 
+  it('fix round 1: the precision / rival filters never turn a disagreement into another line\'s figure → blank', () => {
+    // Precision: summary "Net sales" 55.0 SEK b. (placed), statement "Net sales" 55,025 (unplaced), "Total revenue" 57,900.
+    const summary = tbl([['SEK b.', 'Q1 2025', 'Q1 2024'], ['Net sales', '55.0', '53.3'], ['EPS diluted, SEK', '1.24', '0.77']]);
+    const unplaced = tbl([['', '', 'Q1'], ['SEK million', '2025', '2024'], ['Net sales', '55,025', '53,325'], ['Earnings per share, basic (SEK)', '1.25', '0.77']]);
+    const other = tbl([['SEK million', 'Q1 2025', 'Q1 2024'], ['Total revenue', '57,900', '56,000'], ['Earnings per share, basic (SEK)', '1.25', '0.77']]);
+    expect(readEuropeRelease(page(summary, '<p>Statement</p>', unplaced, '<p>Other</p>', other), Q1).revenue).toBeNull();
+    // Rival: "Sales" 54,163 gross of excise in one table, "Total revenues" 60,000 in another.
+    const gross = tbl([['In millions of dollars', '1Q26', '4Q25'], ['Sales', '54,163', '50,624'], ['Excise taxes', '(4,647)', '(4,699)'], ['Basic earnings per share ($)', '2.68', '1.31']]);
+    const total = tbl([['In millions of dollars', '1Q26', '4Q25'], ['Total revenues', '60,000', '58,000'], ['Basic earnings per share ($)', '2.68', '1.31']]);
+    expect(readEuropeRelease(page(gross, '<p>Other</p>', total), { periodEnd: '2026-03-31', fiscalQuarter: 1, profile: 'eu' }).revenue).toBeNull();
+  });
+
   it('a "Three months ended" title over every figure column is the quarter head (STM): the quarter is read, not the six months', () => {
     const statement = (title: string, a: string, b: string, sales: string, eps: string) => tbl([
       ['CONSOLIDATED STATEMENTS OF INCOME'],

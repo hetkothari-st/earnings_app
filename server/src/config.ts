@@ -45,8 +45,8 @@ export const config = {
    * held-out 6, 4 exact, 0 wrong; second held-out set of 9 unseen releases, 0 wrong => gate open, jpEps / jpRevenue
    * on. The gate is: main >= 20 exact releases carrying a value and 0 wrong, every held-out set 0 wrong (blanks
    * allowed).
-   * UK/EU reader gate: not yet run (ukEps / ukRevenue / euEps / euRevenue off; same gate rule as JP).
-   * EU gate (reader-corpus --eu / --eu-heldout): main 49 hand-checked 6-K/8-K releases (18 issuers), 21 exact, 12 carrying values, 0 wrong; held-out 6, 2 exact, 0 wrong => fails (12 < 20): euEps / euRevenue off.
+   * UK reader gate: not yet run (ukEps / ukRevenue off; same gate rule as JP).
+   * EU reader gate (same rule as JP; reader-corpus --eu / --eu-heldout): main 49 hand-checked 6-K/8-K releases (18 issuers), 19 exact, 12 carrying values, 0 wrong; held-out 6, 2 exact, 0 wrong => fails (12 < 20): euEps / euRevenue off.
    */
   fastFields: {
     usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false, hkEps: true, hkRevenue: true,
