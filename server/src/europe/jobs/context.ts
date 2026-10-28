@@ -42,8 +42,11 @@ export interface EuropeJobContext {
   esef: ReturnType<typeof createEsefClient>;
   /** This market's PRN_FEEDS, merged, de-duplicated by link. */
   prnFeed(): Promise<PrnItem[]>;
-  /** DILA AMF day directory (file names) and one archive. EU only; null for UK. */
-  dila: { list(day: string): Promise<string[]>; archive(name: string): Promise<Uint8Array> } | null;
+  /**
+   * DILA AMF day directory (file names) and one archive as a byte stream (the fetch body: a results-season batch is
+   * 200-660 MB of gzip, so it is never buffered whole; read it with `parseDilaArchiveStream`). EU only; null for UK.
+   */
+  dila: { list(day: string): Promise<string[]>; archive(name: string): Promise<AsyncIterable<Uint8Array>> } | null;
   /** Cboe chain through the 15-minute cache (`cboeCache`) over the shared client. */
   optionChain(adr: string): Promise<OptionChain | null>;
   /** The one shared SEC client; null when SEC_USER_AGENT is not set (full-level SEC features off). */
