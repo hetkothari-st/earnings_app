@@ -31,6 +31,13 @@ export interface EsefClient {
 
 const absolute = (u: string): string => new URL(u, BASE).toString();
 
+/** Every request stays on https://filings.xbrl.org, including the pages the API links to. */
+function assertHost(url: string): string {
+  const u = new URL(url, BASE);
+  if (u.protocol !== 'https:' || u.hostname !== 'filings.xbrl.org') throw new Error(`refusing host ${u.hostname}`);
+  return u.toString();
+}
+
 export function createEsefClient(o: { fetchImpl?: typeof fetch; minIntervalMs?: number } = {}): EsefClient {
   const fetchImpl = o.fetchImpl ?? fetch;
   const gap = o.minIntervalMs ?? 1000;
@@ -60,6 +67,7 @@ export function createEsefClient(o: { fetchImpl?: typeof fetch; minIntervalMs?: 
         let url: string | null =
           `${XBRL_FILINGS_URL}?filter[country]=${encodeURIComponent(country)}&sort=-date_added&page[size]=100&include=entity`;
         for (let page = 0; url && page < MAX_PAGES; page++) {
+          assertHost(url);
           const body = (await get(url)) as any;
           const lei = new Map<string, string>();
           for (const inc of Array.isArray(body?.included) ? body.included : []) {
@@ -88,9 +96,7 @@ export function createEsefClient(o: { fetchImpl?: typeof fetch; minIntervalMs?: 
     },
 
     async facts(jsonUrl) {
-      const u = new URL(jsonUrl, BASE);
-      if (u.protocol !== 'https:' || u.hostname !== 'filings.xbrl.org') throw new Error(`refusing host ${u.hostname}`);
-      return get(u.toString());
+      return get(assertHost(jsonUrl));
     },
   };
 }
@@ -107,6 +113,11 @@ export interface EsefFigures {
 const REVENUE = new Set(['ifrs-full:Revenue', 'ifrs-full:RevenueFromContractsWithCustomers']);
 const EPS_BASIC = 'ifrs-full:BasicEarningsLossPerShare';
 const EPS_DILUTED = 'ifrs-full:DilutedEarningsLossPerShare';
+const PROFIT = 'ifrs-full:ProfitLossAttributableToOwnersOfParent';
+const SHARES_BASIC = 'ifrs-full:WeightedAverageShares';
+const SHARES_DILUTED = 'ifrs-full:AdjustedWeightedAverageShares';
+/** EPS must be within 5% of profit / weighted shares (or within half a cent of it, for rounding on tiny EPS). */
+const EPS_TOLERANCE = 0.05;
 const PLAIN_DIMS = new Set(['concept', 'entity', 'period', 'unit', 'language']);
 const DAY = 86_400_000;
 
@@ -149,6 +160,24 @@ function settle(vals: Val[], label: string, notes: string[]): Val | null {
 }
 
 /**
+ * Guard against a filer's mis-scaled EPS (Pirelli tags 496.0 for EUR 0.496... a x1000 slip): with owners' profit and a
+ * weighted share count for the same year in the same currency, EPS must be within 5% of profit / shares. Without
+ * those facts (or with zero shares / another currency) the EPS is kept as parsed.
+ */
+function crossChecked(eps: Val | null, profit: Val | null, shares: Val | null, label: string, notes: string[]): Val | null {
+  if (!eps || !profit || !shares || shares.value <= 0) return eps;
+  let scale: number;
+  if (profit.currency === eps.currency) scale = 1;
+  else if (profit.currency === 'GBP' && eps.currency === 'GBp') scale = 100;
+  else return eps;
+  const implied = (profit.value / shares.value) * scale;
+  const tolerance = Math.max(Math.abs(implied) * EPS_TOLERANCE, 0.005 * scale);
+  if (Math.abs(eps.value - implied) <= tolerance) return eps;
+  notes.push(`${label}: ${eps.value} is not within 5% of profit / shares (${implied}), left blank`);
+  return null;
+}
+
+/**
  * Annual revenue and EPS from an xBRL-JSON document. Only dimension-free facts whose duration is 12 months ending
  * `periodEnd` (± 3 days) count. Disagreeing facts blank that field; nothing is guessed or converted.
  */
@@ -159,6 +188,9 @@ export function parseEsefFacts(json: unknown, periodEnd: string): EsefFigures {
   const revenue: Val[] = [];
   const basic: Val[] = [];
   const diluted: Val[] = [];
+  const profit: Val[] = [];
+  const sharesBasic: Val[] = [];
+  const sharesDiluted: Val[] = [];
 
   if (facts && typeof facts === 'object' && !Array.isArray(facts) && Number.isFinite(target)) {
     for (const f of Object.values(facts) as any[]) {
@@ -166,22 +198,27 @@ export function parseEsefFacts(json: unknown, periodEnd: string): EsefFigures {
       if (!dims || typeof dims !== 'object') continue;
       const concept = dims.concept;
       const isRevenue = REVENUE.has(concept);
-      if (!isRevenue && concept !== EPS_BASIC && concept !== EPS_DILUTED) continue;
+      const isShares = concept === SHARES_BASIC || concept === SHARES_DILUTED;
+      if (!isRevenue && !isShares && concept !== PROFIT && concept !== EPS_BASIC && concept !== EPS_DILUTED) continue;
       if (Object.keys(dims).some((k) => !PLAIN_DIMS.has(k))) continue; // an axis member: a sub-total, not the headline
       const d = duration(dims.period);
       if (!d || Math.abs(d.end - target) > 3 || d.days < 358 || d.days > 372) continue;
-      const currency = currencyOf(dims.unit, !isRevenue);
+      const currency = isShares ? (dims.unit === 'xbrli:shares' ? 'shares' : null)
+        : currencyOf(dims.unit, concept === EPS_BASIC || concept === EPS_DILUTED);
       if (!currency) continue;
       const raw = typeof f.value === 'string' ? f.value.trim() : f.value;
       const value = typeof raw === 'number' ? raw : raw === '' || typeof raw !== 'string' ? NaN : Number(raw);
       if (!Number.isFinite(value)) continue;
-      (isRevenue ? revenue : concept === EPS_BASIC ? basic : diluted).push({ value, currency });
+      const bucket = isRevenue ? revenue : concept === EPS_BASIC ? basic : concept === EPS_DILUTED ? diluted
+        : concept === PROFIT ? profit : concept === SHARES_BASIC ? sharesBasic : sharesDiluted;
+      bucket.push({ value, currency });
     }
   }
 
   const rev = settle(revenue, 'revenue', notes);
-  let b = settle(basic, 'epsBasic', notes);
-  let dl = settle(diluted, 'epsDiluted', notes);
+  const owners = settle(profit, 'profit', []);
+  let b = crossChecked(settle(basic, 'epsBasic', notes), owners, settle(sharesBasic, 'sharesBasic', []), 'epsBasic', notes);
+  let dl = crossChecked(settle(diluted, 'epsDiluted', notes), owners, settle(sharesDiluted, 'sharesDiluted', []), 'epsDiluted', notes);
   if (b && dl && b.currency !== dl.currency) {
     notes.push('eps: basic and diluted in different currencies, left blank');
     b = null;

@@ -144,6 +144,67 @@ describe('parseEsefFacts', () => {
     expect(got.epsCurrency).toBeNull();
   });
 
+  it('EPS cross-check: mis-scaled EPS (496 vs profit/shares 4.96) → null; matching EPS kept', () => {
+    const facts = (eps: string) => doc(
+      fact('ifrs-full:ProfitLossAttributableToOwnersOfParent', YEAR, 'iso4217:EUR', '496000000'),
+      fact('ifrs-full:WeightedAverageShares', YEAR, 'xbrli:shares', '100000000'),
+      fact('ifrs-full:AdjustedWeightedAverageShares', YEAR, 'xbrli:shares', '100000000'),
+      fact('ifrs-full:BasicEarningsLossPerShare', YEAR, 'iso4217:EUR/xbrli:shares', eps),
+      fact('ifrs-full:DilutedEarningsLossPerShare', YEAR, 'iso4217:EUR/xbrli:shares', eps),
+    );
+    const bad = parseEsefFacts(facts('496.0'), '2025-12-31');
+    expect(bad.epsBasic).toBeNull();
+    expect(bad.epsDiluted).toBeNull();
+    expect(bad.epsCurrency).toBeNull();
+    expect(bad.notes.join(' ')).toMatch(/eps/i);
+    const ok = parseEsefFacts(facts('4.96'), '2025-12-31');
+    expect(ok).toMatchObject({ epsBasic: 4.96, epsDiluted: 4.96, epsCurrency: 'EUR' });
+    expect(parseEsefFacts(facts('5.15'), '2025-12-31').epsBasic).toBe(5.15); // +3.8%
+    expect(parseEsefFacts(facts('5.30'), '2025-12-31').epsBasic).toBeNull(); // +6.9%
+  });
+
+  it('EPS cross-check: basic and diluted are checked against their own share counts', () => {
+    const got = parseEsefFacts(doc(
+      fact('ifrs-full:ProfitLossAttributableToOwnersOfParent', YEAR, 'iso4217:EUR', '100'),
+      fact('ifrs-full:WeightedAverageShares', YEAR, 'xbrli:shares', '50'),
+      fact('ifrs-full:AdjustedWeightedAverageShares', YEAR, 'xbrli:shares', '1000'),
+      fact('ifrs-full:BasicEarningsLossPerShare', YEAR, 'iso4217:EUR/xbrli:shares', '2'),
+      fact('ifrs-full:DilutedEarningsLossPerShare', YEAR, 'iso4217:EUR/xbrli:shares', '2'),
+    ), '2025-12-31');
+    expect(got.epsBasic).toBe(2);
+    expect(got.epsDiluted).toBeNull();
+  });
+
+  it('EPS cross-check: skipped when profit or shares are absent, zero, disagreeing or in another currency', () => {
+    const eps = fact('ifrs-full:BasicEarningsLossPerShare', YEAR, 'iso4217:EUR/xbrli:shares', '496');
+    const profit = fact('ifrs-full:ProfitLossAttributableToOwnersOfParent', YEAR, 'iso4217:EUR', '496');
+    const shares = fact('ifrs-full:WeightedAverageShares', YEAR, 'xbrli:shares', '100');
+    expect(parseEsefFacts(doc(eps), '2025-12-31').epsBasic).toBe(496);
+    expect(parseEsefFacts(doc(eps, profit), '2025-12-31').epsBasic).toBe(496);
+    expect(parseEsefFacts(doc(eps, shares), '2025-12-31').epsBasic).toBe(496);
+    expect(parseEsefFacts(doc(eps, profit, fact('ifrs-full:WeightedAverageShares', YEAR, 'xbrli:shares', '0')), '2025-12-31').epsBasic).toBe(496);
+    expect(parseEsefFacts(doc(eps, profit, shares, fact('ifrs-full:WeightedAverageShares', YEAR, 'xbrli:shares', '7')), '2025-12-31').epsBasic).toBe(496);
+    expect(parseEsefFacts(doc(eps, fact('ifrs-full:ProfitLossAttributableToOwnersOfParent', YEAR, 'iso4217:USD', '496'), shares), '2025-12-31').epsBasic).toBe(496);
+    // a prior-year or dimensioned profit does not count
+    expect(parseEsefFacts(doc(eps, shares, fact('ifrs-full:ProfitLossAttributableToOwnersOfParent', '2024-01-01T00:00:00/2025-01-01T00:00:00', 'iso4217:EUR', '496')), '2025-12-31').epsBasic).toBe(496);
+  });
+
+  it('EPS cross-check: pence EPS (GBX) is compared against profit in pounds x 100', () => {
+    const f = (eps: string) => doc(
+      fact('ifrs-full:ProfitLossAttributableToOwnersOfParent', YEAR, 'iso4217:GBP', '12300000'),
+      fact('ifrs-full:WeightedAverageShares', YEAR, 'xbrli:shares', '100000000'),
+      fact('ifrs-full:BasicEarningsLossPerShare', YEAR, 'iso4217:GBX/xbrli:shares', eps),
+    );
+    expect(parseEsefFacts(f('12.3'), '2025-12-31')).toMatchObject({ epsBasic: 12.3, epsCurrency: 'GBp' });
+    expect(parseEsefFacts(f('1230'), '2025-12-31').epsBasic).toBeNull();
+  });
+
+  it('a non-midnight exclusive end is the last day itself, not the day before', () => {
+    const d = doc(fact('ifrs-full:Revenue', '2025-01-01T00:00:00/2025-12-31T12:00:00', 'iso4217:EUR', '100'));
+    expect(parseEsefFacts(d, '2025-12-31').revenue).toBe(100);
+    expect(parseEsefFacts(d, '2025-12-27').revenue).toBeNull();
+  });
+
   it('wrong unit shapes and junk are ignored, never thrown on', () => {
     const got = parseEsefFacts(doc(
       fact('ifrs-full:Revenue', YEAR, 'xbrli:pure', '100'),
@@ -234,5 +295,12 @@ describe('createEsefClient', () => {
     const client = createEsefClient({ fetchImpl: fetchImpl as unknown as typeof fetch, minIntervalMs: 0 });
     await expect(client.facts('https://example.com/x.json')).rejects.toThrow(/host/i);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it('refuses a links.next off filings.xbrl.org', async () => {
+    const page = { data: [], included: [], links: { next: 'https://evil.example.com/api/filings?p=2' } };
+    const fetchImpl = vi.fn(async () => json(page));
+    const client = createEsefClient({ fetchImpl: fetchImpl as unknown as typeof fetch, minIntervalMs: 0 });
+    await expect(client.recent(['GB'], '2020-01-01 00:00:00')).rejects.toThrow(/host/i);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
