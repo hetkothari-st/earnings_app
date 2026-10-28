@@ -1,14 +1,18 @@
-import { inflateRawSync } from 'node:zlib';
+import { Readable } from 'node:stream';
+import { createInflateRaw, inflateRawSync } from 'node:zlib';
 import { SourceFormatError } from './http.js';
 
-/**
- * A small zip reader for the archives EDINET serves (document ZIPs and the code list). It reads the
- * central directory and supports only stored (0) and deflated (8) entries. Zip64, encrypted entries
- * and any other compression method throw `SourceFormatError`, as does anything that is not a zip.
- *
- * Returns the entries whose name passes `want`, keyed by their full path inside the archive.
- */
-export function unzipEntries(buf: Uint8Array, want: (name: string) => boolean): Map<string, Uint8Array> {
+interface ZipEntry {
+  name: string;
+  flags: number;
+  method: number;
+  compSize: number;
+  size: number;
+  localOffset: number;
+}
+
+/** The central directory's entries (directories included), after the archive-level checks. */
+function centralDirectory(buf: Uint8Array): ZipEntry[] {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const u16 = (o: number) => dv.getUint16(o, true);
   const u32 = (o: number) => dv.getUint32(o, true);
@@ -32,44 +36,105 @@ export function unzipEntries(buf: Uint8Array, want: (name: string) => boolean): 
   }
   if (cdOffset + cdSize > eocd) throw new SourceFormatError('zip: central directory out of range');
 
-  const out = new Map<string, Uint8Array>();
+  const entries: ZipEntry[] = [];
   const utf8 = new TextDecoder('utf-8');
   let p = cdOffset;
   for (let n = 0; n < count; n++) {
     if (p + 46 > eocd || u32(p) !== 0x02014b50) throw new SourceFormatError('zip: bad central directory entry');
-    const flags = u16(p + 8);
-    const method = u16(p + 10);
-    const compSize = u32(p + 20);
-    const size = u32(p + 24);
     const nameLen = u16(p + 28);
-    const extraLen = u16(p + 30);
-    const commentLen = u16(p + 32);
-    const localOffset = u32(p + 42);
-    const name = utf8.decode(buf.subarray(p + 46, p + 46 + nameLen));
-    p += 46 + nameLen + extraLen + commentLen;
+    entries.push({
+      name: utf8.decode(buf.subarray(p + 46, p + 46 + nameLen)),
+      flags: u16(p + 8),
+      method: u16(p + 10),
+      compSize: u32(p + 20),
+      size: u32(p + 24),
+      localOffset: u32(p + 42),
+    });
+    p += 46 + nameLen + u16(p + 30) + u16(p + 32);
+  }
+  return entries;
+}
 
-    if (name.endsWith('/') || !want(name)) continue;
-    if (compSize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) {
-      throw new SourceFormatError(`zip: zip64 entry ${name} is not supported`);
-    }
-    if (flags & 0x1) throw new SourceFormatError(`zip: encrypted entry ${name}`);
-    if (method !== 0 && method !== 8) throw new SourceFormatError(`zip: compression method ${method} of ${name} is not supported`);
+/** The entry's compressed bytes, after the per-entry checks (zip64, encryption, method, local header, range). */
+function rawEntry(buf: Uint8Array, e: ZipEntry): Uint8Array {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const { name } = e;
+  if (e.compSize === 0xffffffff || e.size === 0xffffffff || e.localOffset === 0xffffffff) {
+    throw new SourceFormatError(`zip: zip64 entry ${name} is not supported`);
+  }
+  if (e.flags & 0x1) throw new SourceFormatError(`zip: encrypted entry ${name}`);
+  if (e.method !== 0 && e.method !== 8) throw new SourceFormatError(`zip: compression method ${e.method} of ${name} is not supported`);
+  if (e.localOffset + 30 > buf.length || dv.getUint32(e.localOffset, true) !== 0x04034b50) {
+    throw new SourceFormatError(`zip: bad local header for ${name}`);
+  }
+  const start = e.localOffset + 30 + dv.getUint16(e.localOffset + 26, true) + dv.getUint16(e.localOffset + 28, true);
+  if (start + e.compSize > buf.length) throw new SourceFormatError(`zip: entry ${name} out of range`);
+  return buf.subarray(start, start + e.compSize);
+}
 
-    if (localOffset + 30 > buf.length || u32(localOffset) !== 0x04034b50) {
-      throw new SourceFormatError(`zip: bad local header for ${name}`);
-    }
-    const start = localOffset + 30 + u16(localOffset + 26) + u16(localOffset + 28);
-    if (start + compSize > buf.length) throw new SourceFormatError(`zip: entry ${name} out of range`);
-    const raw = buf.subarray(start, start + compSize);
+/**
+ * A small zip reader for the archives EDINET serves (document ZIPs and the code list). It reads the
+ * central directory and supports only stored (0) and deflated (8) entries. Zip64, encrypted entries
+ * and any other compression method throw `SourceFormatError`, as does anything that is not a zip.
+ *
+ * Returns the entries whose name passes `want`, keyed by their full path inside the archive.
+ */
+export function unzipEntries(buf: Uint8Array, want: (name: string) => boolean): Map<string, Uint8Array> {
+  const out = new Map<string, Uint8Array>();
+  for (const e of centralDirectory(buf)) {
+    if (e.name.endsWith('/') || !want(e.name)) continue;
+    const raw = rawEntry(buf, e);
     let data: Uint8Array;
     try {
       // maxOutputLength: a hostile entry cannot inflate past its declared size (zlib throws instead).
-      data = method === 0 ? raw.slice() : new Uint8Array(inflateRawSync(raw, { maxOutputLength: Math.max(size, 1) }));
+      data = e.method === 0 ? raw.slice() : new Uint8Array(inflateRawSync(raw, { maxOutputLength: Math.max(e.size, 1) }));
     } catch {
-      throw new SourceFormatError(`zip: entry ${name} does not inflate`);
+      throw new SourceFormatError(`zip: entry ${e.name} does not inflate`);
     }
-    if (data.length !== size) throw new SourceFormatError(`zip: entry ${name} has the wrong size`);
-    out.set(name, data);
+    if (data.length !== e.size) throw new SourceFormatError(`zip: entry ${e.name} has the wrong size`);
+    out.set(e.name, data);
   }
   return out;
+}
+
+/**
+ * Streams the wanted entries' text (UTF-8) in chunks, one entry after another, without holding an inflated entry
+ * in memory: FIRDS parts are ~40 MB zipped but ~0.9 GB of XML (Task 1). The zip itself is held in memory (it is
+ * small enough); only the inflated text is streamed. Deflated (8) entries go through `zlib.createInflateRaw`;
+ * stored (0) entries are decoded in slices. The same checks as `unzipEntries` apply; an entry that does not inflate,
+ * or inflates to a size other than the declared one, throws `SourceFormatError` (chunks already yielded stand).
+ */
+export async function* streamZipEntryText(buf: Uint8Array, want: (name: string) => boolean): AsyncIterable<string> {
+  const CHUNK = 256 * 1024;
+  for (const e of centralDirectory(buf)) {
+    if (e.name.endsWith('/') || !want(e.name)) continue;
+    const raw = rawEntry(buf, e);
+    const decoder = new TextDecoder('utf-8');
+    let total = 0;
+    if (e.method === 0) {
+      for (let o = 0; o < raw.length; o += CHUNK) {
+        const text = decoder.decode(raw.subarray(o, o + CHUNK), { stream: true });
+        if (text) yield text;
+      }
+      total = raw.length;
+    } else {
+      const inflater = createInflateRaw({ chunkSize: CHUNK });
+      Readable.from([Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength)]).pipe(inflater);
+      try {
+        for await (const chunk of inflater as AsyncIterable<Buffer>) {
+          total += chunk.length;
+          if (total > e.size) throw new SourceFormatError(`zip: entry ${e.name} has the wrong size`);
+          const text = decoder.decode(chunk, { stream: true });
+          if (text) yield text;
+        }
+      } catch (err) {
+        inflater.destroy();
+        if (err instanceof SourceFormatError) throw err;
+        throw new SourceFormatError(`zip: entry ${e.name} does not inflate`);
+      }
+    }
+    if (total !== e.size) throw new SourceFormatError(`zip: entry ${e.name} has the wrong size`);
+    const tail = decoder.decode();
+    if (tail) yield tail;
+  }
 }
