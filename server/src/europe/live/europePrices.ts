@@ -10,7 +10,7 @@ import { EXCHANGES, exchangeOfSymbol, exchangesOf, type EuropeMarket } from '../
 import type { TradegateQuote, TradegateState } from '../sources/tradegate.js';
 import type { EuropeQuote } from '../sources/yahooEurope.js';
 import { EUROPE_INDICES } from '../sources/yahooEurope.js';
-import { tradegateLastCloseTime, tradegatePriceTime } from './tradegatePoller.js';
+import { tradegateNoTradeCloseTime, tradegatePriceTime } from './tradegatePoller.js';
 
 /** A Tradegate quote older than this is not served (the Yahoo price is). */
 const TRADEGATE_MAX_AGE_MS = 24 * 3_600_000;
@@ -132,7 +132,7 @@ export class EuropePrices {
     const price = q.last ?? q.close;
     if (price == null) return null;
     // No trade yet (last null): the price is the previous close, timed at that close, never at the fetch.
-    const priceAt = q.last == null ? tradegateLastCloseTime(q.at) : tradegatePriceTime(q.at);
+    const priceAt = q.last == null ? tradegateNoTradeCloseTime(q.at) : tradegatePriceTime(q.at);
     return { price, prevClose: q.close, changePct: round2(q.changePct), at: priceAt, currency: 'EUR', venue: 'tradegate' };
   }
 
