@@ -44,15 +44,61 @@ function setup(o: { state?: TradegateState; tg?: Record<string, TradegateQuote>;
     quotes: async (symbols: string[]) => new Map(symbols.flatMap((s) => (quotes.has(s) ? [[s, quotes.get(s)!] as const] : []))),
     index: async () => { throw new Error('no index in this test'); },
   };
-  const now = o.now ?? NOW;
-  const uk = new EuropePrices('UK', db, deps, tg, (p) => published.push(p), () => {}, () => now);
-  const eu = new EuropePrices('EU', db, deps, tg, (p) => published.push(p), () => {}, () => now);
+  const clock = { now: o.now ?? NOW };
+  const uk = new EuropePrices('UK', db, deps, tg, (p) => published.push(p), () => {}, () => clock.now);
+  const eu = new EuropePrices('EU', db, deps, tg, (p) => published.push(p), () => {}, () => clock.now);
   uk.setVisible('u1', ['AZN.L', 'BT-A.L']);
   eu.setVisible('u1', ['SAP.DE']);
-  return { db, uk, eu, state, published };
+  return { db, uk, eu, state, published, clock };
 }
 
 describe('EuropePrices', () => {
+  it('a Tradegate quote older than the Yahoo quote never wins: the newer at is served', async () => {
+    // Tradegate fetched 20 min ago (fresh by the 24 h rule), Yahoo's quote is 15 min old: Yahoo is newer.
+    const s = setup({ tg: { 'AZN.L': tq('GB0009895292', 152.4, 153.9, NOW - 20 * 60_000) } });
+    await s.uk.tick();
+    expect(s.uk.snapshot()['AZN.L']).toMatchObject({ price: 12_000, currency: 'GBp', venue: 'yahoo' });
+  });
+
+  it('Tradegate leaving on pushes the Yahoo price; coming back pushes Tradegate', async () => {
+    const s = setup({ tg: { 'AZN.L': tq('GB0009895292', 152.4, 153.9, NOW - 5_000), 'SAP.DE': tq('DE0007164600', 213, 212, NOW - 5_000) } });
+    await s.uk.tick();
+    await s.eu.tick();
+    s.published.length = 0;
+    s.state.value = 'backoff';
+    s.uk.onTradegateState('backoff');
+    s.eu.onTradegateState('backoff');
+    expect(s.published).toEqual([
+      { 'AZN.L': expect.objectContaining({ price: 12_000, currency: 'GBp', venue: 'yahoo' }) },
+      { 'SAP.DE': expect.objectContaining({ price: 212.5, currency: 'EUR', venue: 'yahoo' }) },
+    ]);
+    s.published.length = 0;
+    s.state.value = 'on';
+    s.uk.onTradegateState('on');
+    expect(s.published).toEqual([{ 'AZN.L': expect.objectContaining({ price: 152.4, venue: 'tradegate' }) }]);
+  });
+
+  it('the wanted list is read from the database at most once a minute, or on a universe sync', () => {
+    const s = setup();
+    const prepare = vi.spyOn(s.db, 'prepare');
+    const reads = () => prepare.mock.calls.filter(([sql]) => /FROM europe_stocks/.test(String(sql))).length;
+    expect(s.uk.tradegateWanted()).toHaveLength(2);
+    const first = reads();
+    expect(first).toBeGreaterThan(0);
+    s.clock.now += 59_000;
+    s.uk.tradegateWanted();
+    expect(reads()).toBe(first);
+    s.uk.universeChanged();
+    s.uk.tradegateWanted();
+    expect(reads()).toBe(first * 2);
+    s.clock.now += 61_000;
+    s.uk.tradegateWanted();
+    expect(reads()).toBe(first * 3);
+    // A change in what users see counts at once (visible codes are in memory).
+    s.uk.setVisible('u1', ['AZN.L']);
+    expect(s.uk.tradegateWanted().map((w) => w.symbol)).toEqual(['AZN.L']);
+  });
+
   it('Tradegate quote wins with venue tradegate and EUR; change from Tradegate close only', async () => {
     const tg = { 'AZN.L': tq('GB0009895292', 152.4, 153.9, NOW - 5_000) };
     const s = setup({ tg });

@@ -31,7 +31,7 @@ import { fetchEdinetCodeList, makeEdinetClient } from './jp/sources/edinet.js';
 import { createYahooJpSummary, fetchJpEarningsCalendar, fetchYahooQuotes } from './jp/sources/yahooJp.js';
 import { SixKWatch } from './sources/sixKWatch.js';
 import { createYahooClient } from './sources/yahooClient.js';
-import { yahooLimiter } from './sources/yahooLimiter.js';
+import { createSlotLimiter, yahooLimiter } from './sources/yahooLimiter.js';
 import { createYahooHkFetcher, yahooHkPastDates } from './hk/sources/yahooHk.js';
 import { todayIST } from './india/domain/nseCalendar.js';
 import type { InJobContext } from './india/jobs/context.js';
@@ -49,18 +49,18 @@ import { cachedChains } from './sources/cboeCache.js';
 import { EU_ID_BASE } from './europe/db/europeRepo.js';
 import { marketToday } from './europe/domain/calendars.js';
 import { UNIVERSE_URLS, type EuropeMarket } from './europe/exchanges.js';
-import { buildEuropeUniverseFor, type EuropeJobContext, type EuropeUniverseSources } from './europe/jobs/context.js';
+import { buildEuropeUniverseFor, type EuropeJobContext } from './europe/jobs/context.js';
+import { createDilaClient, reusedUniverseSources } from './europe/jobs/universeSources.js';
 import { startEuropeScheduler, warmUpEurope, warmUpEuropeAfter, type EuropeSchedulerHooks } from './europe/jobs/scheduler.js';
 import { EuropePrices, type TradegateSide } from './europe/live/europePrices.js';
 import { europeSixKMarket } from './europe/live/europeSixK.js';
 import { TradegatePoller } from './europe/live/tradegatePoller.js';
-import { listDilaFiles } from './europe/sources/dila.js';
 import { createEsefClient } from './europe/sources/esef.js';
-import { fetchFirdsShares, makeFirdsHttp, type FirdsShare } from './europe/sources/firds.js';
+import { fetchFirdsShares, makeFirdsHttp } from './europe/sources/firds.js';
 import { fetchLegalNames } from './europe/sources/gleif.js';
 import { createOpenFigi } from './europe/sources/openFigi.js';
 import { parsePrnRss, type PrnItem } from './europe/sources/prnewswire.js';
-import { DILA_BASE, EUROPE_UA, GOVUK_BANK_HOLIDAYS_URL, PRN_FEEDS } from './europe/sources/sourceUrls.js';
+import { EUROPE_UA, GOVUK_BANK_HOLIDAYS_URL, PRN_FEEDS } from './europe/sources/sourceUrls.js';
 import { createTradegate } from './europe/sources/tradegate.js';
 import {
   createYahooEuropeSummary, defaultZoneOf, fetchEuropeEarningsCalendar, fetchEuropeQuotes, yahooIsinSearch,
@@ -156,43 +156,22 @@ const jpPrices = new JpPrices(db, {
 const euYahoo = createYahooClient({ limiter: yahooLimiter });
 const chains = cachedChains((a) => sources.optionChain(a));
 const tradegate = createTradegate({ enabled: config.tradegatePrices });
-/** Non-SEC, non-Yahoo Europe sources (gov.uk, PR Newswire, DILA listing, GLEIF, SIX): EUROPE_UA, one request a second. */
-const europeHttp = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': EUROPE_UA } });
+/** The 1 s budget of the non-SEC, non-Yahoo Europe requests (gov.uk, PR Newswire, DILA listing and archives, GLEIF, SIX). */
+const europeLimiter = createSlotLimiter(1000);
+const europeHttp = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': EUROPE_UA }, limiter: europeLimiter });
 const firdsHttp = makeFirdsHttp();
 const openFigi = createOpenFigi({ key: config.openFigiApiKey || undefined });
 const esef = createEsefClient();
-/** The last complete universe build per market, for the admin page (null there until one has run). */
+/** The last complete universe build per market in this process, for the admin page (null there until one has run). */
 const europeUniverseState: Partial<Record<EuropeMarket, { leftOut: number; at: string }>> = {};
-/**
- * Both markets' builds read the same FIRDS sets and SIX list (the UK-first tie-break needs every line): a complete
- * read is reused for 6 h, so the UK and EU weekly runs download them once.
- */
-const UNIVERSE_REUSE_MS = 6 * 3_600_000;
-const firdsCache = new Map<string, { at: number; shares: FirdsShare[]; files: number }>();
-let sixCache: { at: number; text: string } | null = null;
-const universeSources: EuropeUniverseSources = {
-  async firds(source, mics, onShare) {
-    const key = `${source}:${[...mics].sort().join(',')}`;
-    const hit = firdsCache.get(key);
-    if (hit && Date.now() - hit.at < UNIVERSE_REUSE_MS) {
-      for (const s of hit.shares) onShare(s);
-      return { files: hit.files, complete: true };
-    }
-    const shares: FirdsShare[] = [];
-    const r = await fetchFirdsShares(firdsHttp, source, mics, (s) => { shares.push(s); onShare(s); });
-    if (r.complete) firdsCache.set(key, { at: Date.now(), shares, files: r.files });
-    return r;
-  },
-  async sixList() {
-    if (sixCache && Date.now() - sixCache.at < UNIVERSE_REUSE_MS) return sixCache.text;
-    const text = await europeHttp.text(UNIVERSE_URLS.sixList);
-    sixCache = { at: Date.now(), text };
-    return text;
-  },
+// Both markets' builds read the same FIRDS sets and SIX list: a complete read is reused for 6 h, then evicted.
+const universeSources = reusedUniverseSources({
+  firds: (source, mics, onShare) => fetchFirdsShares(firdsHttp, source, mics, onShare),
+  sixList: () => europeHttp.text(UNIVERSE_URLS.sixList),
   figi: (jobs) => openFigi.map(jobs),
   search: (isin) => yahooIsinSearch(euYahoo, isin),
   names: (leis) => fetchLegalNames(europeHttp, leis),
-};
+});
 /** One PR Newswire feed set for both markets (items are de-duplicated across markets by the job); reused for 60 s. */
 const PRN_ALL = [...new Set([...PRN_FEEDS.UK, ...PRN_FEEDS.EU])];
 let prnCache: { at: number; items: Promise<PrnItem[]> } | null = null;
@@ -216,16 +195,8 @@ const prnFeed = (): Promise<PrnItem[]> => {
   items.catch(() => { prnCache = null; });
   return items;
 };
-/** DILA AMF (EU only): the day's batch names from the listing, and one batch as the fetch body stream (never buffered). */
-const dila: EuropeJobContext['dila'] = {
-  list: async (day) => listDilaFiles(await europeHttp.text(DILA_BASE), day),
-  archive: async (name) => {
-    if (!/^amf-gz_\d{8}_\d{4}\.tar\.gz$/.test(name)) throw new Error(`unexpected DILA batch name ${name}`);
-    const res = await fetch(`${DILA_BASE}${name}`, { headers: { 'User-Agent': EUROPE_UA }, signal: AbortSignal.timeout(30 * 60_000) });
-    if (!res.ok || !res.body) throw new Error(`DILA ${name}: HTTP ${res.status}`);
-    return res.body as unknown as AsyncIterable<Uint8Array>;
-  },
-};
+/** DILA AMF (EU only): batch names from the DILA_BASE listing, one batch as the fetch body stream, on the 1 s budget. */
+const dila = createDilaClient({ http: europeHttp, limiter: europeLimiter });
 const europeSummary = createYahooEuropeSummary(euYahoo);
 const europeCtx = (market: EuropeMarket, tierA: () => string[]): EuropeJobContext => ({
   db,
@@ -261,7 +232,9 @@ const euPrices = new EuropePrices('EU', db, europePriceDeps, tradegateSide,
   (p) => live.publish('eu-prices', { prices: p }), (m) => live.publish('eu-indices', { indices: m }));
 // One Tradegate poller for both markets (one request per second process-wide), by ISIN.
 const tradegatePoller = new TradegatePoller(tradegate, () => [...ukPrices.tradegateWanted(), ...euPrices.tradegateWanted()],
-  (changed) => { ukPrices.onTradegate(changed); euPrices.onTradegate(changed); });
+  (changed) => { ukPrices.onTradegate(changed); euPrices.onTradegate(changed); }, Date.now,
+  // Tradegate leaving 'on' (back-off, robots) pushes the rows back to Yahoo; coming back pushes Tradegate again.
+  (state) => { ukPrices.onTradegateState(state); euPrices.onTradegateState(state); });
 /** Report ids to their market's stream (PR Newswire runs over both markets, so a UK run can change an EU row). */
 const publishEuropeResults = (ids: number[]): void => {
   const uk = ids.filter((id) => id < EU_ID_BASE);
@@ -422,7 +395,11 @@ const europeHooks = (market: EuropeMarket): EuropeSchedulerHooks => ({
   onResults: publishEuropeResults,
   onMoves: (ids) => live.publish(market === 'UK' ? 'uk-moves' : 'eu-moves', { ids }),
   // The watchlist index takes the universe as soon as europe_stocks fills.
-  onStocks: () => { const list = europeEntries(db, market); if (list.length > 0) symbolIndex.set(market, list); },
+  onStocks: () => {
+    const list = europeEntries(db, market);
+    if (list.length > 0) symbolIndex.set(market, list);
+    (market === 'UK' ? ukPrices : euPrices).universeChanged(); // the Tradegate poller's ISIN map is read again
+  },
 });
 startEuropeScheduler(ukCtx, job, europeHooks('UK'));
 startEuropeScheduler(euCtx, job, europeHooks('EU'));

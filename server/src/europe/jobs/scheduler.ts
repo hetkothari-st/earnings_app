@@ -14,7 +14,7 @@ import { computeEuropePrevMoves } from './prevMoves.js';
 import { refreshEuropeYahooResults } from './results.js';
 import { sweepEuropeSec } from './secSweep.js';
 import { refreshDilaSignals, refreshPrnSignals } from './signals.js';
-import { refreshEuropeStocks } from './stocks.js';
+import { europeSource, refreshEuropeStocks } from './stocks.js';
 
 const LONDON = 'Europe/London';
 const PARIS = 'Europe/Paris';
@@ -124,14 +124,16 @@ export function warmEsefSince(ctx: EuropeJobContext): string {
 }
 
 /**
- * On start: the universe first, past dates only while none are stored, the date sweep and its bulk supplement, Yahoo
- * results, the SEC sweep, ESEF (30 days), estimates, previous moves and the moves snapshot. Each step runs under the
- * job runner, which never throws: a failing source is recorded and the next step runs.
+ * On start: the universe first (skipped while the last complete build is under 6 days old: every push redeploys),
+ * past dates only while none are stored, the date sweep and its bulk supplement, Yahoo results, the SEC sweep, ESEF
+ * (30 days), estimates, previous moves and the moves snapshot. Each step runs under the job runner, which never
+ * throws: a failing source is recorded and the next step runs.
  */
 export async function warmUpEurope(ctx: EuropeJobContext, job: JobRunner, hooks: EuropeSchedulerHooks = {}): Promise<void> {
   const p = prefix(ctx);
   const j = jobs(ctx, hooks);
-  await job(`${p}-stocks`, j.stocks)();
+  if (universeFresh(ctx)) hooks.onStocks?.(); // the weekly job still rebuilds; the watchlist index still loads
+  else await job(`${p}-stocks`, j.stocks)();
   if (europePastDatesCount(ctx.db, ctx.market) === 0) await job(`${p}-past-dates`, j.pastDates)();
   await job(`${p}-calendar`, j.calendar)();
   await job(`${p}-bulk-calendar`, j.bulkCalendar)();
@@ -141,6 +143,20 @@ export async function warmUpEurope(ctx: EuropeJobContext, job: JobRunner, hooks:
   await job(`${p}-estimates`, j.estimates)();
   await job(`${p}-prev-moves`, j.prevMoves)();
   await job(`${p}-moves`, j.movesSnapshot)();
+}
+
+/** A warm-up skips the universe rebuild while the market's last complete build is younger than this. */
+export const WARM_UNIVERSE_MAX_AGE_MS = 6 * 86_400_000;
+
+/**
+ * True when the market's last complete universe build (the `europe-universe-<market>` success time, which
+ * `refreshEuropeStocks` records only when a complete build was synced) is under 6 days old.
+ */
+export function universeFresh(ctx: EuropeJobContext): boolean {
+  const r = ctx.db.prepare('SELECT last_success_at AS at FROM source_status WHERE source = ?')
+    .get(europeSource(ctx, 'europe-universe')) as { at: string | null } | undefined;
+  const at = r?.at ? Date.parse(r.at) : NaN;
+  return Number.isFinite(at) && Date.parse(ctx.now()) - at < WARM_UNIVERSE_MAX_AGE_MS;
 }
 
 /** A warm-up that starts once `before` settles, failed or not (UK after Japan, EU after UK). */

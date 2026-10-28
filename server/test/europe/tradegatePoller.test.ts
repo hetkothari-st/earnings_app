@@ -14,11 +14,12 @@ const WANTED = [
   { isin: 'FR0000120271', symbol: 'TTE.PA' },
 ];
 
-function setup(start: number, state: TradegateState = 'on') {
+function setup(start: number, initial: TradegateState = 'on') {
   let t = start;
   const fetched: string[] = [];
+  const st = { state: initial, wanted: [...WANTED] };
   const client = {
-    state: vi.fn(() => state),
+    state: vi.fn(() => st.state),
     checkRobots: vi.fn(async () => {}),
     quote: vi.fn(async (isin: string): Promise<TradegateQuote | null> => {
       fetched.push(isin);
@@ -26,9 +27,10 @@ function setup(start: number, state: TradegateState = 'on') {
     }),
   };
   const published: Record<string, TradegateQuote>[] = [];
-  const poller = new TradegatePoller(client, () => WANTED, (c) => published.push(c), () => t);
+  const states: TradegateState[] = [];
+  const poller = new TradegatePoller(client, () => st.wanted, (c) => published.push(c), () => t, (s) => states.push(s));
   const advance = async (ms: number) => { t += ms; await poller.tick(); };
-  return { poller, client, fetched, published, advance };
+  return { poller, client, fetched, published, advance, st, states };
 }
 
 describe('TradegatePoller', () => {
@@ -72,6 +74,32 @@ describe('TradegatePoller', () => {
       expect(s.client.quote).not.toHaveBeenCalled();
       expect(s.poller.snapshot()).toEqual({});
     }
+  });
+
+  it('a symbol no longer wanted is pruned: its quote is no longer served', async () => {
+    const s = setup(IN_HOURS);
+    for (let i = 0; i < 4; i++) await s.advance(1000);
+    expect(Object.keys(s.poller.snapshot()).sort()).toEqual(['AZN.L', 'SAP.DE', 'TTE.PA']);
+    s.st.wanted = WANTED.filter((w) => w.symbol !== 'SAP.DE');
+    await s.advance(1000);
+    expect(Object.keys(s.poller.snapshot()).sort()).toEqual(['AZN.L', 'TTE.PA']);
+    // Also while the client is not on (the wanted list is still read).
+    s.st.state = 'backoff';
+    s.st.wanted = [];
+    await s.advance(1000);
+    expect(s.poller.snapshot()).toEqual({});
+  });
+
+  it('reports each change of the client state', async () => {
+    const s = setup(IN_HOURS);
+    await s.advance(0);
+    await s.advance(1000);
+    s.st.state = 'backoff';
+    await s.advance(1000);
+    await s.advance(1000);
+    s.st.state = 'on';
+    await s.advance(1000);
+    expect(s.states).toEqual(['on', 'backoff', 'on']);
   });
 
   it('robots.txt at start and weekly; hourly while it has not passed', async () => {

@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import { TRADEGATE_CAL } from '../domain/calendars.js';
-import type { createTradegate, TradegateQuote } from '../sources/tradegate.js';
+import type { createTradegate, TradegateQuote, TradegateState } from '../sources/tradegate.js';
 
 const BERLIN = 'Europe/Berlin';
 /** One request per second for the whole process (the client's limiter enforces it too). */
@@ -44,7 +44,8 @@ type Client = Pick<ReturnType<typeof createTradegate>, 'quote' | 'checkRobots' |
  * fetched first), so the list is served round-robin. An ISIN is due every 30 s in Tradegate hours and every 15 min
  * outside them. robots.txt is checked at start and every 7 days (hourly while it has not passed); the client is
  * fail-closed, so nothing is fetched before a check passes. In state `backoff` or `off-*` a tick fetches no quote.
- * A failed or empty answer keeps the last quote. Only changed quotes are published, keyed by Yahoo symbol.
+ * A failed or empty answer keeps the last quote. Only changed quotes are published, keyed by Yahoo symbol. A symbol
+ * that leaves the wanted list loses its quote at the next tick. `onState` hears every change of the client's state.
  */
 export class TradegatePoller {
   private timer: NodeJS.Timeout | null = null;
@@ -60,7 +61,18 @@ export class TradegatePoller {
     private readonly wanted: () => { isin: string; symbol: string }[],
     private readonly publish: (changed: Record<string, TradegateQuote>) => void,
     private readonly now: () => number = Date.now,
+    /** Called with the client's state when it changes (and once at the first tick): prices re-publish their venue. */
+    private readonly onState?: (state: TradegateState) => void,
   ) {}
+
+  private lastState: TradegateState | null = null;
+
+  private noteState(): void {
+    const s = this.client.state();
+    if (s === this.lastState) return;
+    this.lastState = s;
+    this.onState?.(s);
+  }
 
   start(): void {
     if (this.timer) return;
@@ -89,20 +101,27 @@ export class TradegatePoller {
     this.ticking = true;
     try {
       const now = this.now();
+      // The wanted list is read every tick, whatever the state: a symbol no longer wanted is dropped with its quote,
+      // so a quote nobody polls any more is never served.
+      const symbolsOf = new Map<string, string[]>();
+      this.isinOf.clear();
+      for (const w of this.wanted()) {
+        this.isinOf.set(w.symbol, w.isin);
+        symbolsOf.set(w.isin, [...(symbolsOf.get(w.isin) ?? []), w.symbol]);
+      }
+      for (const isin of [...this.quotes.keys()]) if (!symbolsOf.has(isin)) this.quotes.delete(isin);
+      for (const isin of [...this.fetchedAt.keys()]) if (!symbolsOf.has(isin)) this.fetchedAt.delete(isin);
+      this.noteState();
+
       const robotsDue = now - this.lastRobots >= (this.client.state() === 'off-robots' ? ROBOTS_RETRY_MS : ROBOTS_EVERY_MS);
       if (robotsDue) {
         this.lastRobots = now;
         await this.client.checkRobots();
+        this.noteState();
         return; // this second's request
       }
       if (this.client.state() !== 'on') return;
 
-      const want = this.wanted();
-      const symbolsOf = new Map<string, string[]>();
-      for (const w of want) {
-        this.isinOf.set(w.symbol, w.isin);
-        symbolsOf.set(w.isin, [...(symbolsOf.get(w.isin) ?? []), w.symbol]);
-      }
       const every = tradegateInHours(now) ? IN_HOURS_EVERY_MS : OFF_HOURS_EVERY_MS;
       let pick: string | null = null;
       let oldest = Infinity;
@@ -114,6 +133,7 @@ export class TradegatePoller {
       if (!pick) return;
       this.fetchedAt.set(pick, now);
       const q = await this.client.quote(pick);
+      this.noteState(); // a 429 / 403 just started a back-off
       if (!q) return; // keep the last quote
       const prev = this.quotes.get(pick);
       this.quotes.set(pick, q);

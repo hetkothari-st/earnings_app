@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openDb } from '../../src/db/repo.js';
+import { openDb, recordSourceSuccess } from '../../src/db/repo.js';
 import { syncEuropeUniverse, upsertEuropePastDates } from '../../src/europe/db/europeRepo.js';
 import type { EuropeJobContext } from '../../src/europe/jobs/context.js';
 import { EUROPE_CRONS, prnHours, warmEsefSince, warmUpEurope, warmUpEuropeAfter } from '../../src/europe/jobs/scheduler.js';
@@ -76,6 +76,30 @@ describe('Europe scheduler', () => {
     await warmUpEurope(turned.ctx, turned.job, { turns });
     expect(calls).toEqual(['uk']);
     expect(turned.finished).toContain('uk-calendar');
+  });
+
+  it('warm-up skips the universe rebuild while the last complete build is under 6 days old', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // NOW is 2026-10-28T09:00Z. 5 days 23 h ago: skipped (the weekly cron still rebuilds); the symbol index still loads.
+    const recent = setup('UK', 'none');
+    recordSourceSuccess(recent.db, 'europe-universe-uk', '2026-10-22T10:00:00.000Z');
+    const onStocks = vi.fn();
+    await warmUpEurope(recent.ctx, recent.job, { onStocks });
+    expect(recent.started).not.toContain('uk-stocks');
+    expect(recent.started[0]).toBe('uk-past-dates');
+    expect(onStocks).toHaveBeenCalledTimes(1);
+    // The other market's build does not count.
+    const other = setup('EU', 'none');
+    recordSourceSuccess(other.db, 'europe-universe-uk', '2026-10-27T10:00:00.000Z');
+    await warmUpEurope(other.ctx, other.job);
+    expect(other.started[0]).toBe('eu-stocks');
+    // 6 days or older: rebuilt.
+    const old = setup('UK', 'none');
+    recordSourceSuccess(old.db, 'europe-universe-uk', '2026-10-22T09:00:00.000Z');
+    await warmUpEurope(old.ctx, old.job);
+    expect(old.started[0]).toBe('uk-stocks');
   });
 
   it('cron table', () => {
