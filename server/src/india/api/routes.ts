@@ -92,7 +92,9 @@ export function registerInRoutes(
     const user = currentUser(req);
     if (!user) return reply.code(401).send({ error: 'Not signed in' });
     const body = (req.body ?? {}) as { market?: unknown };
-    if (body.market !== 'US' && body.market !== 'IN' && body.market !== 'HK' && body.market !== 'JP') return reply.code(400).send({ error: 'market must be "US", "IN", "HK" or "JP"' });
+    if (body.market !== 'US' && body.market !== 'IN' && body.market !== 'HK' && body.market !== 'JP' && body.market !== 'UK' && body.market !== 'EU') {
+      return reply.code(400).send({ error: 'market must be "US", "IN", "HK", "JP", "UK" or "EU"' });
+    }
     setInPref(db, user, body.market, new Date(nowFn()).toISOString());
     return reply.code(204).send();
   });

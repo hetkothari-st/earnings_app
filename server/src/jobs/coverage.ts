@@ -4,9 +4,17 @@ import type { CoverageRow } from '../api/types.js';
 
 export type { CoverageRow };
 
-type Market = 'US' | 'IN' | 'HK' | 'JP';
+type Market = 'US' | 'IN' | 'HK' | 'JP' | 'UK' | 'EU';
 
 interface FieldDef { field: string; min: number; filled: string; withinWeek?: boolean; where?: string }
+
+const EUROPE_FIELDS: FieldDef[] = [
+  { field: 'epsEstimate', min: 30, filled: 'r.eps_estimate IS NOT NULL' },
+  { field: 'marketCap', min: 90, filled: 's.market_cap IS NOT NULL' },
+  { field: 'previousMove', min: 30, filled: 'r.prev_move_pct IS NOT NULL', withinWeek: true },
+  // Only full-level names have an ADR straddle.
+  { field: 'expectedMove', min: 60, filled: 'EXISTS (SELECT 1 FROM europe_expected_moves e WHERE e.report_id = r.id)', withinWeek: true, where: "s.level = 'full'" },
+];
 
 /** "Filled" per field, as SQL over the report alias `r` (and the stock alias `s` for India). */
 const FIELDS: Record<Market, FieldDef[]> = {
@@ -38,6 +46,9 @@ const FIELDS: Record<Market, FieldDef[]> = {
     // Only full-level names have an ADR straddle.
     { field: 'expectedMove', min: 60, filled: 'EXISTS (SELECT 1 FROM jp_expected_moves e WHERE e.report_id = r.id)', withinWeek: true, where: "s.level = 'full'" },
   ],
+  // UK and Europe: as Japan (Ruling 15).
+  UK: EUROPE_FIELDS,
+  EU: EUROPE_FIELDS,
 };
 
 /** How much of the next 14 days' reports (7 for expectedMove) have each field. `today` is the market's own date. */
@@ -53,7 +64,8 @@ export function computeCoverage(db: Db, market: Market, today: string): Coverage
   const source = market === 'US' ? 'reports r'
     : market === 'IN' ? 'in_reports r JOIN in_stocks s ON s.symbol = r.symbol AND s.active = 1'
     : market === 'HK' ? 'hk_reports r JOIN hk_stocks s ON s.code = r.code AND s.active = 1'
-    : 'jp_reports r JOIN jp_stocks s ON s.code = r.code AND s.active = 1';
+    : market === 'JP' ? 'jp_reports r JOIN jp_stocks s ON s.code = r.code AND s.active = 1'
+    : `europe_reports r JOIN europe_stocks s ON s.symbol = r.symbol AND s.active = 1 AND r.market = '${market}'`;
   return FIELDS[market].map((f) => {
     const to = f.withinWeek ? to7 : to14;
     const row = db.prepare(`SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN ${f.filled} THEN 1 ELSE 0 END), 0) AS filled
@@ -73,7 +85,9 @@ export function coverageTable(label: string, rows: CoverageRow[]): string {
 }
 
 /** Prints the tables through `log`; returns the process exit code (1 when any field is below its minimum). */
-export function runCoverageCheck(db: Db, todayUs: string, todayIn: string, todayHk: string, todayJp: string, log: (line: string) => void): number {
+export function runCoverageCheck(
+  db: Db, todayUs: string, todayIn: string, todayHk: string, todayJp: string, todayUk: string, todayEu: string, log: (line: string) => void,
+): number {
   const us = computeCoverage(db, 'US', todayUs);
   const india = computeCoverage(db, 'IN', todayIn);
   log(coverageTable('US', us));
@@ -82,5 +96,9 @@ export function runCoverageCheck(db: Db, todayUs: string, todayIn: string, today
   log(coverageTable('HK', hk));
   const jp = computeCoverage(db, 'JP', todayJp);
   log(coverageTable('JP', jp));
-  return [...us, ...india, ...hk, ...jp].every((r) => r.ok) ? 0 : 1;
+  const uk = computeCoverage(db, 'UK', todayUk);
+  log(coverageTable('UK', uk));
+  const eu = computeCoverage(db, 'EU', todayEu);
+  log(coverageTable('EU', eu));
+  return [...us, ...india, ...hk, ...jp, ...uk, ...eu].every((r) => r.ok) ? 0 : 1;
 }

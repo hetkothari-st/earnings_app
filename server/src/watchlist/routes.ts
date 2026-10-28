@@ -17,7 +17,10 @@ import { toJpDto } from '../jp/api/dto.js';
 import { listJpForSymbols } from '../jp/db/jpRepo.js';
 import { JST } from '../jp/domain/jpCalendar.js';
 import type { JpReportDto } from '../jp/api/types.js';
-import { hkEntries, jpEntries, SymbolIndex } from './search.js';
+import { toEuropeDto } from '../europe/api/dto.js';
+import { listEuropeForSymbols } from '../europe/db/europeRepo.js';
+import type { EuropeReportDto } from '../europe/api/types.js';
+import { europeEntries, hkEntries, jpEntries, SymbolIndex } from './search.js';
 import { addWatch, listWatch, MAX_WATCH, removeWatch, type WatchMarket } from './store.js';
 
 export interface WatchlistOptions {
@@ -30,7 +33,8 @@ export interface WatchlistOptions {
 // Used only while a market's index has not loaded yet, so adding a symbol right after a restart still works.
 const SYMBOL_FORMAT = /^[A-Z0-9&.\-]{1,24}$/;
 
-const asMarket = (v: unknown): WatchMarket | null => (v === 'US' || v === 'IN' || v === 'HK' || v === 'JP' ? v : null);
+const asMarket = (v: unknown): WatchMarket | null =>
+  (v === 'US' || v === 'IN' || v === 'HK' || v === 'JP' || v === 'UK' || v === 'EU' ? v : null);
 const normalize = (market: WatchMarket, raw: string): string => {
   if (market === 'US') return normalizeTicker(raw);
   if (market === 'JP') return raw.trim().toUpperCase();
@@ -38,6 +42,13 @@ const normalize = (market: WatchMarket, raw: string): string => {
   return raw.trim().toUpperCase();
 };
 const JP_CODE = /^[0-9][0-9A-Z]{3}$/;
+/** Ruling 2: Yahoo symbols, upper-cased; UK is `.L` only, EU the continental suffixes. */
+export const UK_SYMBOL = /^[A-Z0-9][A-Z0-9.\-]{0,14}\.L$/;
+export const EU_SYMBOL = /^[A-Z0-9][A-Z0-9.\-]{0,14}\.(PA|AS|BR|LS|IR|MI|OL|DE|SW|ST|CO|HE|MC)$/;
+/** The format a market's watch code must match before the index is asked (US, IN, HK: none). */
+const FORMAT: Partial<Record<WatchMarket, RegExp>> = { JP: JP_CODE, UK: UK_SYMBOL, EU: EU_SYMBOL };
+/** Europe's "today" zone for the watchlist window: London for UK, Paris for EU (as `marketToday`). */
+const ZONE: Record<WatchMarket, string> = { US: ET, IN: IST, HK: HKT, JP: JST, UK: 'Europe/London', EU: 'Europe/Paris' };
 
 /** GET /api/symbols, GET /api/watchlist, PUT/DELETE /api/watchlist/:market/:symbol for the signed-in user. */
 export function registerWatchlist(
@@ -48,8 +59,11 @@ export function registerWatchlist(
   if (index.size('HK') === 0) index.set('HK', hkEntries(db));
   // Same for Japan, once jp_stocks has been filled; until then a code is checked by format.
   if (index.size('JP') === 0) index.set('JP', jpEntries(db));
+  // And for UK and Europe, once europe_stocks has been filled.
+  if (index.size('UK') === 0) index.set('UK', europeEntries(db, 'UK'));
+  if (index.size('EU') === 0) index.set('EU', europeEntries(db, 'EU'));
   const NOT_SIGNED_IN = { error: 'Not signed in' };
-  const BAD_MARKET = { error: 'market must be US, IN, HK or JP' };
+  const BAD_MARKET = { error: 'market must be US, IN, HK, JP, UK or EU' };
 
   app.get('/api/symbols', async (req, reply) => {
     if (!currentUser(req)) return reply.code(401).send(NOT_SIGNED_IN);
@@ -76,16 +90,17 @@ export function registerWatchlist(
     const m = asMarket((req.query as { market?: string }).market);
     if (!m) return reply.code(400).send(BAD_MARKET);
     const symbols = listWatch(db, user, m);
-    const today = DateTime.fromMillis(now(), { zone: m === 'US' ? ET : m === 'IN' ? IST : m === 'HK' ? HKT : JST });
+    const today = DateTime.fromMillis(now(), { zone: ZONE[m] });
     const from = today.minus({ days: 400 }).toISODate()!;
     const to = today.plus({ days: 400 }).toISODate()!;
-    type AnyDto = ReportDto | InReportDto | HkReportDto | JpReportDto;
+    type AnyDto = ReportDto | InReportDto | HkReportDto | JpReportDto | EuropeReportDto;
     const bySymbol = new Map<string, AnyDto[]>();
     const add = (k: string, d: AnyDto) => bySymbol.set(k, [...(bySymbol.get(k) ?? []), d]);
     if (m === 'US') for (const r of listForSymbols(db, symbols, from, to)) add(r.symbolKey, toDto(r));
     else if (m === 'IN') for (const r of listInForSymbols(db, symbols, from, to)) add(r.symbol, toInDto(r));
     else if (m === 'HK') for (const r of listHkForSymbols(db, symbols, from, to)) add(r.code, toHkDto(r));
-    else for (const r of listJpForSymbols(db, symbols, from, to)) add(r.code, toJpDto(r));
+    else if (m === 'JP') for (const r of listJpForSymbols(db, symbols, from, to)) add(r.code, toJpDto(r));
+    else for (const r of listEuropeForSymbols(db, m, symbols, from, to)) add(r.symbol, toEuropeDto(r));
     const history = new Map<string, WatchHistoryDto>(); // latest Yahoo-backup quarter per US symbol
     if (m === 'US' && symbols.length) {
       const h = db.prepare(`SELECT symbol_key AS k, fiscal_quarter AS q, period_end AS p, eps_actual AS e FROM watch_history
@@ -115,7 +130,7 @@ export function registerWatchlist(
     const m = asMarket(params.market);
     if (!m) return reply.code(400).send(BAD_MARKET);
     const symbol = normalize(m, params.symbol);
-    if (m === 'JP' && !JP_CODE.test(symbol)) return reply.code(400).send({ error: 'Unknown symbol' });
+    if (FORMAT[m] && !FORMAT[m].test(symbol)) return reply.code(400).send({ error: 'Unknown symbol' });
     const known = index.size(m) > 0 ? index.has(m, symbol) : SYMBOL_FORMAT.test(symbol);
     if (!known) return reply.code(400).send({ error: 'Unknown symbol' });
     const current = listWatch(db, user, m);
