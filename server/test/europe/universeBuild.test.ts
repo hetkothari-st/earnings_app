@@ -8,7 +8,7 @@ import { EU_FULL, UK_FULL } from '../../src/europe/universe.js';
 import {
   buildEuropeUniverse, figiJobsFor, leisFor, pickPrimaryLines, searchIsinsFor, trimFirdsName, yahooSymbolFor, type EuropeUniverseEntry,
 } from '../../src/europe/universeBuild.js';
-import type { Http } from '../../src/sources/http.js';
+import { SourceFormatError, type Http } from '../../src/sources/http.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/europe/universe/${n}`, import.meta.url), 'utf8');
 
@@ -177,6 +177,23 @@ describe('full level and names', () => {
     expect(trimFirdsName('Kingfish Co NV/The SHRS')).toBe('Kingfish Co NV/The');
     expect(trimFirdsName('LVMH')).toBe('LVMH');
   });
+
+  it("a build row dropped for a full entry's symbol (another ISIN) is counted in leftOut", () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const hsba = UK_FULL.filter((f) => f.symbol === 'HSBA.L');
+    // A second ISIN whose ticker also maps to HSBA.L; the full HSBA.L row (GB0005405286) wins the symbol.
+    const u = buildEuropeUniverse({
+      ...base, firdsUk: [share('GB0005405286', 'XLON'), share('GB00B0000001', 'XLON')],
+      figi: [figi('GB0005405286', 'LN', 'HSBA'), figi('GB00B0000001', 'LN', 'HSBA/')], full: hsba,
+    });
+    expect(u.uk.map((e) => [e.symbol, e.isin])).toEqual([['HSBA.L', 'GB0005405286']]);
+    expect(u.leftOut).toEqual([{ isin: 'GB00B0000001', reason: 'ambiguous-ticker' }]);
+    // The same clash when the build never saw the full ISIN.
+    const v = buildEuropeUniverse({ ...base, firdsUk: [share('GB00B0000001', 'XLON')], figi: [figi('GB00B0000001', 'LN', 'HSBA')], full: hsba });
+    expect(v.uk.map((e) => e.isin)).toEqual(['GB0005405286']);
+    expect(v.leftOut).toEqual([{ isin: 'GB00B0000001', reason: 'ambiguous-ticker' }]);
+    warn.mockRestore();
+  });
 });
 
 describe('SIX list', () => {
@@ -194,6 +211,18 @@ describe('SIX list', () => {
     expect(bySymbol(u.eu, 'MMM.SW')).toBeUndefined();
     expect(u.eu).toHaveLength(rows.filter((r) => !r.isin.startsWith('US')).length);
     expect(figiJobsFor({ firdsUk: [], firdsEu: [], six: rows })).toEqual([]);
+  });
+});
+
+describe('SIX list format', () => {
+  it('a changed header or no data rows throws SourceFormatError, never []', () => {
+    const csv = fx('six_list_sample.csv');
+    const header = csv.split('\n')[0]!;
+    expect(() => parseSixList('')).toThrow(SourceFormatError);
+    expect(() => parseSixList(csv.replace('ValorSymbol', 'Symbol'))).toThrow(SourceFormatError);
+    expect(() => parseSixList(header)).toThrow(SourceFormatError);
+    // Only dropped lines (sponsored segment) → no rows → an error too.
+    expect(() => parseSixList(`${header}\n1&1 AG;1U1;868900;DE0005545503;CHF;SIX Sponsored Segment;Germany;Sponsored Foreign Shares`)).toThrow(SourceFormatError);
   });
 });
 

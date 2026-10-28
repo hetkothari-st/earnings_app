@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { fetchFirdsShares, parseFirdsRecords, type FirdsHttp, type FirdsShare } from '../../src/europe/sources/firds.js';
+import { describe, expect, it, vi } from 'vitest';
+import { FIRDS_MAX_BYTES, fetchFirdsShares, makeFirdsHttp, parseFirdsRecords, type FirdsHttp, type FirdsShare } from '../../src/europe/sources/firds.js';
 import { makeZip } from '../sources/zipBuilder.js';
 
 const fx = (n: string) => readFileSync(new URL(`../fixtures/europe/universe/${n}`, import.meta.url), 'utf8');
@@ -96,5 +96,58 @@ describe('fetchFirdsShares', () => {
     };
     const r = await fetchFirdsShares(http, 'esma', new Set(['XPAR']), () => {}, { now: () => NOW });
     expect(r).toEqual({ files: 1, complete: false });
+  });
+  const esmaReplay = (bytes: (url: string) => Promise<Uint8Array>): FirdsHttp => {
+    const esmaIndex = JSON.parse(fx('esma_index.json'));
+    return {
+      json: async (url) => (url.includes('start=0') ? esmaIndex : { response: { numFound: 120, docs: [] } }),
+      text: async () => '',
+      bytes,
+    };
+  };
+
+  it('a part with no .xml entry, or no records, makes the run incomplete', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const noXml = esmaReplay(async () => makeZip([{ name: 'a.txt', data: Buffer.from(fx('firds_sample_esma.xml'), 'utf8') }]));
+    expect((await fetchFirdsShares(noXml, 'esma', new Set(['XPAR']), () => {}, { now: () => NOW })).complete).toBe(false);
+    const noRecords = esmaReplay(async () => makeZip([{ name: 'a.xml', data: Buffer.from('<?xml version="1.0"?><BizData></BizData>', 'utf8') }]));
+    expect((await fetchFirdsShares(noRecords, 'esma', new Set(['XPAR']), () => {}, { now: () => NOW })).complete).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('an index walk that hits the page cap is incomplete', async () => {
+    const esmaIndex = JSON.parse(fx('esma_index.json')) as { response: { docs: unknown[] } };
+    let pages = 0;
+    const http: FirdsHttp = {
+      // Every page is full and numFound says there are more than the walk reads.
+      json: async () => { pages++; return { response: { numFound: 5000, docs: esmaIndex.response.docs.slice(0, 100) } }; },
+      text: async () => '',
+      bytes: async () => makeZip([{ name: 'a.xml', data: Buffer.from(fx('firds_sample_esma.xml'), 'utf8') }]),
+    };
+    const r = await fetchFirdsShares(http, 'esma', new Set(['XPAR']), () => {}, { now: () => NOW });
+    expect(pages).toBe(10);
+    expect(r.complete).toBe(false);
+  });
+
+  it('a download above the size cap (3 GB) is refused and the run incomplete', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(FIRDS_MAX_BYTES).toBe(3 * 1024 ** 3);
+    // A declared Content-Length above the cap is refused before reading.
+    const big = makeFirdsHttp({
+      minIntervalMs: 0,
+      fetchImpl: (async () => new Response('x', { status: 200, headers: { 'content-length': String(FIRDS_MAX_BYTES + 1) } })) as unknown as typeof fetch,
+    });
+    await expect(big.bytes('https://data.fca.org.uk/artefacts/FIRDS/FULINS_E_20261024_01of01.zip')).rejects.toThrow(/size cap/);
+    // A body without a length is cut off once it passes the cap (a small cap here).
+    const chunked = makeFirdsHttp({
+      minIntervalMs: 0, maxBytes: 1000,
+      fetchImpl: (async () => new Response(new ReadableStream({
+        start(c) { for (let i = 0; i < 5; i++) c.enqueue(new Uint8Array(400)); c.close(); },
+      }), { status: 200 })) as unknown as typeof fetch,
+    });
+    await expect(chunked.bytes('https://data.fca.org.uk/x.zip')).rejects.toThrow(/size cap/);
+    const r = await fetchFirdsShares(esmaReplay((url) => chunked.bytes(url)), 'esma', new Set(['XPAR']), () => {}, { now: () => NOW });
+    expect(r).toEqual({ files: 0, complete: false });
+    warn.mockRestore();
   });
 });

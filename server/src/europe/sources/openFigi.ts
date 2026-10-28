@@ -5,6 +5,10 @@
  * one request every 2.5 s. With a key, the published limits: 25 requests per 6 s and 100 jobs per request, so one
  * request every 250 ms. An unknown ISIN answers `{ warning }` and a malformed one `{ error }`: both mean no ticker.
  * The key travels only in the `X-OPENFIGI-APIKEY` header; it is never put in a URL, a body, a log or an error.
+ *
+ * One failed request (5xx, a 429 after its retries, a network error, a malformed answer) loses only its own jobs:
+ * they come back `failed: true` with no tickers, and `figiRunComplete` is false, so the caller must not cache them as
+ * "no ticker" nor treat the run as complete. A 401/403 (bad key) fails every request alike, so it throws.
  */
 
 import { SourceFormatError } from '../../sources/http.js';
@@ -16,6 +20,19 @@ export interface FigiAnswer {
   exchCode: string;
   /** Distinct tickers OpenFIGI lists for the ISIN on that exchCode (empty on a warning or error). */
   tickers: string[];
+  /** The request carrying this job failed: no answer, not "no ticker". */
+  failed?: true;
+}
+
+/** False when any job's request failed (the run is incomplete). */
+export const figiRunComplete = (answers: readonly FigiAnswer[]): boolean => answers.every((a) => !a.failed);
+
+/** A failure that ends the whole run (the key is refused), as opposed to one request's failure. */
+class OpenFigiAuthError extends Error {
+  constructor(status: number) {
+    super(`OpenFIGI HTTP ${status}`);
+    this.name = 'OpenFigiAuthError';
+  }
 }
 
 const KEYLESS = { jobs: 10, gapMs: 2_500 } as const;
@@ -57,6 +74,7 @@ export function createOpenFigi(o: { key?: string; fetchImpl?: typeof fetch; now?
         continue;
       }
       // The status only: the answer body is never echoed into the error.
+      if (res.status === 401 || res.status === 403) throw new OpenFigiAuthError(res.status);
       if (!res.ok) throw new Error(`OpenFIGI HTTP ${res.status}`);
       const json: unknown = await res.json();
       if (!Array.isArray(json) || json.length !== jobs.length) throw new SourceFormatError('OpenFIGI: answer does not match the jobs');
@@ -74,7 +92,16 @@ export function createOpenFigi(o: { key?: string; fetchImpl?: typeof fetch; now?
   return {
     async map(jobs) {
       const out: FigiAnswer[] = [];
-      for (let i = 0; i < jobs.length; i += limits.jobs) out.push(...(await post(jobs.slice(i, i + limits.jobs))));
+      for (let i = 0; i < jobs.length; i += limits.jobs) {
+        const batch = jobs.slice(i, i + limits.jobs);
+        try {
+          out.push(...(await post(batch)));
+        } catch (err) {
+          if (err instanceof OpenFigiAuthError) throw err;
+          console.warn(`openfigi: request for jobs ${i + 1}-${i + batch.length} failed: ${(err as Error).message}`);
+          out.push(...batch.map((j): FigiAnswer => ({ isin: j.isin, exchCode: j.exchCode, tickers: [], failed: true })));
+        }
+      }
       return out;
     },
   };

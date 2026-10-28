@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createOpenFigi } from '../../src/europe/sources/openFigi.js';
+import { createOpenFigi, figiRunComplete } from '../../src/europe/sources/openFigi.js';
 
 const batch = readFileSync(new URL('../fixtures/europe/universe/openfigi_batch.json', import.meta.url), 'utf8');
 /** Jobs matching the fixture's ten answers, in order (the warning at 4 is a growth-segment ISIN asked with SS). */
@@ -83,5 +83,27 @@ describe('createOpenFigi', () => {
     expect(a[2]!.tickers).toEqual(['ERICB']);
     // Eiffage: two tickers on one exchange are both returned (the build leaves it out).
     expect(a[5]!.tickers).toEqual(['FGR', 'FGRMC']);
+  });
+  it('one failed request loses only its own jobs (failed, no tickers); the others are kept', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let n = 0;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const jobs = JSON.parse(String(init.body)) as { idValue: string }[];
+      n++;
+      if (n === 2) return new Response('upstream down', { status: 503 });
+      return json(jobs.map((j) => ({ data: [{ ticker: `T${j.idValue}`, exchCode: 'LN' }] })));
+    }) as unknown as typeof fetch;
+    const figi = createOpenFigi({ fetchImpl, now: () => Date.now() });
+    const jobs = Array.from({ length: 25 }, (_, i) => ({ isin: `I${i}`, exchCode: 'LN' }));
+    const p = figi.map(jobs);
+    await vi.runAllTimersAsync();
+    const a = await p;
+    expect(a).toHaveLength(25);
+    expect(a.slice(0, 10).every((x) => x.tickers.length === 1 && !x.failed)).toBe(true);
+    expect(a.slice(10, 20).every((x) => x.tickers.length === 0 && x.failed === true)).toBe(true);
+    expect(a.slice(20).every((x) => x.tickers.length === 1 && !x.failed)).toBe(true);
+    expect(figiRunComplete(a)).toBe(false);
+    expect(figiRunComplete(a.slice(0, 10))).toBe(true);
+    warn.mockRestore();
   });
 });

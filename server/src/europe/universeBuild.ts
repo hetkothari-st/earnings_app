@@ -228,6 +228,8 @@ export function buildEuropeUniverse(o: BuildSources & {
     }
     const own = rows.find((r) => r.isin === f.isin && r.market === f.market && r.exchange === ex);
     // One ISIN, one row: the full entry's line replaces whatever the build made of that ISIN or symbol.
+    // Another ISIN on the full entry's symbol loses it and is counted (its row is gone).
+    for (const r of rows) if (r.isin !== f.isin && r.market === f.market && r.symbol === f.symbol) leftOut.set(r.isin, 'ambiguous-ticker');
     rows = rows.filter((r) => r === own || (r.isin !== f.isin && !(r.market === f.market && r.symbol === f.symbol)));
     leftOut.delete(f.isin);
     const level = { adr: f.adr, adrRatio: f.adrRatio, adrRatioVerified: f.adrRatioVerified, cik: f.cik, secForm: f.secForm };

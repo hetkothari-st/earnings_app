@@ -35,4 +35,14 @@ describe('streamZipEntryText', () => {
   it('not a zip throws SourceFormatError', async () => {
     await expect(collect(streamZipEntryText(new Uint8Array(100), () => true))).rejects.toThrow(SourceFormatError);
   });
+  it('truncated deflate data with an intact central directory throws SourceFormatError', async () => {
+    const zip = makeZip([{ name: 'a.xml', data: Buffer.from('Müller '.repeat(20_000), 'utf8') }]);
+    const copy = new Uint8Array(zip);
+    const dv = new DataView(copy.buffer);
+    // Halve the compressed size in the local header (+18) and the central directory (+20); the data stays in place.
+    const comp = dv.getUint32(18, true);
+    dv.setUint32(18, Math.floor(comp / 2), true);
+    for (let i = 0; i + 4 <= copy.length; i++) if (dv.getUint32(i, true) === 0x02014b50) dv.setUint32(i + 20, Math.floor(comp / 2), true);
+    await expect(collect(streamZipEntryText(copy, () => true))).rejects.toThrow(SourceFormatError);
+  });
 });

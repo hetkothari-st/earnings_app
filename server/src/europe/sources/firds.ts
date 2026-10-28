@@ -139,7 +139,10 @@ function readIndexPage(source: 'esma' | 'fca', json: unknown): { files: IndexFil
 }
 
 const PAGE = 100;
+/** The index walk reads at most this many pages (1,000 files); hitting it marks the run incomplete. */
 const MAX_PAGES = 10;
+/** A FIRDS part larger than this (zipped) is refused: Task 1's largest was 41.9 MB. */
+export const FIRDS_MAX_BYTES = 3 * 1024 ** 3;
 
 function indexUrl(source: 'esma' | 'fca', from: string, to: string, offset: number): string {
   if (source === 'esma') {
@@ -153,7 +156,8 @@ function indexUrl(source: 'esma' | 'fca', from: string, to: string, offset: numb
 /**
  * Reads the latest weekly equity full set: index (last 14 days) → each FULINS_E part of the newest date → streamed
  * records → `onShare` for every share record whose MIC is in `mics` (terminated ones included; the build drops them).
- * `complete` is false when a part is missing from the index, a part fails, or a part ends inside a record; the
+ * `complete` is false when the index walk hits its page cap, a part is missing from the index, a part fails (download,
+ * size cap, format), a part holds no record (no .xml entry), or a part ends inside a record; the
  * caller then changes nothing (Ruling 4: a failed refresh changes nothing). An index failure throws.
  */
 export async function fetchFirdsShares(
@@ -168,6 +172,7 @@ export async function fetchFirdsShares(
   const to = ymd(now);
 
   const parts = new Map<string, Map<number, { link: string; of: number }>>();
+  let walked = false;
   for (let page = 0, offset = 0; page < MAX_PAGES; page++, offset += PAGE) {
     const { files, total } = readIndexPage(source, await http.json(indexUrl(source, from, to, offset)));
     for (const f of files) {
@@ -177,14 +182,19 @@ export async function fetchFirdsShares(
       byPart.set(Number(m[2]), { link: f.link, of: Number(m[3]) });
       parts.set(m[1]!, byPart);
     }
-    if (files.length === 0 || offset + PAGE >= total) break;
+    if (files.length === 0 || offset + PAGE >= total) {
+      walked = true;
+      break;
+    }
   }
+  // Pages left unread could hold a newer set: never call that complete.
+  if (!walked) console.warn(`firds ${source}: the index has more than ${MAX_PAGES * PAGE} files in 14 days; run incomplete`);
   const latest = [...parts.keys()].sort().at(-1);
   if (!latest) return { files: 0, complete: false };
 
   const set = parts.get(latest)!;
   const of = Math.max(...[...set.values()].map((p) => p.of));
-  let complete = set.size === of && [...set.keys()].every((n) => n >= 1 && n <= of);
+  let complete = walked && set.size === of && [...set.keys()].every((n) => n >= 1 && n <= of);
   let files = 0;
   for (const n of [...set.keys()].sort((a, b) => a - b)) {
     const { link } = set.get(n)!;
@@ -192,9 +202,11 @@ export async function fetchFirdsShares(
       if (!PART_HOSTS.has(new URL(link).hostname)) throw new Error(`FIRDS part on an unexpected host: ${link}`);
       const zip = await http.bytes(link);
       let rest = '';
+      let records = 0;
       for await (const chunk of streamZipEntryText(zip, (name) => name.toLowerCase().endsWith('.xml'))) {
         const text = rest + chunk;
         const used = scanRecords(text, (b) => {
+          records++;
           const s = parseBlock(b, now);
           if (s && mics.has(s.mic)) onShare(s);
         });
@@ -203,6 +215,8 @@ export async function fetchFirdsShares(
         rest = open >= 0 ? text.slice(open) : text.slice(Math.max(used, text.length - OPEN.length));
       }
       if (rest.includes(OPEN)) complete = false; // the part ended inside a record
+      // No .xml entry, or no record at all: an odd archive, never a complete empty part.
+      if (records === 0) throw new Error('no FIRDS records in the part');
       files++;
     } catch (err) {
       console.warn(`firds ${source}: part ${n} of ${latest} failed: ${(err as Error).message}`);
@@ -213,7 +227,8 @@ export async function fetchFirdsShares(
 }
 
 /** FIRDS client: JSON index through `makeHttp` and part downloads, both with EUROPE_UA and one shared 1 s gap. */
-export function makeFirdsHttp(o: { fetchImpl?: typeof fetch; minIntervalMs?: number } = {}): FirdsHttp {
+export function makeFirdsHttp(o: { fetchImpl?: typeof fetch; minIntervalMs?: number; maxBytes?: number } = {}): FirdsHttp {
+  const maxBytes = o.maxBytes ?? FIRDS_MAX_BYTES;
   const fetchImpl = o.fetchImpl ?? fetch;
   const gap = o.minIntervalMs ?? 1_000;
   let next = 0;
@@ -233,7 +248,34 @@ export function makeFirdsHttp(o: { fetchImpl?: typeof fetch; minIntervalMs?: num
       await limiter.wait();
       const res = await fetchImpl(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(10 * 60_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-      return new Uint8Array(await res.arrayBuffer());
+      const declared = Number(res.headers.get('content-length'));
+      if (Number.isFinite(declared) && declared > maxBytes) {
+        await res.body?.cancel();
+        throw new Error(`FIRDS part over the size cap (${declared} > ${maxBytes} bytes): ${url}`);
+      }
+      // Read in chunks so an undeclared or understated length is cut off at the cap too.
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      const reader = res.body?.getReader();
+      if (reader) {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > maxBytes) {
+            await reader.cancel();
+            throw new Error(`FIRDS part over the size cap (> ${maxBytes} bytes): ${url}`);
+          }
+          chunks.push(value);
+        }
+      }
+      const out = new Uint8Array(total);
+      let at = 0;
+      for (const c of chunks) {
+        out.set(c, at);
+        at += c.byteLength;
+      }
+      return out;
     },
   };
 }
