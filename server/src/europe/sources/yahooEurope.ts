@@ -40,80 +40,40 @@
  *   ^FCHI ^AEX ^IBEX FTSEMIB.MI), CHF (^SSMI), SEK (^OMX).
  * - ISIN search: `GET /v1/finance/search?q=<ISIN>&quotesCount=10&newsCount=0` -> `quotes[].symbol`; SE0000108656
  *   gives exactly ERIC-B.ST (EQUITY, STO) and GB0009895292 gives AZN.L.
- * - Exchange facts used here (sessions, zones) are the plan's Ruling 3; `ExchangeId` is declared here until
- *   `europe/exchanges.ts` (Task 1) lands, then it should be imported from there.
+ * - Exchange facts (sessions, zones, regions) come from `europe/exchanges.ts` (Ruling 3).
  */
 import { DateTime } from 'luxon';
 import type { LocalTiming } from '../../domain/exchangeCalendar.js';
 import { HttpError } from '../../sources/http.js';
 import { parseYahooSummaryFor, type YahooForeignSummary } from '../../sources/yahooForeignSummary.js';
 import type { YahooClient } from '../../sources/yahooClient.js';
+import { EXCHANGES, exchangeOfSymbol, type ExchangeId } from '../exchanges.js';
 
-export type ExchangeId =
-  | 'LSE' | 'PAR' | 'AMS' | 'BRU' | 'LIS' | 'DUB' | 'MIL' | 'OSL' | 'XET' | 'SIX' | 'STO' | 'CPH' | 'HEL' | 'MAD';
+export type { ExchangeId };
 
 /** Yahoo's visualization region per exchange, and whether its bulk calendar is current (see the live checks above). */
-export const YAHOO_REGIONS: Readonly<Record<ExchangeId, { region: string; bulkCalendar: boolean }>> = {
-  LSE: { region: 'gb', bulkCalendar: true },
-  PAR: { region: 'fr', bulkCalendar: false },
-  AMS: { region: 'nl', bulkCalendar: false },
-  BRU: { region: 'be', bulkCalendar: false },
-  LIS: { region: 'pt', bulkCalendar: false },
-  DUB: { region: 'ie', bulkCalendar: false },
-  MIL: { region: 'it', bulkCalendar: true },
-  OSL: { region: 'no', bulkCalendar: false },
-  XET: { region: 'de', bulkCalendar: true },
-  SIX: { region: 'ch', bulkCalendar: true },
-  STO: { region: 'se', bulkCalendar: true },
-  CPH: { region: 'dk', bulkCalendar: true },
-  HEL: { region: 'fi', bulkCalendar: false },
-  MAD: { region: 'es', bulkCalendar: false },
+/** Yahoo's visualization region per exchange (from `exchanges.ts`), and whether its bulk calendar is current (see the live checks above). */
+const BULK_CALENDAR: Readonly<Record<ExchangeId, boolean>> = {
+  LSE: true, PAR: false, AMS: false, BRU: false, LIS: false, DUB: false, MIL: true,
+  OSL: false, XET: true, SIX: true, STO: true, CPH: true, HEL: false, MAD: false,
 };
-
-/** Session per Yahoo suffix (local clock, Ruling 3): BMO < open, DMH open..close-1, AMC >= close. */
-const SESSIONS: Readonly<Record<string, { openMin: number; closeMin: number }>> = {
-  L: { openMin: 8 * 60, closeMin: 16 * 60 + 30 },
-  PA: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-  AS: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-  BR: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-  LS: { openMin: 8 * 60, closeMin: 16 * 60 + 30 },
-  IR: { openMin: 8 * 60, closeMin: 16 * 60 + 30 },
-  MI: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-  OL: { openMin: 9 * 60, closeMin: 16 * 60 + 20 },
-  DE: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-  SW: { openMin: 9 * 60, closeMin: 17 * 60 + 20 },
-  ST: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-  CO: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-  HE: { openMin: 10 * 60, closeMin: 18 * 60 + 30 },
-  MC: { openMin: 9 * 60, closeMin: 17 * 60 + 30 },
-};
-
-/** Zone per Yahoo suffix (Ruling 3); the default for `createYahooEuropeSummary` until `exchanges.ts` provides it. */
-const SUFFIX_ZONES: Readonly<Record<string, string>> = {
-  L: 'Europe/London', PA: 'Europe/Paris', AS: 'Europe/Amsterdam', BR: 'Europe/Brussels', LS: 'Europe/Lisbon',
-  IR: 'Europe/Dublin', MI: 'Europe/Rome', OL: 'Europe/Oslo', DE: 'Europe/Berlin', SW: 'Europe/Zurich',
-  ST: 'Europe/Stockholm', CO: 'Europe/Copenhagen', HE: 'Europe/Helsinki', MC: 'Europe/Madrid',
-};
-
-const suffixOf = (symbol: string): string | null => {
-  const i = symbol.lastIndexOf('.');
-  return i > 0 ? symbol.slice(i + 1).toUpperCase() : null;
-};
+export const YAHOO_REGIONS: Readonly<Record<ExchangeId, { region: string; bulkCalendar: boolean }>> = Object.fromEntries(
+  (Object.keys(EXCHANGES) as ExchangeId[]).map((id) => [id, { region: EXCHANGES[id].yahooRegion, bulkCalendar: BULK_CALENDAR[id] }]),
+) as Record<ExchangeId, { region: string; bulkCalendar: boolean }>;
 
 /** True when the symbol ends in one of our 14 Yahoo suffixes. */
-const isOurSymbol = (symbol: string): boolean => {
-  const s = suffixOf(symbol);
-  return s != null && s in SESSIONS;
-};
+const isOurSymbol = (symbol: string): boolean => exchangeOfSymbol(symbol) != null;
 
 /** The zone of a symbol's exchange from its Yahoo suffix; null for a suffix that is not ours. */
 export function defaultZoneOf(symbol: string): string | null {
-  return SUFFIX_ZONES[suffixOf(symbol) ?? ''] ?? null;
+  const id = exchangeOfSymbol(symbol);
+  return id ? EXCHANGES[id].zone : null;
 }
 
 function timingAt(symbol: string, hhmm: string): LocalTiming {
-  const sess = SESSIONS[suffixOf(symbol) ?? ''];
-  if (!sess) return 'UNKNOWN';
+  const id = exchangeOfSymbol(symbol);
+  if (!id) return 'UNKNOWN';
+  const sess = EXCHANGES[id];
   const [h, m] = hhmm.split(':').map(Number);
   const total = h! * 60 + m!;
   if (total < sess.openMin) return 'BMO';
