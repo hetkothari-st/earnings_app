@@ -9,7 +9,9 @@
  * note: '') to be hand-checked; existing entries are never changed (a file already present without an entry gets one
  * only when the fetched document is identical). Main set: up to 3 releases per issuer. Held-out: the newest release
  * not in the main set, for 6 different issuers (banks first). One client, 120 ms spacing, www.sec.gov / data.sec.gov
- * only. Afterwards: hand-check every entry (fiscalQuarter included), then  npm run reader-corpus -w server -- --uk
+ * only. The fiscal year end (entries' starting fiscalQuarter, and the classifier's "Q3 2026" labels) is the submissions
+ * JSON's fiscalYearEnd; an issuer without one is skipped. Afterwards: hand-check every entry (fiscalQuarter
+ * included), then  npm run reader-corpus -w server -- --uk
  * (or --eu, and the held-out sets once).
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -17,7 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { DateTime } from 'luxon';
 import { config } from '../config.js';
 import { EU_FULL, UK_FULL } from '../europe/universe.js';
-import { fetchEarningsFilings } from '../sources/sec.js';
+import { europeFiscalQuarter } from '../europe/sources/releaseEurope.js';
+import { parseEarningsFilings, parseFiscalYearEnd } from '../sources/sec.js';
 import { parseFilingDocs } from '../sources/secFeed.js';
 import { makeHttp } from '../sources/http.js';
 import { classifySixK, pickReleaseDoc } from '../sources/sixKClassify.js';
@@ -34,11 +37,6 @@ const dir = heldout ? `${mainDir}heldout/` : mainDir;
 const MAX_BYTES = 3_000_000;
 const MAIN_PER_ISSUER = 3;
 const HELDOUT_ISSUERS = 6;
-/**
- * Fiscal-year-end months that are not December (the issuers' published reporting calendars), for the entries'
- * starting fiscalQuarter; every entry is hand-checked before it counts.
- */
-const FY_END_MONTH: Record<string, number> = { DEO: 6, BHP: 6, VOD: 3, NGG: 3, LOGI: 3 };
 /** Held-out order: banks first, so the set exercises the bank rules; then the list order. */
 const BANKS = ['HSBC', 'BCS', 'LYG', 'NWG', 'ING', 'SAN', 'BBVA', 'UBS', 'DB'];
 
@@ -47,14 +45,6 @@ if (!config.secUserAgent) {
   process.exit(1);
 }
 const http = makeHttp({ minIntervalMs: 120, headers: { 'User-Agent': config.secUserAgent } });
-
-/** Fiscal quarter of a period end: months after the fiscal-year end (a day <= 15 counts as the month before). */
-function fiscalQuarterOf(periodEnd: string, fyEndMonth: number): 1 | 2 | 3 | 4 | null {
-  const d = DateTime.fromISO(periodEnd, { zone: 'utc' });
-  const m = d.day <= 15 ? (d.month === 1 ? 12 : d.month - 1) : d.month;
-  const k = (m - fyEndMonth + 12) % 12;
-  return k % 3 !== 0 ? null : k === 0 ? 4 : (k / 3) as 1 | 2 | 3;
-}
 
 mkdirSync(dir, { recursive: true });
 const expectedPath = `${dir}expected.json`;
@@ -77,12 +67,20 @@ for (const e of issuers) {
   // The periods to pass over: held-out skips the issuer's main-set periods.
   const skip = heldout ? [...mainFiles].filter((f) => f.startsWith(`${e.adr}_`)).length : 0;
   let filings;
+  let fiscalYearEnd: string | null;
   try {
-    filings = (await fetchEarningsFilings(http, e.cik)).filter((f) => f.form === e.secForm && f.filingDate >= since);
+    const submissions: unknown = await http.json(`https://data.sec.gov/submissions/CIK${String(e.cik).padStart(10, '0')}.json`);
+    fiscalYearEnd = parseFiscalYearEnd(submissions);
+    filings = parseEarningsFilings(submissions, e.cik).filter((f) => f.form === e.secForm && f.filingDate >= since);
   } catch (err) {
     console.log(`error ${e.adr} submissions: ${(err as Error).message}`);
     continue;
   }
+  // The fiscal year end comes from SEC (fiscalYearEnd, "MMDD") and nowhere else: without it the issuer is skipped.
+  if (!fiscalYearEnd) { console.log(`skip ${e.adr}: SEC submissions state no fiscalYearEnd`); continue; }
+  // A year ending on day <= 15 ("0103", a 52/53-week year) closes in the month before.
+  const [fm, fd] = [Number(fiscalYearEnd.slice(0, 2)), Number(fiscalYearEnd.slice(2))];
+  const fyEndMonth = fd <= 15 ? (fm === 1 ? 12 : fm - 1) : fm;
   // Newest first; a period's release is its EARLIEST results filing (the one the app reads), so the walk goes on until
   // a period older than the ones wanted shows up, keeping the last-seen (earliest) document per period.
   const periods: Found[] = [];
@@ -94,7 +92,7 @@ for (const e of issuers) {
       if (!url || !/\.html?$/i.test(url)) continue;
       const html = await http.text(url);
       if (Buffer.byteLength(html) > MAX_BYTES) { console.log(`skip ${e.adr} ${f.accession}: over 3 MB`); continue; }
-      const c = classifySixK(html, { profile: profile as Parameters<typeof classifySixK>[1]['profile'], filedOn: f.filingDate });
+      const c = classifySixK(html, { profile, filedOn: f.filingDate, fyEndMonth });
       if (c.kind !== 'results') continue;
       const i = periods.findIndex((p) => p.periodEnd === c.periodEnd);
       const all = [...(i >= 0 ? periods[i]!.all : []), { html, accession: f.accession }];
@@ -123,7 +121,7 @@ for (const e of issuers) {
     taken++;
     expected[p.file] = {
       adr: e.adr, cik: e.cik, accession, periodEnd: p.periodEnd,
-      fiscalQuarter: fiscalQuarterOf(p.periodEnd, FY_END_MONTH[e.adr] ?? 12),
+      fiscalQuarter: europeFiscalQuarter(p.periodEnd, fiscalYearEnd),
       revenue: null, revenueCurrency: null, eps: null, epsDiluted: null, epsCurrency: null, span: null, ytdMonths: null,
       checked: false, note: '',
     };

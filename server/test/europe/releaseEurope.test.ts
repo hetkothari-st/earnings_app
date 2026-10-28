@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readEuropeRelease, type EuropeReleaseValues } from '../../src/europe/sources/releaseEurope.js';
-import { europeIssuerFor } from '../../src/europe/universe.js';
+import { europeFiscalQuarter, readEuropeRelease, type EuropeReleaseValues } from '../../src/europe/sources/releaseEurope.js';
+import { EU_FULL, UK_FULL, europeIssuerFor } from '../../src/europe/universe.js';
+import { EUROPE_BANK_TICKERS } from '../../src/sources/releaseReader.js';
 
 /** A release body: an optional caption paragraph, then a table of header rows and data rows. */
 const table = (caption: string, head: string[][], rows: string[][]) =>
@@ -167,5 +168,87 @@ describe('readEuropeRelease — SEC fixtures (values hand-read from each documen
   it('LOGI Q2 FY27 (8-K Ex-99.1): basic $1.26, diluted $1.25; "(In thousands …)" is no allowlisted unit, so revenue stays blank', () => {
     const v = readEuropeRelease(fixture('logi_q2_fy27_8k_ex991.htm'), { periodEnd: '2026-09-30', fiscalQuarter: 2, profile: 'eu', issuer: europeIssuerFor('LOGI') });
     expect(pick(v)).toEqual({ revenue: null, revenueCurrency: null, eps: 1.26, epsDiluted: 1.25, epsCurrency: 'USD', span: 'quarter', ytdMonths: null });
+  });
+});
+
+describe('readEuropeRelease — fix round 1 probes', () => {
+  const EU_Q3 = { ...Q3, profile: 'eu' as const };
+
+  it('cents EPS is converted to the major unit (/100), never read 100x: euro cents, EUR cents, US cents, US$ cents', () => {
+    const t = (label: string, fig: string, head = '€m') => doc(table('', [[head, 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], [label, fig, '40.1']]));
+    const e1 = readEuropeRelease(t('Basic earnings per share (euro cents)', '45.3'), EU_Q3);
+    expect([e1.eps, e1.epsCurrency]).toEqual([0.453, 'EUR']);
+    const e2 = readEuropeRelease(t('Basic EPS (EUR cents)', '45.3'), EU_Q3);
+    expect([e2.eps, e2.epsCurrency]).toEqual([0.453, 'EUR']);
+    const e3 = readEuropeRelease(t('Basic EPS (in euro cents)', '45.3'), EU_Q3);
+    expect([e3.eps, e3.epsCurrency]).toEqual([0.453, 'EUR']);
+    // BHP / RIO: "US cents".
+    const bhp = readEuropeRelease(t('Basic earnings per ordinary share (US cents)', '177.7', 'US$m'), Q3);
+    expect([bhp.eps, bhp.epsCurrency]).toEqual([1.777, 'USD']);
+    const usd = readEuropeRelease(t('Basic earnings per share (US$ cents)', '177.7', 'US$m'), Q3);
+    expect([usd.eps, usd.epsCurrency]).toEqual([1.777, 'USD']);
+    // A "cents" column mark under a "($)" label: cents of US dollars.
+    const mark = doc(table('', [['US$m', 'Q3 2026', 'Q3 2025'], ['', 'cents', 'cents']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share ($)', '177.7', '150.0']]));
+    const m = readEuropeRelease(mark, Q3);
+    expect([m.eps, m.epsCurrency]).toEqual([1.777, 'USD']);
+    // Bare "cents" with no currency anywhere: blank.
+    expect(readEuropeRelease(t('Basic EPS (cents)', '45.3', ''), EU_Q3).eps).toBeNull();
+    // Pence stay pence (GBp), never divided.
+    const p = readEuropeRelease(t('Basic EPS (pence)', '12.3', '£m'), Q3);
+    expect([p.eps, p.epsCurrency]).toEqual([12.3, 'GBp']);
+  });
+
+  it('the own head unit of a table beats the caption above it; two in-table units disagreeing → blank', () => {
+    const thousands = doc(table('(Figures in millions of euros unless otherwise indicated)', [['€ thousands', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000,000', '4,800,000'], ['Basic EPS (€)', '1.25', '1.10']]));
+    expect(readEuropeRelease(thousands, EU_Q3).revenue).toBe(5_000_000_000);
+    const bn = doc(table('(in millions of euros, unless otherwise indicated)', [['€bn', 'Q3 2026', 'Q3 2025']], [['Revenue', '11.66', '10.50'], ['Basic EPS (€)', '1.25', '1.10']]));
+    expect(readEuropeRelease(bn, EU_Q3).revenue).toBe(11_660_000_000);
+    const conflict = doc(table('', [['€ thousands', 'Q3 2026', 'Q3 2025'], ['', '€m', '€m']], [['Revenue', '5,000', '4,800'], ['Basic EPS (€)', '1.25', '1.10']]));
+    const c = readEuropeRelease(conflict, EU_Q3);
+    expect([c.revenue, c.eps]).toEqual([null, 1.25]);
+    // An in-table scale that names no currency ("(In thousands)") is no unit, and the caption does not stand in for it.
+    const unknown = doc(table('(in millions of euros)', [['(In thousands, except per share amounts)', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS (€)', '1.25', '1.10']]));
+    const u = readEuropeRelease(unknown, EU_Q3);
+    expect([u.revenue, u.notes.filter((n) => n === 'revenue: no unit stated for table').length]).toEqual([null, 1]);
+  });
+
+  it('net operating income: only the "before … credit losses" row, and only for banks; Santander reads total income', () => {
+    const fullAdrs = new Set([...UK_FULL, ...EU_FULL].map((e) => e.adr));
+    expect([...EUROPE_BANK_TICKERS].filter((t) => !fullAdrs.has(t))).toEqual([]);
+    const asml = { names: ['ASML Holding N.V.'], ticker: 'ASML' };
+    const nonBank = doc(table('', [['€m', 'Q3 2026', 'Q3 2025']], [['Net operating income', '800', '700'], ['Basic EPS (€)', '1.25', '1.10']]));
+    expect(readEuropeRelease(nonBank, { ...EU_Q3, issuer: asml }).revenue).toBeNull();
+    const nonBankBefore = doc(table('', [['€m', 'Q3 2026', 'Q3 2025']], [['Net operating income before expected credit losses', '800', '700'], ['Basic EPS (€)', '1.25', '1.10']]));
+    expect(readEuropeRelease(nonBankBefore, { ...EU_Q3, issuer: asml }).revenue).toBeNull();
+    const san = { names: ['Banco Santander, S.A.'], ticker: 'SAN' };
+    expect(readEuropeRelease(nonBankBefore, { ...EU_Q3, issuer: san }).revenue).toBe(800_000_000);
+    const both = doc(table('', [['€m', 'Q3 2026', 'Q3 2025']], [['Total income', '15,000', '14,000'], ['Net operating income', '8,000', '7,500'], ['Basic EPS (€)', '0.25', '0.22']]));
+    expect(readEuropeRelease(both, { ...EU_Q3, issuer: san }).revenue).toBe(15_000_000_000);
+    const plainOnly = doc(table('', [['€m', 'Q3 2026', 'Q3 2025']], [['Net operating income', '8,000', '7,500'], ['Basic EPS (€)', '0.25', '0.22']]));
+    expect(readEuropeRelease(plainOnly, { ...EU_Q3, issuer: san }).revenue).toBeNull();
+  });
+
+  it('"per ordinary share of 10 pence" is the nominal value, not the EPS unit', () => {
+    const html = doc(table('', [['$m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic earnings per ordinary share of 10 pence', '$1.25', '$1.10']]));
+    const v = readEuropeRelease(html, Q3);
+    expect([v.eps, v.epsCurrency]).toEqual([1.25, 'USD']);
+    const unsigned = doc(table('', [['$m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic earnings per ordinary share of 10 pence', '1.25', '1.10']]));
+    expect(readEuropeRelease(unsigned, Q3).eps).toBeNull();
+  });
+
+  it('"Year to date" is not a full-year span', () => {
+    const html = doc(table('', [['£m', 'Year to date 31 December 2026', 'Year to date 31 December 2025']], [['Revenue', '3,000', '2,800'], ['Basic EPS (p)', '30.0', '28.0']]));
+    expect(readEuropeRelease(html, FY).span).toBeNull();
+  });
+
+  it('starting fiscal quarter from SEC fiscalYearEnd (MMDD); missing → null', () => {
+    expect(europeFiscalQuarter('2026-09-30', '1231')).toBe(3);
+    expect(europeFiscalQuarter('2026-12-31', '1231')).toBe(4);
+    expect(europeFiscalQuarter('2026-09-30', '0331')).toBe(2);
+    expect(europeFiscalQuarter('2026-06-30', '0630')).toBe(4);
+    expect(europeFiscalQuarter('2026-09-28', '0103')).toBe(3);
+    expect(europeFiscalQuarter('2026-08-31', '1231')).toBeNull();
+    expect(europeFiscalQuarter('2026-09-30', null)).toBeNull();
+    expect(europeFiscalQuarter('2026-09-30', '13xx')).toBeNull();
   });
 });

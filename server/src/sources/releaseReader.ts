@@ -1505,8 +1505,11 @@ type EuSpan = 'quarter' | 'half' | 'nine' | 'year';
 type EuField = 'revenue' | 'basic' | 'diluted' | 'both';
 type EuCurrency = 'EUR' | 'GBP' | 'GBp' | 'USD' | 'CHF' | 'DKK' | 'SEK' | 'NOK';
 
-/** Banks whose top line is "Total income" (US tickers). */
-const EU_BANKS = new Set(['HSBC', 'BCS', 'LYG', 'NWG', 'ING', 'SAN', 'BBVA', 'UBS', 'DB']);
+/**
+ * Banks (US tickers of UK_FULL / EU_FULL issuers) whose top line is "Total income", or HSBC's "net operating income
+ * before … credit losses". No other issuer's total income / net operating income is ever revenue.
+ */
+export const EUROPE_BANK_TICKERS: ReadonlySet<string> = new Set(['HSBC', 'BCS', 'LYG', 'NWG', 'ING', 'SAN', 'BBVA', 'UBS', 'DB']);
 
 /** Currency words of an "(in millions of …)" statement. */
 const EU_CUR_WORDS: Array<[EuCurrency, RegExp]> = [
@@ -1519,25 +1522,31 @@ const EU_CUR_WORDS: Array<[EuCurrency, RegExp]> = [
   ['NOK', /^(?:norwegian\s+kron(?:er|e)|nok)$/],
 ];
 
-/**
- * Allowlisted unit statements: "£m", "£ million(s)", "£bn", "$m", "US$m", "US$ million(s)", "€m", "€ million(s)",
- * "EUR million(s)", "EUR m", "CHF million(s)", "DKK million(s)", "SEK m(illion)", "MSEK", "NOK million(s)", "MNOK",
- * "(in millions of …)" — with an optional "(Figures / Amounts) (are) (in)" lead, ", except per share …" and "unless
- * otherwise indicated". Nothing else counts as a unit.
- */
-const EU_UNITS: Array<[RegExp, EuCurrency, number]> = [
-  [/^£\s?(?:m|millions?)$/, 'GBP', 1e6],
-  [/^£\s?bn$/, 'GBP', 1e9],
-  [/^(?:us)?\$\s?m$/, 'USD', 1e6],
-  [/^us\$\s?millions?$/, 'USD', 1e6],
-  [/^€\s?(?:m|millions?)$/, 'EUR', 1e6],
-  [/^eur\s?(?:m|millions?)$/, 'EUR', 1e6],
-  [/^chf\s+millions?$/, 'CHF', 1e6],
-  [/^dkk\s+millions?$/, 'DKK', 1e6],
-  [/^sek\s?(?:m|millions?)$|^msek$/, 'SEK', 1e6],
-  [/^nok\s+millions?$|^mnok$/, 'NOK', 1e6],
+/** Currency signs / codes of a unit statement, by currency. */
+const EU_UNIT_CUR: Array<[EuCurrency, string]> = [
+  ['GBP', String.raw`£|gbp`],
+  ['USD', String.raw`us\$|\$|usd`],
+  ['EUR', String.raw`€|eur`],
+  ['CHF', 'chf'],
+  ['DKK', 'dkk'],
+  ['SEK', 'sek'],
+  ['NOK', 'nok'],
 ];
+/** Scale words of a unit statement. */
+const EU_SCALE: Array<[number, string]> = [
+  [1e6, String.raw`m|mn|millions?`],
+  [1e9, String.raw`bn|billions?`],
+  [1e3, String.raw`'?000s?|k|thousands?`],
+];
+const EU_SCALE_WORDS: Array<[number, RegExp]> = [[1e6, /^millions$/], [1e9, /^billions$/], [1e3, /^thousands$/]];
 
+/**
+ * Unit statements: a currency sign / code and a scale ("£m", "£ million(s)", "£bn", "$m", "US$m", "US$ million(s)",
+ * "€m", "€ million(s)", "EUR million(s)", "EUR m", "CHF million(s)", "DKK million(s)", "SEK m", "MSEK", "MNOK", and —
+ * so that a table's own head is never overridden by a caption — "€ thousands", "£000", "€bn", "$bn" …), or "(in)
+ * millions / thousands / billions of <currency>" — with an optional "(Figures / Amounts) (are) (in)" lead, ", except
+ * per share …" and "unless otherwise indicated". Nothing else counts as a unit.
+ */
 interface EuUnit { mult: number; cur: EuCurrency }
 
 function euUnit(text: string): EuUnit | null {
@@ -1549,43 +1558,73 @@ function euUnit(text: string): EuUnit | null {
     .replace(/^(?:(?:all\s+)?(?:figures|amounts)\s+(?:are\s+)?(?:stated\s+|expressed\s+|shown\s+)?)?(?:in\s+)?/, '')
     .replace(/\s+/g, ' ')
     .trim();
-  for (const [re, cur, mult] of EU_UNITS) if (re.test(core)) return { mult, cur };
-  const m = core.match(/^millions\s+of\s+(.+)$/);
-  if (m) for (const [cur, re] of EU_CUR_WORDS) if (re.test(m[1]!.trim())) return { mult: 1e6, cur };
+  if (core === 'msek') return { mult: 1e6, cur: 'SEK' };
+  if (core === 'mnok') return { mult: 1e6, cur: 'NOK' };
+  for (const [cur, c] of EU_UNIT_CUR) {
+    for (const [mult, s] of EU_SCALE) if (new RegExp(`^(?:${c})\\s?(?:${s})$`).test(core)) return { mult, cur };
+  }
+  const m = core.match(/^(millions|billions|thousands)\s+of\s+(.+)$/);
+  if (m) {
+    const mult = EU_SCALE_WORDS.find(([, re]) => re.test(m[1]!))![0];
+    for (const [cur, re] of EU_CUR_WORDS) if (re.test(m[2]!.trim())) return { mult, cur };
+  }
   return null;
 }
 
 /** A header cell that is wholly a unit once its years are dropped ("2026 $m" → "$m"). */
 const euCellUnit = (text: string): EuUnit | null => (text ? euUnit(text.replace(/\b(?:19|20)\d{2}\b/g, ' ')) : null);
 
-/** A header cell that is only a currency mark ("$", "£", "€", "p", "pence", "(DKK)"). */
-const EU_CURRENCY_MARK = /^\(?\s*(£|€|\$|us\$|p|pence|eur|euros?|usd|gbp|dkk|sek|chf|nok)\s*\)?$/i;
+/** Scale words: a text carrying one that is no unit statement ("(In thousands, except per share amounts)") names no unit. */
+const EU_SCALE_TEXT = /\b(?:thousands?|millions?|billions?|bn|mn)\b|'000|\b000s?\b/i;
 
-/** Currencies a text names (EPS): pence, pounds, euros, dollars, … Nominal values ("per $0.25 / 25p ordinary share") are dropped. */
-function euCurrencies(text: string): Set<EuCurrency> {
+/** A header cell that is only a currency mark ("$", "£", "€", "p", "pence", "(DKK)", "cents", "US cents"). */
+const EU_CURRENCY_MARK = /^\(?\s*(£|€|\$|us\$|p|pence|eur|euros?|usd|gbp|dkk|sek|chf|nok|cents?|(?:us\$?|usd|euro|eur|€)\s*cents?)\s*\)?$/i;
+
+/**
+ * EPS currencies: the major currencies, pence ('GBp'), and cents of US dollars / euros ('USc' / 'EURc'); 'c' is a
+ * "cents" with no currency of its own (another source must name it). Cents are converted to the major unit (/100)
+ * when the figure is read; pence stay pence.
+ */
+type EuEpsCurrency = EuCurrency | 'USc' | 'EURc' | 'c';
+
+/**
+ * Currencies a text names (EPS): pence, pounds, euros, dollars, cents, … Nominal share values ("per $0.25 / 25p
+ * ordinary share", "per ordinary share of 10 pence / of US$0.50") are dropped first.
+ */
+function euCurrencies(text: string): Set<EuEpsCurrency> {
   const t = text
     .replace(/per\s+(?:us)?[$£€]\s?\d+(?:\.\d+)?\s*(?:ordinary\s+)?share/gi, 'per share')
-    .replace(/per\s+\d+(?:\.\d+)?\s*p(?:ence)?\s+(?:ordinary\s+)?share/gi, 'per share');
+    .replace(/per\s+\d+(?:\.\d+)?\s*p(?:ence)?\s+(?:ordinary\s+)?share/gi, 'per share')
+    .replace(/(?:ordinary\s+)?shares?\s+of\s+(?:us\$|[$£€]|eur\s?|chf\s?)?\s?\d+(?:\.\d+)?\s*(?:p\b|pence\b|cents?\b|euro\s+cents?\b)?(?:\s*each)?/gi, 'share');
   const out = new Set<EuCurrency>();
+  const cents = /\bcents?\b/i.test(t);
   if (/\bpence\b|\(\s*p\s*\)|\sp\s*$|^\s*p\s*$/i.test(t)) out.add('GBp');
   if (/£|\bgbp\b|\bpounds?\b|\bsterling\b/i.test(t)) out.add('GBP');
   if (/€|\beur\b|\beuros?\b/i.test(t)) out.add('EUR');
-  if (/\$|\busd\b|\bu\.\s?s\.\s?dollars?\b|\bus dollars?\b/i.test(t)) out.add('USD');
+  if (/\$|\busd\b|\bu\.\s?s\.\s?dollars?\b|\bus dollars?\b|\bus\s+cents?\b/i.test(t)) out.add('USD');
   if (/\bchf\b|swiss francs?/i.test(t)) out.add('CHF');
   if (/\bdkk\b|danish kron/i.test(t)) out.add('DKK');
   if (/\bsek\b|\bmsek\b|swedish kron/i.test(t)) out.add('SEK');
   if (/\bnok\b|\bmnok\b|norwegian kron/i.test(t)) out.add('NOK');
+  return cents ? euToCents(out) : out;
+}
+
+/** With "cents" stated: US dollars → 'USc', euros → 'EURc'; no currency → 'c'; any other currency stays (and disagrees). */
+function euToCents(s: Set<EuEpsCurrency>): Set<EuEpsCurrency> {
+  const out = new Set<EuEpsCurrency>([...s].map((c) => (c === 'USD' ? 'USc' : c === 'EUR' ? 'EURc' : c)));
+  if (!s.size) out.add('c');
   return out;
 }
 
 /** The one currency a text names: undefined for none, null for several. */
-function euOneCurrency(text: string): EuCurrency | null | undefined {
+function euOneCurrency(text: string): EuEpsCurrency | null | undefined {
   const s = euCurrencies(text);
   return s.size === 0 ? undefined : s.size === 1 ? [...s][0]! : null;
 }
 
-/** Pounds and pence are one currency for the convenience-column check. */
-const euFamily = (c: EuCurrency): EuCurrency => (c === 'GBp' ? 'GBP' : c);
+/** Pounds and pence (dollars and cents, euros and cents) are one currency for the convenience-column check. */
+const euFamily = (c: EuEpsCurrency): EuCurrency | null =>
+  c === 'GBp' ? 'GBP' : c === 'USc' ? 'USD' : c === 'EURc' ? 'EUR' : c === 'c' ? null : c;
 
 /** Figures signed "£1.23", "€12.95", "US$1.45", "12.3p": the sign is taken off and remembered by the cell start. */
 function euCells(cells: Cell[]): { cells: Cell[]; signs: Map<number, EuCurrency> } {
@@ -1613,7 +1652,6 @@ function euLabel(raw: string): string {
 
 const EU_REVENUE = /^(?:group\s+)?(?:total\s+)?(?:group\s+)?(?:revenues?|turnover)$|^(?:total\s+)?(?:net\s+)?sales$/;
 const EU_TOTAL_INCOME = /^total income$/;
-const EU_NOI = /^net operating income$/;
 /** HSBC's "Net operating income before change in expected credit losses and other credit impairment charges". */
 const EU_NOI_BEFORE = /^net operating income before\b.*\b(?:credit losses|impairments?|provisions?)\b/;
 const EU_EPS_WORDS = /\beps\b|earnings per\b|per (?:ordinary |common )?share\b/;
@@ -1625,21 +1663,19 @@ const EU_ADJUSTED = /constant currency|\bcer\b|at constant|organic|pro forma|non
 /** A caption naming another breakdown than the group's: a segment, division, region or business. */
 const EU_SEGMENT = /segment|division|region|business|by\s+(?:product|geograph|market|country)/i;
 
-type EuRowField = EuField | 'noi' | 'noiBefore';
-
 /**
- * Revenue: "(Group) (total) revenue(s)", "turnover", "(total) (net) sales", "total income" (banks only), "net operating
- * income" (not when a "net operating income before … impairment" row stands in the same table: that one is read).
+ * Revenue: "(Group) (total) revenue(s)", "turnover", "(total) (net) sales"; for banks only
+ * (`EUROPE_BANK_TICKERS`) also "total income" and "net operating income before … credit losses / impairment" (HSBC's revenue). Plain "net operating
+ * income" is never read (after impairments at HSBC, pre-provision profit at Santander, operating profit elsewhere).
  * Never net interest income, operating / gross profit, profit before tax, adjusted / underlying / constant-currency /
  * organic revenue (the anchored list). EPS: "basic" / "diluted" with an EPS word; never the excluded kinds.
  */
-function euField(label: string, bank: boolean): { field: EuRowField; continuing: boolean } | null {
+function euField(label: string, bank: boolean): { field: EuField; continuing: boolean } | null {
   // Revenue labels are matched without their parentheticals; EPS labels with them ("EPS (basic; in euros)").
   const bare = euLabel(label);
   if (EU_REVENUE.test(bare)) return { field: 'revenue', continuing: false };
   if (EU_TOTAL_INCOME.test(bare)) return bank ? { field: 'revenue', continuing: false } : null;
-  if (EU_NOI_BEFORE.test(bare)) return { field: 'noiBefore', continuing: false };
-  if (EU_NOI.test(bare)) return { field: 'noi', continuing: false };
+  if (EU_NOI_BEFORE.test(bare)) return bank ? { field: 'revenue', continuing: false } : null;
   label = normLabel(label);
   if (!EU_EPS_WORDS.test(label) || EU_EPS_EXCLUDE.test(label)) return null;
   const continuing = EU_CONTINUING.test(label);
@@ -1655,7 +1691,9 @@ const EU_H2 = /\bh2\b|\b2h\b|\bsecond[\s-]half\b/i;
 const EU_HALF = /\b(?:six|6)[\s-]*months?\b|\bh1\b|\b1h\b|\bhalf[\s-]*year\b|\bfirst[\s-]half\b/i;
 const EU_NINE = /\b(?:nine|9)[\s-]*months?\b|\b9m\b/i;
 const EU_QUARTER = /\b(?:three|3)[\s-]*months?\b|\bquarter\b|\bq[1-4](?![a-z])|\b[1-4]q(?![a-z])/i;
-const EU_YEAR = /\bfy(?![a-z])|\bfull[\s-]*year\b|\byears?\s+(?:ended|to)\b|\b(?:twelve|12)[\s-]*months?\b/i;
+const EU_YEAR = /\bfy(?![a-z])|\bfull[\s-]*year\b|\byears?\s+ended\b|\byears?\s+to\b(?![\s-]+date)|\b(?:twelve|12)[\s-]*months?\b/i;
+/** "Year to date" / "YTD" states no months of its own. */
+const EU_YTD = /\byear[\s-]+to[\s-]+date\b|\bytd\b/i;
 
 function euKinds(text: string): Set<EuSpan | 'h2' | 'ambiguous'> {
   const { ranges, rest } = jpRanges(text);
@@ -1667,6 +1705,8 @@ function euKinds(text: string): Set<EuSpan | 'h2' | 'ambiguous'> {
   if (EU_NINE.test(r2)) out.add('nine');
   if (EU_QUARTER.test(r2)) out.add('quarter');
   if (EU_YEAR.test(r2)) out.add('year');
+  // "Year to date" without stated months is no span: blank, never a full year.
+  if (EU_YTD.test(r2) && !out.has('half') && !out.has('nine') && !out.has('quarter')) { out.delete('year'); out.add('ambiguous'); }
   return out;
 }
 
@@ -1719,7 +1759,7 @@ function euColumn(own: string, labelCol: string, block: string, pe: Date, span: 
 
 interface EuCandidate { value: number; cur: EuCurrency; continuing: boolean }
 
-interface EuRow { field: EuRowField; continuing: boolean; nums: Num[]; signs: Map<number, EuCurrency>; headers: Cell[][]; rawLabel: string }
+interface EuRow { field: EuField; continuing: boolean; nums: Num[]; signs: Map<number, EuCurrency>; headers: Cell[][]; rawLabel: string }
 
 function readEu(html: string, opts: ReaderOptions): ReaderResult {
   const notes: string[] = [];
@@ -1729,7 +1769,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   }
   const span = opts.span;
   const fiscal: JpFiscal = { quarter: opts.fiscalQuarter, year: opts.fiscalYear };
-  const bank = opts.issuer !== undefined && EU_BANKS.has(opts.issuer.ticker);
+  const bank = opts.issuer !== undefined && EUROPE_BANK_TICKERS.has(opts.issuer.ticker);
   const found: Record<'revenue' | 'basic' | 'diluted', EuCandidate[]> = { revenue: [], basic: [], diluted: [] };
 
   const tables = parseTables(html, { rowspan: true });
@@ -1802,37 +1842,48 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
 
     const figureCols = new Set(rowsOut.flatMap((r) => r.nums.map((n) => n.start)));
     const firstFigure = Math.min(...figureCols);
-    // The table's own unit: whole-unit cells left of the figures (the label column's head) or alone on their row, and
-    // the caption when it is wholly a unit statement or an income-statement title with one in parentheses.
-    const tableUnits = new Map<string, EuUnit>();
-    const addUnit = (u: EuUnit | null) => { if (u) tableUnits.set(`${u.cur}:${u.mult}`, u); };
+    // The table's own head units: whole-unit cells left of the figures (the label column's head) or alone on their row.
+    // A head cell with a scale word that is no unit statement ("(In thousands, except per share amounts)") names no
+    // unit, and the caption never stands in for it. The caption counts only when the table states no unit itself:
+    // wholly a unit statement, or an income-statement title with one in parentheses.
+    const headUnits = new Map<string, EuUnit>();
+    let headUnknown = false;
     for (const r of nonData) {
       const texts = r.filter((c) => c.text);
-      for (const c of texts) if (c.start + c.span <= firstFigure || texts.length === 1) addUnit(euUnit(c.text));
+      for (const c of texts) {
+        if (!(c.start + c.span <= firstFigure || texts.length === 1)) continue;
+        const u = euUnit(c.text);
+        if (u) headUnits.set(`${u.cur}:${u.mult}`, u);
+        else if (EU_SCALE_TEXT.test(c.text)) headUnknown = true;
+      }
     }
-    addUnit(euUnit(caption));
-    if (statementTitle(caption) != null) for (const m of caption.matchAll(new RegExp(PAREN_GROUP, 'g'))) addUnit(euUnit(m[0]));
-    const tableUnit = tableUnits.size === 1 ? [...tableUnits.values()][0]! : null;
-    const tableCur = new Set([...tableUnits.values()].map((u) => euFamily(u.cur)));
+    const captionUnits = new Map<string, EuUnit>();
+    const addCaption = (u: EuUnit | null) => { if (u) captionUnits.set(`${u.cur}:${u.mult}`, u); };
+    addCaption(euUnit(caption));
+    if (statementTitle(caption) != null) for (const m of caption.matchAll(new RegExp(PAREN_GROUP, 'g'))) addCaption(euUnit(m[0]));
+    const tableLevel = headUnits.size || headUnknown ? headUnits : captionUnits;
+    const tableCur = new Set([...tableLevel.values()].map((u) => u.cur));
+    const noUnit = () => { if (!notes.includes('revenue: no unit stated for table')) notes.push('revenue: no unit stated for table'); };
 
-    const hasNoiBefore = rowsOut.some((r) => r.field === 'noiBefore');
     for (const row of rowsOut) {
-      if (row.field === 'noi' && hasNoiBefore) continue; // net operating income after impairments
-      const field: EuField = row.field === 'noi' || row.field === 'noiBefore' ? 'revenue' : row.field;
+      const field = row.field;
       if (field === 'revenue' && !revenueOk) continue;
       const blockText = row.headers.flat().map((c) => c.text).join(' ');
       const labelCol = row.headers.map((r) => r.filter((c) => c.text && c.start === 0 && c.span === 1).map((c) => c.text).join(' ')).join(' ').trim();
-      const rowUnits = [...row.rawLabel.matchAll(new RegExp(PAREN_GROUP, 'g'))].map((m) => euUnit(m[0])).filter((u): u is EuUnit => u !== null);
+      const labelParens = [...row.rawLabel.matchAll(new RegExp(PAREN_GROUP, 'g'))].map((m) => m[0]);
+      const rowUnits = labelParens.map((p) => euUnit(p)).filter((u): u is EuUnit => u !== null);
+      const rowUnknown = labelParens.some((p) => euUnit(p) === null && EU_SCALE_TEXT.test(p));
       const labelCur = euOneCurrency(row.rawLabel);
       for (const n of row.nums) {
         const overCells = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && !(c.start === 0 && c.span === 1)));
         const own = overCells.map((c) => c.text).join(' ').trim();
         if (!euColumn(own, labelCol, blockText, pe, span, fiscal)) continue;
-        // The column's currency: its unit cells ("€m", "US$m") and currency marks ("$", "pence").
+        // The column's currency: its unit cells ("€m", "US$m") and currency marks ("$", "pence", "cents").
         const colUnits = overCells.map((c) => euCellUnit(c.text)).filter((u): u is EuUnit => u !== null);
+        const colUnknown = overCells.some((c) => euCellUnit(c.text) === null && EU_SCALE_TEXT.test(c.text));
         const marks = overCells.filter((c) => EU_CURRENCY_MARK.test(c.text)).map((c) => euOneCurrency(c.text));
-        const markCurs = marks.filter((c): c is EuCurrency => !!c);
-        const colCurs = new Set([...colUnits.map((u) => euFamily(u.cur)), ...markCurs.map(euFamily)]);
+        const markCurs = marks.filter((c): c is EuEpsCurrency => !!c);
+        const colCurs = new Set([...colUnits.map((u) => u.cur), ...markCurs.map(euFamily).filter((c): c is EuCurrency => c !== null)]);
         if (marks.includes(null) || colCurs.size > 1) continue;
         // A column in another currency than the table's (a convenience translation) is skipped.
         if (colCurs.size === 1 && tableCur.size === 1 && [...colCurs][0] !== [...tableCur][0]) continue;
@@ -1840,22 +1891,37 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
 
         if (field === 'revenue') {
           if (n.value <= 0 || n.decimals > 2) continue;
-          const units = rowUnits.length ? rowUnits : colUnits.length ? colUnits : tableUnit ? [tableUnit] : [];
+          // Scale precedence: the table's own units (row label, column head, table head) beat the caption; in-table
+          // units that disagree, or an in-table scale that is no unit statement, leave the figure blank.
+          if (headUnknown || rowUnknown || colUnknown) { noUnit(); continue; }
+          const inTable = [...rowUnits, ...colUnits, ...headUnits.values()];
+          const units = inTable.length ? inTable : [...captionUnits.values()];
           const distinct = new Set(units.map((u) => `${u.cur}:${u.mult}`));
-          if (distinct.size !== 1) { if (!distinct.size) notes.push('revenue: no unit stated for table'); continue; }
+          if (!distinct.size) { noUnit(); continue; }
+          if (distinct.size > 1) {
+            if (!notes.includes('revenue: units disagree')) notes.push('revenue: units disagree');
+            continue;
+          }
           const unit = units[0]!;
           if (sign && euFamily(sign) !== unit.cur) continue;
           found.revenue.push({ value: Math.round(n.value * unit.mult), cur: unit.cur, continuing: row.continuing });
         } else {
-          // EPS is never scaled. Its currency: the figure's sign, the row label and the column's currency mark — all
-          // that state one must agree ("(pence)" under a "£" mark disagrees); none stated → not read.
+          // EPS is never scaled by a table unit. Its currency: the figure's sign, the row label and the column's
+          // currency mark — all that state one must agree ("(pence)" under a "£" mark disagrees); none → not read. A
+          // "cents" statement takes the currency named beside it (US$ / euro) and the figure is converted to the major
+          // unit (/100); pence stay pence ('GBp').
           if (n.decimals < 1 || n.decimals > 3 || Math.abs(n.value) >= 100_000) continue;
           if (labelCur === null) continue;
-          const stated = new Set<EuCurrency>([...(sign ? [sign] : []), ...(labelCur ? [labelCur] : []), ...markCurs]);
+          let stated = new Set<EuEpsCurrency>([...(sign ? [sign] : []), ...(labelCur ? [labelCur] : []), ...markCurs]);
+          if (stated.has('c')) { stated.delete('c'); stated = euToCents(stated); }
           if (stated.size !== 1) continue;
-          const cur = [...stated][0]!;
-          if (field === 'basic' || field === 'both') found.basic.push({ value: n.value, cur, continuing: row.continuing });
-          if (field === 'diluted' || field === 'both') found.diluted.push({ value: n.value, cur, continuing: row.continuing });
+          const c = [...stated][0]!;
+          if (c === 'c') continue;
+          const minor = c === 'USc' || c === 'EURc';
+          const cur: EuCurrency = c === 'USc' ? 'USD' : c === 'EURc' ? 'EUR' : c;
+          const value = minor ? Number((n.value / 100).toFixed(n.decimals + 2)) : n.value;
+          if (field === 'basic' || field === 'both') found.basic.push({ value, cur, continuing: row.continuing });
+          if (field === 'diluted' || field === 'both') found.diluted.push({ value, cur, continuing: row.continuing });
         }
       }
     }

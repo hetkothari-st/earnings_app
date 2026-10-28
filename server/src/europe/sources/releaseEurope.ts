@@ -46,6 +46,20 @@ const values = (r: ReaderResult, span: 'quarter' | 'ytd', ytdMonths: 6 | 9 | 12 
   notes,
 });
 
+/**
+ * The fiscal quarter (1–4) a period end falls in, from the issuer's SEC `fiscalYearEnd` ("MMDD"). A day <= 15 counts
+ * as the month before (a 52/53-week year ending "0103" is a December year). Null when the fiscal year end is missing
+ * or malformed, or the period end is not a quarter end of that year — never a guess.
+ */
+export function europeFiscalQuarter(periodEnd: string, fiscalYearEnd: string | null): 1 | 2 | 3 | 4 | null {
+  const f = fiscalYearEnd?.match(/^(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/);
+  const p = periodEnd.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  if (!f || !p) return null;
+  const monthOf = (m: number, d: number) => (d <= 15 ? (m === 1 ? 12 : m - 1) : m);
+  const k = (monthOf(Number(p[1]), Number(p[2])) - monthOf(Number(f[1]), Number(f[2])) + 12) % 12;
+  return k % 3 !== 0 ? null : k === 0 ? 4 : ((k / 3) as 1 | 2 | 3);
+}
+
 const any = (r: ReaderResult) => r.revenue !== null || r.epsBasic !== null || r.epsGaap !== null;
 
 /**
@@ -70,7 +84,7 @@ export function readEuropeRelease(
   if (period.fiscalQuarter > 1) {
     const ytd = YTD[period.fiscalQuarter as 2 | 3 | 4];
     const y = readRelease(html, { ...base, span: ytd.span });
-    notes = [...notes, ...y.notes];
+    notes = [...new Set([...notes, ...y.notes])];
     if (any(y)) return values(y, 'ytd', ytd.months, notes);
   }
   if (q && any(q)) return values(q, 'quarter', null, notes);
