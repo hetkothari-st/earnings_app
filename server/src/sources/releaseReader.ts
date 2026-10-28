@@ -1768,10 +1768,10 @@ const EU_YTD = /\byear[\s-]+to[\s-]+date\b|\bytd\b|\bcumulative\b/i;
  */
 const EU_QUARTER_HEAD = /^(?:for\s+the\s+)?(?:q[1-4]\s*'?\s*(?:\d{4}|\d{2})\b|[1-4]q\s*'?\s*(?:\d{4}|\d{2})\b|(?:first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\b|(?:three|3)[\s-]*months?\s+(?:ended|ending|to)\b|3m\b|quarter\s+(?:ended|ending|to)\b)/i;
 /**
- * Words that rule a head out as a quarter: quarter ranges ("Q1-Q3", "1-3Q"), accumulated / accum. / cum. / cumulative /
+ * Words that rule a head out as a quarter: quarter ranges ("Q1-Q3", "1-3Q"), accumulated / accum. / cum(.) / cumulative /
  * cumul / YTD / year to date / to date, six or nine months, 6M / 9M, H1 / H2, half.
  */
-const EU_NOT_QUARTER = /\bq[1-4]\s*[-–—~]\s*q?[1-4]\b|\b[1-4]\s*[-–—~]\s*[1-4]\s*q\b|\baccum|\bcum\.|\bcumul|\bytd\b|\byear[\s-]+to[\s-]+date\b|\bto[\s-]+date\b|\b(?:nine|six|9|6)[\s-]*months?\b|\b[69]m\b|\bh[12]\b|\b[12]h\b|\bhalf\b|\bfirst[\s-]half\b/i;
+const EU_NOT_QUARTER = /\bq[1-4]\s*[-–—~]\s*q?[1-4]\b|\b[1-4]\s*[-–—~]\s*[1-4]\s*q\b|\baccum|\bcum\b|\bcumul|\bytd\b|\byear[\s-]+to[\s-]+date\b|\bto[\s-]+date\b|\b(?:nine|six|9|6)[\s-]*months?\b|\b[69]m\b|\bh[12]\b|\b[12]h\b|\bhalf\b|\bfirst[\s-]half\b/i;
 
 /** A range / cumulative token, or a month range ("Jan-Sep", with or without a year) other than three months. */
 function euNotQuarter(text: string): boolean {
@@ -1889,6 +1889,24 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   const captions = tables.map((_, i) => segs[i]!.split(JP_BLOCK_END).map((b) => decode(b)).filter(Boolean).pop() ?? '');
   const epsRow = (t: Table) => t.rows.some((r) => r.some((c) => c.text && EU_EPS_WORDS.test(normLabel(c.text))));
   const docHasEps = tables.some(epsRow);
+  // Every currency the document's tables (and their captions) name: units, marks, labels, signed figures. Pence are
+  // read only when none of them is another currency than GBP. A per-ADS / ADR row (never read; a US-dollar translation
+  // by nature) does not count.
+  const docCurs = new Set<EuCurrency>();
+  const addCurs = (text: string) => {
+    if (!text) return;
+    const u = euCellUnitInfo(text).unit ?? euUnit(text);
+    if (u?.cur) docCurs.add(u.cur);
+    for (const c of euMarkFamily(euEpsMarks(text))) docCurs.add(c);
+  };
+  for (const [ti, t] of tables.entries()) {
+    addCurs(captions[ti]!);
+    for (const r of t.rows) {
+      if (r.some((c) => /\bads\b|\badrs?\b|american depositary/i.test(c.text))) continue;
+      for (const c of r) addCurs(c.text);
+    }
+  }
+  const docOtherCur = [...docCurs].some((c) => c !== 'GBP');
   // A unit cell: an allowlisted or unit-like unit ("€m", "€000", "EUR mio"), a currency / minor-unit mark, or "%".
   const unitCell = (t: string) => EU_UNIT_LIKE.test(t) || EU_CURRENCY_MARK.test(t) || t === '%';
   const unitRow = (r: Cell[]) => r.some((c) => c.text) && r.every((c) => !c.text || unitCell(c.text));
@@ -1991,20 +2009,6 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     if (statementTitle(caption) != null) for (const m of caption.matchAll(new RegExp(PAREN_GROUP, 'g'))) addCaption(euUnit(m[0]));
     const tableLevel = headUnits.size || headUnknown ? headUnits : captionUnits;
     const tableCur = new Set([...tableLevel.values()].map((u) => u.cur).filter((c): c is EuCurrency => c !== null));
-    // Every currency the table names (head and caption units, column marks, row-label units): a lone "(p)" in an EPS
-    // label is pence only when none of them is another currency than GBP.
-    const tableCurs = new Set<EuCurrency>();
-    const addCur = (c: EuCurrency | null | undefined) => { if (c) tableCurs.add(c); };
-    for (const r of nonData) {
-      for (const c of r) {
-        if (!c.text) continue;
-        addCur(euCellUnitInfo(c.text).unit?.cur);
-        if (EU_CURRENCY_MARK.test(c.text)) for (const x of euMarkFamily(euEpsMarks(c.text))) addCur(x);
-      }
-    }
-    for (const u of captionUnits.values()) addCur(u.cur);
-    for (const r of rowsOut) for (const m of euStripNominal(r.rawLabel).matchAll(new RegExp(PAREN_GROUP, 'g'))) addCur(euUnit(m[0])?.cur);
-    const otherCur = [...tableCurs].some((c) => c !== 'GBP');
     const noUnit = () => { if (!notes.includes('revenue: no unit stated for table')) notes.push('revenue: no unit stated for table'); };
 
     for (const row of rowsOut) {
@@ -2067,8 +2071,12 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
           // A lone letter "c" / "(c)" in the row or section label may be a footnote letter or cents: never read. Cents
           // come only from "cents" / "¢" / "ct", the explicit forms, or a whole column-mark cell "c" / "(c)".
           if (labelMarks.letterC || sectionMarks.letterC) continue;
-          // A lone "(p)" in a table that names another currency ("$m", "€m"): footnote or pence, never read.
-          if ((labelMarks.letterP || sectionMarks.letterP) && otherCur) continue;
+          // A lone "c" / "(c)" mark cell is cents only when no major-currency mark or unit stands over the same column
+          // ("$" over a footnote "(c)" cell contradicts it); the currency then comes from the row label or the table.
+          if (marks.some((m) => m.letterC) && overCells.some((c) => {
+            const m = euEpsMarks(c.text);
+            return m.majors.size > 0 || m.explicitCents.size > 0 || !!euCellUnitInfo(c.text).unit?.cur;
+          })) continue;
           // A minor unit in a head cell over the column that is not a whole mark ("Q3 2026 (c)"): never read.
           if (overCells.some((c) => {
             if (EU_CURRENCY_MARK.test(c.text)) return false;
@@ -2078,6 +2086,8 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
           const res = euEpsCurrency([labelMarks, ...marks], sign);
           if (!res) continue;
           const cur = res.cur;
+          // Pence ("(p)", "(pence)", a "p" mark, "12.3p") only when the document names no other currency than GBP.
+          if (cur === 'GBp' && docOtherCur) continue;
           const value = res.div === 100 ? Number((n.value / 100).toFixed(n.decimals + 2)) : n.value;
           if (field === 'basic' || field === 'both') found.basic.push({ value, cur, continuing: row.continuing });
           if (field === 'diluted' || field === 'both') found.diluted.push({ value, cur, continuing: row.continuing });
