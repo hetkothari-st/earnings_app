@@ -2,7 +2,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import { DateTime } from 'luxon';
 import type { LocalTiming } from '../../domain/exchangeCalendar.js';
 import {
-  markSignalSeen, nearestUnreleasedEurope, recordEuropeRelease, setEuropeTiming, signalSeen, type SignalOutcome,
+  activeEuropeStocksByIsin, europeIssuerStocks, markSignalSeen, nearestUnreleasedEurope, recordEuropeRelease, releasedEuropeNear,
+  setEuropeTiming, signalSeen, type SignalOutcome,
 } from '../db/europeRepo.js';
 import { calendarFor } from '../domain/calendars.js';
 import { EXCHANGES, type ExchangeId } from '../exchanges.js';
@@ -34,15 +35,13 @@ interface IndexedStock { symbol: string; exchange: ExchangeId; lei: string | nul
  * and, when different, its Yahoo profile name.
  */
 function stocksIndex(db: DatabaseSync) {
-  const rows = db.prepare('SELECT symbol, exchange, isin, lei, name, profile_name FROM europe_stocks WHERE active = 1').all() as
-    { symbol: string; exchange: string; isin: string | null; lei: string | null; name: string; profile_name: string | null }[];
   const bySymbol = new Map<string, IndexedStock>();
   const entries: { symbol: string; isin: string; name: string }[] = [];
-  for (const r of rows) {
+  for (const r of europeIssuerStocks(db)) {
     if (!(r.exchange in EXCHANGES)) continue;
-    bySymbol.set(r.symbol, { symbol: r.symbol, exchange: r.exchange as ExchangeId, lei: r.lei });
+    bySymbol.set(r.symbol, { symbol: r.symbol, exchange: r.exchange, lei: r.lei });
     entries.push({ symbol: r.symbol, isin: r.isin ?? '', name: r.name });
-    if (r.profile_name && r.profile_name !== r.name) entries.push({ symbol: r.symbol, isin: '', name: r.profile_name });
+    if (r.profileName && r.profileName !== r.name) entries.push({ symbol: r.symbol, isin: '', name: r.profileName });
   }
   return { index: createIssuerIndex(entries), bySymbol };
 }
@@ -63,17 +62,21 @@ function companies(symbols: string[], bySymbol: Map<string, IndexedStock>): stri
 const prnIssuerName = (it: PrnItem): string => it.contributor?.trim() || it.title.split(/ - |:/)[0]!.trim();
 
 /**
- * The report a signal at `at` (local day `day`) belongs to: the unreleased row nearest the day, else a row already
- * flipped by a later signal (its release is moved earlier by `recordEuropeRelease`; an earlier one is never moved).
+ * The report a signal at `at` (local day `day`) belongs to:
+ * - `release`: the unreleased row nearest the day, else a released row whose recorded release is later than `at` (or
+ *   that only an EPS figure marks): `recordEuropeRelease` moves the release earlier to the signal.
+ * - `timing`: a row an earlier (or same-time) signal already released: the release is never moved, but a PRN item may
+ *   still state the timing.
  */
-function rowFor(db: DatabaseSync, symbol: string, day: string, at: string): { id: number } | null {
+function rowFor(db: DatabaseSync, symbol: string, day: string, at: string): { id: number; mode: 'release' | 'timing' } | null {
   const open = nearestUnreleasedEurope(db, symbol, day, WINDOW_DAYS);
-  if (open) return open;
-  const later = (db.prepare(`SELECT id, released_at FROM europe_reports
-      WHERE symbol = ? AND released_at IS NOT NULL AND abs(julianday(report_date) - julianday(?)) <= ?
-      ORDER BY abs(julianday(report_date) - julianday(?)), report_date`).all(symbol, day, WINDOW_DAYS, day) as
-    { id: number; released_at: string }[]).find((r) => Date.parse(r.released_at) > Date.parse(at));
-  return later ? { id: later.id } : null;
+  if (open) return { id: open.id, mode: 'release' };
+  const atMs = Date.parse(at);
+  const released = releasedEuropeNear(db, symbol, day, WINDOW_DAYS);
+  const later = released.find((r) => r.releasedAt == null || Date.parse(r.releasedAt) > atMs);
+  if (later) return { id: later.id, mode: 'release' };
+  const earlier = released[0];
+  return earlier ? { id: earlier.id, mode: 'timing' } : null;
 }
 
 /** Timing from a PRN pubDate in the exchange's zone, only when the 40-minute lag cannot change the bucket. */
@@ -81,11 +84,11 @@ function prnTiming(ex: ExchangeId, publishedAt: string): LocalTiming {
   const cal = calendarFor(ex);
   const local = DateTime.fromISO(publishedAt, { zone: 'utc' }).setZone(cal.zone);
   if (!local.isValid) return 'UNKNOWN';
-  const late = cal.timingFromClock(local.toFormat('HH:mm'));
-  const early = cal.timingFromClock(local.minus({ minutes: PRN_LAG_MINUTES }).toFormat('HH:mm'));
+  const early = local.minus({ minutes: PRN_LAG_MINUTES });
   // Across midnight the earlier instant is another day: no bucket can be stated.
-  if (local.minus({ minutes: PRN_LAG_MINUTES }).toISODate() !== local.toISODate()) return 'UNKNOWN';
-  return late === early ? late : 'UNKNOWN';
+  if (early.toISODate() !== local.toISODate()) return 'UNKNOWN';
+  const a = cal.timingFromClock(local.toFormat('HH:mm'));
+  return a === cal.timingFromClock(early.toFormat('HH:mm')) ? a : 'UNKNOWN';
 }
 
 /**
@@ -94,6 +97,7 @@ function prnTiming(ex: ExchangeId, publishedAt: string): LocalTiming {
  * holds it. Flips only when all hold: a results title; exactly one company by the stated issuer name, or else by
  * exactly one ISIN in the title and description (a name and an ISIN naming two companies is ambiguous); and a row of
  * that company within ±3 days of the item's local date. Every share line of the company with such a row flips.
+ * A row an earlier signal already released keeps that release; the item only stamps its timing (outcome `timing`).
  * Returns the ids changed.
  */
 export async function refreshPrnSignals(ctx: EuropeJobContext): Promise<number[]> {
@@ -111,26 +115,29 @@ export async function refreshPrnSignals(ctx: EuropeJobContext): Promise<number[]
 
     const byName = companies(index.byName(prnIssuerName(it)), bySymbol);
     const byIsin = companies(index.byIsinIn(`${it.title} ${it.description}`), bySymbol);
-    let company: string[] | null = null;
     if (byName.length > 1 || byIsin.length > 1) { mark('ambiguous'); continue; }
     if (byName.length === 1 && byIsin.length === 1 && !byName[0]!.some((s) => byIsin[0]!.includes(s))) { mark('ambiguous'); continue; }
-    company = byName[0] ?? byIsin[0] ?? null;
+    const company = byName[0] ?? byIsin[0] ?? null;
     if (!company) { mark('no-match'); continue; }
 
-    let flipped = false;
+    let released = false;
+    let timed = false;
     for (const symbol of company) {
       const ex = bySymbol.get(symbol)!.exchange;
       const day = DateTime.fromISO(it.publishedAt, { zone: 'utc' }).setZone(EXCHANGES[ex].zone).toISODate()!;
       const row = rowFor(ctx.db, symbol, day, it.publishedAt);
       if (!row) continue;
-      flipped = true;
       const timing = prnTiming(ex, it.publishedAt);
-      if (recordEuropeRelease(ctx.db, row.id, { at: it.publishedAt, source: 'prn', timing, title: it.title, url: it.link })) changed.add(row.id);
-      // The item states the time even when an earlier signal already holds the release.
-      const stored = ctx.db.prepare('SELECT timing FROM europe_reports WHERE id = ?').get(row.id) as { timing: string };
-      if (stored.timing === 'UNKNOWN' && setEuropeTiming(ctx.db, row.id, timing, 'prn')) changed.add(row.id);
+      if (row.mode === 'release') {
+        released = true;
+        // recordEuropeRelease also stamps the PRN timing (setEuropeTiming 'prn') when it is known.
+        if (recordEuropeRelease(ctx.db, row.id, { at: it.publishedAt, source: 'prn', timing, title: it.title, url: it.link })) changed.add(row.id);
+      } else {
+        timed = true;
+        if (setEuropeTiming(ctx.db, row.id, timing, 'prn')) changed.add(row.id);
+      }
     }
-    mark(flipped ? 'flipped' : 'no-row', company[0]!);
+    mark(released ? 'flipped' : timed ? 'timing' : 'no-row', company[0]!);
   }
   return [...changed];
 }
@@ -138,9 +145,10 @@ export async function refreshPrnSignals(ctx: EuropeJobContext): Promise<number[]
 /**
  * DILA AMF results-out (EU only; without `ctx.dila` a no-op). Each unseen batch of today's directory (`signal_seen`
  * 'dila-file') is streamed, never buffered whole; a batch that fails is not marked and is read again next run. Each
- * document is handled once across batches (by id). A results-type document whose ISIN is an active EU stock with a
- * row within ±3 days of its filing day flips it. The ISIN match is exact, so a non-French ISIN filed with the AMF
- * (a Dutch-incorporated Paris listing) counts too. The filing time is the AMF's, so DILA never sets timing.
+ * document is handled once across batches (by id). A results-type document whose ISIN is exactly one active EU stock
+ * with a row within ±3 days of its filing day flips it (two lines with that ISIN: `ambiguous`). The ISIN match is
+ * exact, so a non-French ISIN filed with the AMF (a Dutch-incorporated Paris listing) counts too (controller-accepted).
+ * The filing time is the AMF's, so DILA never sets timing.
  */
 export async function refreshDilaSignals(ctx: EuropeJobContext): Promise<number[]> {
   const dila = ctx.dila;
@@ -157,14 +165,14 @@ export async function refreshDilaSignals(ctx: EuropeJobContext): Promise<number[
       if (signalSeen(ctx.db, 'dila', d.id)) continue;
       const mark = (outcome: SignalOutcome, symbol: string | null = null) => markSignalSeen(ctx.db, 'dila', d.id, symbol, outcome, now);
       if (!isDilaResults(d)) { mark('not-results'); continue; }
-      const stock = d.isin
-        ? ctx.db.prepare(`SELECT symbol, exchange FROM europe_stocks WHERE market = 'EU' AND active = 1 AND isin = ?`).get(d.isin) as
-          { symbol: string; exchange: string } | undefined
-        : undefined;
-      if (!stock || !(stock.exchange in EXCHANGES)) { mark('no-match'); continue; }
-      const day = DateTime.fromISO(d.filedAt, { zone: 'utc' }).setZone(EXCHANGES[stock.exchange as ExchangeId].zone).toISODate()!;
+      const stocks = d.isin ? activeEuropeStocksByIsin(ctx.db, 'EU', d.isin).filter((s) => s.exchange in EXCHANGES) : [];
+      if (stocks.length > 1) { mark('ambiguous'); continue; }
+      const stock = stocks[0];
+      if (!stock) { mark('no-match'); continue; }
+      const day = DateTime.fromISO(d.filedAt, { zone: 'utc' }).setZone(EXCHANGES[stock.exchange].zone).toISODate()!;
       const row = rowFor(ctx.db, stock.symbol, day, d.filedAt);
-      if (!row) { mark('no-row', stock.symbol); continue; }
+      // An earlier signal already holds the release, and DILA states no timing: nothing to do.
+      if (!row || row.mode === 'timing') { mark('no-row', stock.symbol); continue; }
       if (recordEuropeRelease(ctx.db, row.id, { at: d.filedAt, source: 'dila', timing: null, title: d.title, url: d.url })) changed.push(row.id);
       mark('flipped', stock.symbol);
     }

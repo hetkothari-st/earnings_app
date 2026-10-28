@@ -119,3 +119,34 @@ export function jpSpanLabel(fiscalQuarter: number | null | undefined, f: { actua
   if (f.actualSpan === 'quarter' && fiscalQuarter === 4) return 'Q4 only (3 months)';
   return null;
 }
+
+const EUROPE_PREFIX: Record<string, string> = { GBP: '£', EUR: '€', USD: '$' };
+/** `GBp` is pence: a "p" after the number, never divided by 100. No currency on record: no prefix. */
+const europeAffix = (currency: string | null | undefined): [string, string] =>
+  currency == null ? ['', ''] : currency === 'GBp' ? ['', 'p'] : [EUROPE_PREFIX[currency] ?? `${currency} `, ''];
+
+const grouped = (n: number, min: number, max: number) =>
+  n.toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: max });
+
+/** A UK or Europe share price in its quoted currency: "1,234.5p" (pence), "£12.34", "€12.34", "CHF 12.34". */
+export function formatEuropePrice(n: number | null, currency: string | null | undefined): string {
+  if (n == null) return '—';
+  const [pre, post] = europeAffix(currency);
+  return `${n < 0 ? '−' : ''}${pre}${post ? grouped(Math.abs(n), 0, 2) : grouped(Math.abs(n), 2, 2)}${post}`;
+}
+
+/** Compact amount in its stated currency: "£48.04B", "€1.2T", "SEK 12.4B"; a GBp amount stays pence ("4.8Tp"). */
+export function formatEuropeMoney(n: number | null, currency: string | null | undefined): string {
+  if (n == null) return '—';
+  const [pre, post] = europeAffix(currency);
+  const abs = Math.abs(n);
+  const [div, unit] = abs >= 1e12 ? [1e12, 'T'] : abs >= 1e9 ? [1e9, 'B'] : abs >= 1e6 ? [1e6, 'M'] : [1, ''];
+  return `${n < 0 ? '−' : ''}${pre}${grouped(abs / div, 0, 2)}${unit}${post}`;
+}
+
+/** EPS in the unit the source states: "12.3p" (pence), "£0.12", "€1.23", "−€0.50". */
+export function formatEuropeEps(n: number | null, currency: string | null | undefined): string {
+  if (n == null) return '—';
+  const [pre, post] = europeAffix(currency);
+  return `${n < 0 ? '−' : ''}${pre}${post ? grouped(Math.abs(n), 0, 2) : Math.abs(n).toFixed(2)}${post}`;
+}

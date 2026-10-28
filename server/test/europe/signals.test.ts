@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDb } from '../../src/db/repo.js';
-import { getEuropeReport, syncEuropeUniverse, upsertEuropeCalendarRow } from '../../src/europe/db/europeRepo.js';
+import { getEuropeReport, recordEuropeRelease, syncEuropeUniverse, upsertEuropeCalendarRow } from '../../src/europe/db/europeRepo.js';
 import type { EuropeJobContext } from '../../src/europe/jobs/context.js';
 import { refreshDilaSignals, refreshPrnSignals } from '../../src/europe/jobs/signals.js';
 import type { ExchangeId } from '../../src/europe/exchanges.js';
@@ -22,6 +22,10 @@ const entry = (symbol: string, isin: string, name: string, lei: string | null = 
     currency: exchange === 'LSE' ? 'GBp' : 'EUR', adr: null, adrRatio: null, adrRatioVerified: false, cik: null, secForm: null,
   };
 };
+
+// The jobs log expected source failures (trackIn); keep the test output clean.
+afterEach(() => { vi.restoreAllMocks(); });
+const quiet = () => { vi.spyOn(console, 'error').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {}); };
 
 function setup(o: { uk?: PrnItem[]; eu?: PrnItem[]; dila?: EuropeJobContext['dila']; today?: string } = {}) {
   const db = openDb(':memory:');
@@ -154,7 +158,29 @@ describe('refreshPrnSignals', () => {
     expect((db.prepare("SELECT COUNT(*) AS n FROM europe_signal_seen WHERE source = 'prn' AND item_id = 'prn:302915984'").get() as { n: number }).n).toBe(1);
   });
 
+  it('a PRN item after an earlier release stamps only the timing; the release stays the earliest', async () => {
+    const { db, row, ctx, outcome } = setup();
+    const id = row('PSON.L', '2026-10-23');
+    // A DILA-style signal at 06:00Z, before the Pearson PRN item (06:10Z).
+    recordEuropeRelease(db, id, { at: '2026-10-22T06:00:00.000Z', source: 'dila', timing: null, title: 'earlier', url: null });
+    expect(await refreshPrnSignals(ctx('UK'))).toEqual([id]);
+    expect(getEuropeReport(db, id)).toMatchObject({
+      releasedAt: '2026-10-22T06:00:00.000Z', releasedSource: 'dila', signalTitle: 'earlier', timing: 'BMO', timingSource: 'prn',
+    });
+    expect(outcome('prn', 'prn:302915984')).toBe('timing');
+  });
+
+  it('a PRN item whose lag window spans the open, after an earlier release, changes nothing', async () => {
+    const { db, row, ctx, outcome } = setup({ uk: [item('Acme plc Half-year results', '2026-10-22T07:20:00Z', 'Acme plc', 5)] });
+    const id = row('ACME.L', '2026-10-22');
+    recordEuropeRelease(db, id, { at: '2026-10-22T06:00:00.000Z', source: 'dila', timing: null });
+    expect(await refreshPrnSignals(ctx('UK'))).toEqual([]);
+    expect(getEuropeReport(db, id)).toMatchObject({ releasedSource: 'dila', timing: 'UNKNOWN' });
+    expect(outcome('prn', 'prn:300000005')).toBe('timing');
+  });
+
   it('a feed failure marks nothing', async () => {
+    quiet();
     const { db, ctx } = setup();
     const c = { ...ctx('UK'), prnFeed: async () => { throw new Error('PRN 503'); } } as EuropeJobContext;
     expect(await refreshPrnSignals(c)).toEqual([]);
@@ -202,6 +228,7 @@ describe('refreshDilaSignals', () => {
   });
 
   it('a failed archive is not marked, so the next run reads it again', async () => {
+    quiet();
     let fail = true;
     const tar = new Uint8Array(fx('dila_sample_press.tar.gz'));
     const dila = {
@@ -220,6 +247,23 @@ describe('refreshDilaSignals', () => {
     expect(outcome('dila-file', 'amf-gz_25032026_0800.tar.gz')).toBeUndefined();
     fail = false;
     expect(await refreshDilaSignals(ctx('EU'))).toEqual([crossject]);
+  });
+
+  it('an ISIN can name only one EU line (schema UNIQUE (market, isin)); the job flips only that line', async () => {
+    const tar = new Uint8Array(fx('dila_sample_press.tar.gz'));
+    const dila = { list: async () => ['amf-gz_25032026_0800.tar.gz'], archive: async () => chunks(tar, 64 * 1024) };
+    const { db, ctx } = setup({ dila, today: '2026-03-25' });
+    // A second line with Crossject's ISIN is refused by the table, so two lines can never share it. The job still
+    // asks for every line (activeEuropeStocksByIsin) and marks `ambiguous` on more than one, as a guard.
+    expect(() => db.prepare("UPDATE europe_stocks SET isin = 'FR0011716265' WHERE symbol = 'VK.PA'").run()).toThrow(/UNIQUE/);
+    const fy = (symbol: string) => upsertEuropeCalendarRow(db, 'EU', {
+      symbol, name: symbol, exchange: 'PAR', period: { periodEnd: '2025-12-31', fiscalQuarter: 4, fyEnd: '2025-12-31' },
+      periodLabel: 'FY25', periodConfirmed: false, reportDate: '2026-03-25', dateStatus: 'estimated',
+    }, NOW);
+    const a = fy('ALCJ.PA');
+    const b = fy('VK.PA');
+    expect(await refreshDilaSignals(ctx('EU'))).toEqual([a]);
+    expect(getEuropeReport(db, b)!.releasedAt).toBeNull();
   });
 
   it('live 005002 (quarterly sales) flips its row; live 004000 (half-year financial report) flips nothing', async () => {

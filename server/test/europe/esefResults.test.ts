@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDb } from '../../src/db/repo.js';
 import {
   europeStocks, getEuropeReport, lastEsefDateAdded, mergeEuropeActuals, setEuropeProfile, syncEuropeUniverse, upsertEuropeCalendarRow,
@@ -28,9 +28,13 @@ const filing = (n: number, lei: string, json: string, periodEnd = '2026-06-30'):
   jsonUrl: `https://filings.xbrl.org/${lei}/${json}.json`, reportUrl: `https://filings.xbrl.org/${lei}/reports/${json}.xhtml`,
 });
 
+afterEach(() => { vi.restoreAllMocks(); });
+const quiet = () => { vi.spyOn(console, 'error').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {}); };
+
 function setup(filings: EsefFiling[], facts: (url: string) => unknown) {
   const db = openDb(':memory:');
-  syncEuropeUniverse(db, 'UK', [entry('HAS.L', 'LEIHAYS0000000000001'), entry('SECA.L', 'LEISECA0000000000002'), entry('COLO.L', 'LEICOLO0000000000003')], NOW);
+  syncEuropeUniverse(db, 'UK', [entry('HAS.L', 'LEIHAYS0000000000001'), entry('SECA.L', 'LEISECA0000000000002'), entry('COLO.L', 'LEICOLO0000000000003'),
+    entry('TWOA.L', 'LEITWO00000000000004'), entry('TWOBB.L', 'LEITWO00000000000004')], NOW);
   const fyRow = (symbol: string) => upsertEuropeCalendarRow(db, 'UK', {
     symbol, name: symbol, exchange: 'LSE', period: { periodEnd: '2026-06-30', fiscalQuarter: 4, fyEnd: '2026-06-30' }, periodLabel: 'FY26',
     periodConfirmed: false, reportDate: '2026-08-20', dateStatus: 'confirmed',
@@ -140,7 +144,34 @@ describe('refreshEsefResults', () => {
     expect(europeStocks(db, 'UK').find((s) => s.symbol === 'HAS.L')).toMatchObject({ fyEndMonth: 6, fyEndSource: 'esef' });
   });
 
+  it('two share lines of one issuer: an older period never overrides either line\'s fiscal year end', async () => {
+    const later = filing(1, 'LEITWO00000000000004', 'two');
+    const older = { ...filing(2, 'LEITWO00000000000004', 'old', '2025-12-31'), fxoId: 'LEITWO-old' };
+    const shifted = { facts: Object.fromEntries(Object.entries((HAYS as { facts: Record<string, any> }).facts).map(([k, f]) => [k, {
+      ...f, dimensions: { ...f.dimensions, period: typeof f.dimensions?.period === 'string'
+        ? f.dimensions.period.replace(/2025-07-01/g, '2025-01-01').replace(/2026-07-01/g, '2026-01-01') : f.dimensions?.period },
+    }])) };
+    const { db, ctx } = setup([later, older], (url) => (url.endsWith('old.json') ? shifted : HAYS));
+    await refreshEsefResults(ctx, '2026-10-01 00:00:00');
+    const stocks = new Map(europeStocks(db, 'UK').map((s) => [s.symbol, s]));
+    expect(stocks.get('TWOA.L')).toMatchObject({ fyEndMonth: 6, fyEndSource: 'esef' });
+    expect(stocks.get('TWOBB.L')).toMatchObject({ fyEndMonth: 6, fyEndSource: 'esef' });
+  });
+
+  it('a filing whose fetch keeps failing until it leaves the since window is recorded error-dropped', async () => {
+    quiet();
+    const bad = { ...filing(1, 'LEICOLO0000000000003', 'colo'), dateAdded: '2026-10-01 08:00:00.000000' };
+    const good = { ...filing(2, 'LEIHAYS0000000000001', 'hays'), dateAdded: '2026-10-15 10:27:22.387506' };
+    const { ctx, fyRow, seen } = setup([bad, good], (url) => { if (url.endsWith('colo.json')) throw new Error('filings.xbrl.org 502'); return HAYS; });
+    fyRow('HAS.L');
+    await refreshEsefResults(ctx, '2026-09-30 00:00:00');
+    // The next since (10-15 less 2 days) no longer reaches 10-01: the failure leaves a trace instead of vanishing.
+    expect(seen(bad.fxoId)).toMatchObject({ outcome: 'error-dropped', symbol: 'COLO.L', date_added: bad.dateAdded });
+    expect(seen(good.fxoId)!.outcome).toBe('merged');
+  });
+
   it('fetch error not marked seen', async () => {
+    quiet();
     const f = filing(1, 'LEIHAYS0000000000001', 'hays');
     let fail = true;
     const { db, ctx, fyRow, seen } = setup([f], () => { if (fail) throw new Error('filings.xbrl.org 502'); return HAYS; });

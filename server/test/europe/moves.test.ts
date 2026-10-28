@@ -75,6 +75,32 @@ describe('snapshotEuropeMoves', () => {
   });
 });
 
+describe('per-exchange calendars', () => {
+  it('each row uses its own exchange: a Helsinki row a day ahead of Paris is in its 7-day window; a Xetra row works as before', async () => {
+    const db = openDb(':memory:');
+    const full = (symbol: string, isin: string, exchange: 'HEL' | 'XET', adr: string): EuropeUniverseEntry => ({
+      market: 'EU', symbol, isin, lei: null, name: symbol, exchange, mic: exchange === 'HEL' ? 'XHEL' : 'XETA', country: isin.slice(0, 2),
+      currency: 'EUR', adr, adrRatio: 1, adrRatioVerified: true, cik: 1, secForm: '6-K',
+    });
+    syncEuropeUniverse(db, 'EU', [full('NOKIA.HE', 'FI0009000681', 'HEL', 'NOK'), full('SAP.DE', 'DE0007164600', 'XET', 'SAP')], NOW);
+    const row = (symbol: string, exchange: 'HEL' | 'XET', reportDate: string) => upsertEuropeCalendarRow(db, 'EU', {
+      symbol, name: symbol, exchange, period: { periodEnd: '2026-09-30', fiscalQuarter: 3, fyEnd: '2026-12-31' }, periodLabel: 'Q3 FY26',
+      periodConfirmed: false, reportDate, dateStatus: 'confirmed', timing: 'BMO', timingSource: 'sec-notice',
+    }, NOW);
+    // 22:30Z on 11-05 is 23:30 in Paris (11-05) but 00:30 on 11-06 in Helsinki: Helsinki's window runs to 11-13.
+    const now = '2026-11-05T22:30:00.000Z';
+    const nok = row('NOKIA.HE', 'HEL', '2026-11-13');
+    const sap = row('SAP.DE', 'XET', '2026-11-10');
+    const ctx = {
+      db, market: 'EU', now: () => now, today: () => '2026-11-05',
+      optionChain: async () => chainAt('2026-11-05', '2026-11-05T16:15:00'),
+    } as unknown as EuropeJobContext;
+    expect((await snapshotEuropeMoves(ctx)).sort()).toEqual([nok, sap].sort());
+    expect(getEuropeReport(db, nok)!.expectedMove).toMatchObject({ final: false, quoteDate: '2026-11-05' });
+    expect(getEuropeReport(db, sap)!.expectedMove).toMatchObject({ final: false, quoteDate: '2026-11-05' });
+  });
+});
+
 describe('refreshEuropeLiveMoves', () => {
   it('stores the live move on the US day before the London date', async () => {
     const { db, ctx, row } = setup({ chain: chainAt('2026-11-05', '2026-11-05T14:00:00'), now: '2026-11-05T19:00:00.000Z', today: '2026-11-05' });

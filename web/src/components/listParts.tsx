@@ -21,7 +21,7 @@ export function byDate<T extends Dated>(rows: T[], sort: SortKey): [string, T[]]
 export function Result({ estimate, actual, result, surprisePct, format, analysts, preliminary, corrected, source, formatActual, spanLabel }: {
   estimate: number | null; actual: number | null; result: BeatMiss | null; surprisePct: number | null;
   format: (n: number | null) => string; analysts: number | null; preliminary: boolean; corrected: boolean;
-  source?: 'Yahoo' | 'EDINET' | null;
+  source?: 'Yahoo' | 'EDINET' | 'ESEF annual report' | null;
   /** Cumulative-span note right after the actual, e.g. "YTD (9 months)". */
   spanLabel?: string | null;
   /** Formatter for the actual when it differs from the estimate's (HK: each side has its own currency). */

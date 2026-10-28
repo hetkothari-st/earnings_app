@@ -1,4 +1,4 @@
-import { apiFetch, fetchMe, type HkAdminDto, type JpAdminDto, type KiteStatusDto } from './api';
+import { apiFetch, type EuropeAdminDto, fetchMe, type HkAdminDto, type JpAdminDto, type KiteStatusDto } from './api';
 
 /** Admin user management. Mirrors the rules in server/src/auth (IDs stored uppercase, 1-64 chars). */
 
@@ -95,6 +95,12 @@ export async function fetchJpAdmin(): Promise<Result<JpAdminDto>> {
   const res = await apiFetch('/api/admin/jp');
   if (!res.ok) return { ok: false, error: `Server returned ${res.status}` };
   return { ok: true, data: (await res.json()) as JpAdminDto };
+}
+
+export async function fetchEuropeAdmin(): Promise<Result<EuropeAdminDto>> {
+  const res = await apiFetch('/api/admin/europe');
+  if (!res.ok) return { ok: false, error: `Server returned ${res.status}` };
+  return { ok: true, data: (await res.json()) as EuropeAdminDto };
 }
 
 export async function kiteLoginNow(): Promise<Result<KiteStatusDto>> {
