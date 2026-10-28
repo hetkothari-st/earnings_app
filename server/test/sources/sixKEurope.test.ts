@@ -173,3 +173,29 @@ describe("classifySixK, profiles 'uk' and 'eu'", () => {
     expect(classifySixK(`<p>Acme Q2 2026 results</p>${RESULTS_TABLE}`, { filedOn: '2026-11-20', profile: 'hk' })).toEqual({ kind: 'other' });
   });
 });
+
+describe("classifySixK 'uk' / 'eu': N-month period ended, and a recency window (Task 18 fix round 1)", () => {
+  const rel = (name: string) => fx(`europe/releases/eu/${name}`);
+
+  it('BUD "Unaudited Interim Report for the three-month period ended 31 March 2025" (0001193125-25-115972, 2025-05-08) is Q1 2025', () => {
+    expect(classifySixK(rel('BUD_2025-03-31.htm'), { filedOn: '2025-05-08', profile: 'eu', fyEndMonth: 12 }))
+      .toEqual({ kind: 'results', periodEnd: '2025-03-31', span: 'quarter' });
+  });
+
+  it('STM IFRS semi-annual report, six-month period ended June 27, 2026 (0000932787-26-000069, 2026-08-19) is H1 2026', () => {
+    expect(classifySixK(rel('STM_2026-06-27_ifrs.htm'), { filedOn: '2026-08-19', profile: 'eu', fyEndMonth: 12 }))
+      .toEqual({ kind: 'results', periodEnd: '2026-06-27', span: 'half' });
+  });
+
+  it('"3-month / 6-month / 9-month period ended" forms are stated spans', () => {
+    const doc = (phrase: string) => `<p>Interim results for the ${phrase} 30 September 2026</p>${RESULTS_TABLE}`;
+    expect(classifySixK(doc('9-month period ended'), { filedOn: '2026-10-28', profile: 'eu' })).toEqual({ kind: 'results', periodEnd: '2026-09-30', span: 'nine' });
+    expect(classifySixK(doc('nine-month period ended'), { filedOn: '2026-10-28', profile: 'uk' })).toEqual({ kind: 'results', periodEnd: '2026-09-30', span: 'nine' });
+  });
+
+  it('a passing mention of the previous annual report never dates a release (no period within 100 days → other)', () => {
+    const html = `<p>Interim results. See our annual report for the year ended 31 December 2025.</p>${RESULTS_TABLE}`;
+    expect(classifySixK(html, { filedOn: '2026-08-19', profile: 'eu' })).toEqual({ kind: 'other' });
+    expect(classifySixK(html, { filedOn: '2026-02-20', profile: 'eu' })).toEqual({ kind: 'results', periodEnd: '2025-12-31', span: 'year' });
+  });
+});

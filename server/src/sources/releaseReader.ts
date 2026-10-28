@@ -1728,6 +1728,15 @@ const EU_CONTINUING = /continuing operations/;
 const EU_ADJUSTED = /constant currency|\bcer\b|at constant|organic|pro forma|non[\s-]?(?:gaap|ifrs)|alternative performance|\bunderlying\b|\badjusted\b|\bcore\b|reconcil|excluding|notable items|like[\s-]for[\s-]like/i;
 /** A caption naming another breakdown than the group's: a segment, division, region or business. */
 const EU_SEGMENT = /segment|division|region|business|by\s+(?:product|geograph|market|country)/i;
+/** 'eu': "non-U.S. GAAP" (STMicroelectronics) is an adjusted measure like "non-GAAP". */
+const EU_NON_US_GAAP = /non[\s-]?u\.?\s?s\.?\s*gaap/i;
+/**
+ * 'eu': rows that show an earlier revenue-labelled row of the same table is not the revenue line — a sales figure gross
+ * of excise taxes ("Sales" → "Excise taxes" → "Revenues from sales", TotalEnergies) or a component of a later total
+ * ("Net sales" → "Other revenues" → "Net revenues", STMicroelectronics). That label is then never revenue anywhere in
+ * the document (the key-figures table repeats "Sales" without the excise line).
+ */
+const EU_REVENUE_RIVAL = /excise|^(?:total\s+)?net\s+revenues?$|^revenues?\s+from\s+(?:sales|contracts)\b/;
 
 /**
  * Revenue: "(Group) (total) revenue(s)", "turnover", "(total) (net) sales"; for banks only
@@ -1867,7 +1876,8 @@ function euColumn(own: string, labelCol: string, block: string, pe: Date, span: 
   return tokens.every((t) => t.span === span && t.year === peYear && (t.q === undefined || t.q === fiscal.quarter));
 }
 
-interface EuCandidate { value: number; cur: EuCurrency; continuing: boolean }
+/** `step`: a revenue figure's rounding unit (scale / 10^decimals); `label`: its row label (`euLabel`). */
+interface EuCandidate { value: number; cur: EuCurrency; continuing: boolean; step?: number; label?: string }
 
 interface EuRow { field: EuField; continuing: boolean; nums: Num[]; signs: Map<number, EuCurrency>; headers: Cell[][]; rawLabel: string; sectionRaw: string }
 
@@ -1877,6 +1887,17 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
   if (Number.isNaN(pe.getTime())) {
     return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, revenueCurrency: null, epsCurrency: null, notes: ['bad periodEnd'] };
   }
+  // Profile 'eu' only (Task 18, found on the EU release corpus; 'uk' reads as before): self-closing cells, non-U.S.
+  // GAAP measures, a quarter title over the whole table, revenue rivals and the most precise of agreeing revenues.
+  const eu = opts.profile === 'eu';
+  // A self-closing cell ("<td/>", "<td colspan=\"3\"/>", Sanofi) is an empty cell; as written it would swallow the next
+  // cell and shift every figure after it one column to the left (onto the comparative column).
+  if (eu) html = html.replace(/<(td|th)\b([^>]*?)\s*\/>/gi, '<$1$2></$1>');
+  const adjusted = (text: string) => EU_ADJUSTED.test(text) || (eu && EU_NON_US_GAAP.test(text));
+  /** Revenue row labels ruled out by a rival row (`EU_REVENUE_RIVAL`), for the whole document. */
+  const rivalled = new Set<string>();
+  /** The finest rounding unit any revenue row of a label is stated in, anywhere in the document (placed or not). */
+  const finest = new Map<string, number>();
   const span = opts.span;
   const fiscal: JpFiscal = { quarter: opts.fiscalQuarter, year: opts.fiscalYear };
   const bank = opts.issuer !== undefined && EUROPE_BANK_TICKERS.has(opts.issuer.ticker);
@@ -1913,7 +1934,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
 
   for (const [ti, table] of tables.entries()) {
     const caption = captions[ti]!;
-    if (EU_ADJUSTED.test(caption) || JP_FORECAST.test(caption)) continue;
+    if (adjusted(caption) || JP_FORECAST.test(caption)) continue;
     // Period words in the caption ("Nine months to 30 September", "Six months ended", "Year to date", "H1"): no column
     // of the table is the quarter.
     if (span === 'quarter' && euNotQuarter(caption)) continue;
@@ -1928,6 +1949,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     let sectionRaw = '';
     const nonData: Cell[][] = [];
     const rowsOut: EuRow[] = [];
+    const revenueLabels: string[] = [];
 
     for (const rawCells of table.rows) {
       // A row of unit cells only ("€000 | €000", "$ | $") is a unit row under the period heads, never data.
@@ -1953,7 +1975,9 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
         if (/^(basic|diluted|basic and diluted)$/.test(euLabel(first.text)) && section) rawLabel = `${sectionRaw} ${first.text}`;
         const f = euField(rawLabel, bank);
         const vals = nums.filter((n) => !n.pct);
-        if (f && vals.length && !EU_ADJUSTED.test(section)) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel, sectionRaw });
+        if (eu && EU_REVENUE_RIVAL.test(euLabel(first.text))) for (const l of revenueLabels) rivalled.add(l);
+        if (eu && f?.field === 'revenue') revenueLabels.push(euLabel(rawLabel));
+        if (f && vals.length && !adjusted(section) && !(eu && EU_NON_US_GAAP.test(rawLabel))) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel, sectionRaw });
         if (/:\s*$/.test(first.text)) { section = euLabel(first.text); sectionRaw = first.text; }
         continue;
       }
@@ -2024,11 +2048,21 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
       const rowUnknown = EU_UNIT_LIKE.test(label.replace(new RegExp(PAREN_GROUP, 'g'), (p) => (euUnit(p) ? ' ' : p)));
       const labelMarks = euEpsMarks(row.rawLabel);
       const sectionMarks = euEpsMarks(row.sectionRaw);
+      if (eu && field === 'revenue' && !headUnknown && !rowUnknown) {
+        const mults = new Set([...rowUnits, ...tableLevel.values()].map((u) => u.mult));
+        if (mults.size === 1) {
+          const step = [...mults][0]! / 10 ** Math.max(...row.nums.map((n) => n.decimals));
+          const l = euLabel(row.rawLabel);
+          finest.set(l, Math.min(finest.get(l) ?? Infinity, step));
+        }
+      }
       for (const n of row.nums) {
         const overCells = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && !(c.start === 0 && c.span === 1)));
         const own = overCells.map((c) => c.text).join(' ').trim();
         // The column's own head for the quarter allowlist, without the table's title cells.
-        const ownHead = overCells.filter((c) => !titleCells.has(c)).map((c) => c.text).join(' ').trim();
+        // ('eu': a title cell naming a quarter — "Three months ended", "Q1" over every figure column — stays; the
+        // allowlist below still decides on the whole head, "Q1 2025".)
+        const ownHead = overCells.filter((c) => !titleCells.has(c) || (eu && EU_QUARTER.test(c.text) && !euNotQuarter(c.text))).map((c) => c.text).join(' ').trim();
         if (!euColumn(own, labelCol, blockText, pe, span, fiscal, ownHead)) continue;
         // The column's currency: its unit cells ("€m", "US$m") and currency marks ("$", "pence", "cents").
         const infos = overCells.map((c) => euCellUnitInfo(c.text));
@@ -2061,7 +2095,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
           }
           const unit = { mult: [...mults][0]!, cur: [...curs][0]! };
           if (sign && (sign === 'GBp' ? 'GBP' : sign) !== unit.cur) continue;
-          found.revenue.push({ value: Math.round(n.value * unit.mult), cur: unit.cur, continuing: row.continuing });
+          found.revenue.push({ value: Math.round(n.value * unit.mult), cur: unit.cur, continuing: row.continuing, step: unit.mult / 10 ** n.decimals, label: euLabel(row.rawLabel) });
         } else {
           // EPS is never scaled by a table unit, and an unknown unit in its label or column head blanks it. Its
           // currency comes from the figure's sign, the row label and the column's marks (`euEpsCurrency`: one major
@@ -2107,6 +2141,18 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     if (distinct.length > 1) {
       notes.push(`${field}: candidates disagree (${distinct.map((d) => `${d.value} ${d.cur}`).join(', ')})`);
       return null;
+    }
+    // 'eu', only once every candidate agrees (the filters below can never turn a disagreement into another line's
+    // figure): a rival-ruled label is never revenue; a figure rounded coarser than the same line elsewhere in the
+    // document ("Net sales" 55.0 SEK b. in the summary, 55,025 SEK million in a statement whose column cannot be placed)
+    // is not the exact revenue; of the rest, the most precise one.
+    if (eu && field === 'revenue') {
+      c = c.filter((x) => !rivalled.has(x.label!) && x.step! <= (finest.get(x.label!) ?? Infinity));
+      if (!c.length) {
+        notes.push('revenue: only rounded or rivalled figures');
+        return null;
+      }
+      return c.reduce((a, b) => (b.step! < a.step! ? b : a));
     }
     return c[0]!;
   };
