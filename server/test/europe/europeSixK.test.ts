@@ -250,6 +250,52 @@ describe('UK / EU on the shared 6-K watcher', () => {
     expect(europeSecSeen(db, 'UK', NOTICE_ACC)).toBe(true);
   });
 
+  it('a deferred 6-K (no fiscal year end) is not downloaded again until the year end is known, or a day later', async () => {
+    const { db, ctx, requested } = setup();
+    db.prepare("UPDATE europe_stocks SET fy_end_month = NULL, fy_end_source = NULL WHERE symbol = 'AZN.L'").run();
+    await handleEuropeFiling(ctx, AZN_FILING, GATES_CLOSED);
+    const first = requested.length;
+    expect(first).toBeGreaterThan(0);
+    // The next sweep, 30 minutes later: no request, still unseen.
+    ctx.now = () => '2026-10-28T09:30:00.000Z';
+    await handleEuropeFiling(ctx, AZN_FILING, GATES_CLOSED);
+    expect(requested.length).toBe(first);
+    expect(europeSecSeen(db, 'UK', AZN_ACC)).toBe(false);
+    // A day later it is tried once more (a stock may never get a year end), and deferred again.
+    ctx.now = () => '2026-10-29T09:01:00.000Z';
+    await handleEuropeFiling(ctx, AZN_FILING, GATES_CLOSED);
+    expect(requested.length).toBeGreaterThan(first);
+    const second = requested.length;
+    // Once the year end is known it is handled at the next sweep.
+    setEuropeProfile(db, 'AZN.L', { name: null, sector: null, industry: null, marketCap: null, marketCapCurrency: null, asOf: null,
+      fyEndMonth: { month: 12, source: 'yahoo' } }, NOW);
+    ctx.now = () => '2026-10-29T09:30:00.000Z';
+    await handleEuropeFiling(ctx, AZN_FILING, GATES_CLOSED);
+    expect(requested.length).toBeGreaterThan(second);
+    expect(europeSecSeen(db, 'UK', AZN_ACC)).toBe(true);
+  });
+
+  it('Shell: a cover EX-99.1 and a cover 6-K fall through to the EX-99.2 interim report (0001628280-26-050763)', async () => {
+    const SHEL_CIK = 1306965;
+    const dir = 'https://www.sec.gov/Archives/edgar/data/1306965/000162828026050763';
+    const acc = '0001628280-26-050763';
+    const docs = {
+      [`${dir}/${acc}-index.htm`]: index([[`${dir}/shel-20260630_d2.htm`, '6-K'], [`${dir}/q22026exhibit991.htm`, 'EX-99.1'], [`${dir}/shel-20260630.htm`, 'EX-99.2']]),
+      [`${dir}/shel-20260630_d2.htm`]: fx('europe/sec/shel_q2_2026_6k_main.htm'),
+      [`${dir}/q22026exhibit991.htm`]: fx('europe/sec/shel_q2_2026_cover_ex991.htm'),
+      [`${dir}/shel-20260630.htm`]: fx('europe/sec/shel_q2_2026_interim_report_ex992.htm'),
+    };
+    const { db, ctx } = setup(docs);
+    syncEuropeUniverse(db, 'UK', [...ENTRIES, entry('SHEL.L', 'GB00BP6MXD84', { name: 'Shell plc', adr: 'SHEL', adrRatio: 2, adrRatioVerified: true, cik: SHEL_CIK, secForm: '6-K' })], NOW);
+    setEuropeProfile(db, 'SHEL.L', { name: null, sector: null, industry: null, marketCap: null, marketCapCurrency: null, asOf: null,
+      fyEndMonth: { month: 12, source: 'esef' } }, NOW);
+    const id = row(db, 'SHEL.L', '2026-07-30');
+    // Accepted 06:25:16 ET = 10:25:16Z on 2026-07-30.
+    const r = await handleEuropeFiling(ctx, { cik: SHEL_CIK, accession: acc, indexUrl: `${dir}/${acc}-index.htm`, acceptedAt: '2026-07-30T10:25:16.000Z', form: '6-K' }, GATES_CLOSED);
+    expect(r.released).toEqual([id]);
+    expect(getEuropeReport(db, id)).toMatchObject({ periodEnd: '2026-06-30', releasedSource: 'sec', signalUrl: `${dir}/shel-20260630.htm` });
+  });
+
   it('a notice with no session gives UNKNOWN timing (never a default)', async () => {
     const { db, ctx } = setup();
     const id = row(db, 'AZN.L', '2026-11-05');
