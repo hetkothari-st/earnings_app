@@ -284,7 +284,8 @@ describe('readEuropeRelease — fix round 2: fail closed (review N1–N4)', () =
   it('N2: minor units only as USD cents, EUR cents or GBP pence; any other pairing or a format conflict → blank', () => {
     const usd = (label: string, fig: string, mark = '') => doc(table('', [['US$m', 'Q3 2026', 'Q3 2025'], ...(mark ? [['', mark, mark]] : [])], [['Revenue', '5,000', '4,800'], [label, fig, '150.0']]));
     expect(eps(usd('Basic EPS (¢)', '177.7', '$'))).toEqual([1.777, 'USD']);
-    expect(eps(usd('Basic EPS (c)', '177.7', '$'))).toEqual([1.777, 'USD']);
+    // Fix round 4 ruling: a lone "(c)" in a label may be a footnote letter, so it is never cents (blank).
+    expect(eps(usd('Basic EPS (c)', '177.7', '$'))).toEqual([null, null]);
     expect(eps(usd('Basic EPS (US$c)', '177.7'))).toEqual([1.777, 'USD']);
     expect(eps(usd('Basic EPS (c)', '$177.7'))).toEqual([null, null]);
     expect(eps(usd('Basic EPS ($)', '$1.777', 'cents'))).toEqual([null, null]);
@@ -295,7 +296,9 @@ describe('readEuropeRelease — fix round 2: fail closed (review N1–N4)', () =
     expect(eps(eur('Basic EPS (cents)', '45.3', '£'))).toEqual([null, null]);
     expect(eps(eur('Basic EPS (cents)', '12.3p'))).toEqual([null, null]);
     expect(eps(eur('Basic EPS (pence)', '£1.23'))).toEqual([null, null]);
-    expect(eps(eur('Basic EPS (p)', '12.3'), Q3)).toEqual([12.3, 'GBp']);
+    // Fix round 4: a lone "(p)" in a table that names € is never pence (blank); in a £m table it is.
+    expect(eps(eur('Basic EPS (p)', '12.3'), Q3)).toEqual([null, null]);
+    expect(eps(doc(table('', [['£m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS (p)', '12.3', '10.1']])), Q3)).toEqual([12.3, 'GBp']);
   });
 
   it('N3: nominal / par values never set the EPS currency or scale', () => {
@@ -334,8 +337,8 @@ describe('readEuropeRelease — fix round 3: positive allowlists (re-review 2)',
     expect(epsOf(doc(table('', [['€m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS €<sup>c</sup>', '45.3', '40.1']])))).toEqual([null, null]);
     expect(epsOf(t('€m', 'Basic EPS', '45.3', '€ c'))).toEqual([null, null]);
     expect(epsOf(t('€m', 'Basic EPS ¢ (€)', '45.3'))).toEqual([null, null]);
-    // The sole unit indication, paired with a currency stated elsewhere: cents.
-    expect(epsOf(t('US$m', 'Basic EPS (c)', '177.7', '$'), Q3)).toEqual([1.777, 'USD']);
+    // Fix round 4 ruling: a lone "(c)" in a label is never cents, even as the sole unit indication (blank).
+    expect(epsOf(t('US$m', 'Basic EPS (c)', '177.7', '$'), Q3)).toEqual([null, null]);
     // Explicit forms.
     expect(epsOf(t('US$m', 'Basic EPS (US cents)', '177.7'), Q3)).toEqual([1.777, 'USD']);
     expect(epsOf(t('€m', 'Basic EPS (euro cents)', '45.3'))).toEqual([0.453, 'EUR']);
@@ -377,5 +380,78 @@ describe('readEuropeRelease — fix round 3: positive allowlists (re-review 2)',
     }
     // A bare scale with no currency anywhere stays blank.
     expect(readEuropeRelease(doc(table('', [['m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS (€)', '1.25', '1.10']])), EU_Q3).revenue).toBeNull();
+  });
+});
+
+describe('readEuropeRelease — fix round 4: fail closed on footnote letters, cumulative abbreviations, pence and captions (re-review 3)', () => {
+  const EU_Q3 = { ...Q3, profile: 'eu' as const };
+  const epsOf = (html: string, p: Parameters<typeof readEuropeRelease>[1] = EU_Q3) => {
+    const v = readEuropeRelease(html, p);
+    return [v.eps, v.epsDiluted, v.epsCurrency];
+  };
+  const t = (head: string, label: string, fig: string, mark = '') =>
+    doc(table('', [[head, 'Q3 2026', 'Q3 2025'], ...(mark ? [['', mark, mark]] : [])], [['Revenue', '5,000', '4,800'], [label, fig, '1.10']]));
+
+  it('R3-1: a bare "c" / "(c)" in a row or section label is never cents: the EPS is blank', () => {
+    expect(epsOf(t('US$m', 'Basic earnings per share(c)', '1.25', '$'), Q3)).toEqual([null, null, null]);
+    expect(epsOf(t('US$m', 'Basic earnings per share (c)', '1.25', '$'), Q3)).toEqual([null, null, null]);
+    expect(epsOf(t('€m', 'Basic earnings per share<sup>(c)</sup>', '1.25', '€'))).toEqual([null, null, null]);
+    expect(epsOf(t('€m', 'Basic earnings per share<sup>c</sup>', '1.25', '€'))).toEqual([null, null, null]);
+    expect(epsOf(t('€m', 'Diluted earnings per share (c)', '1.25', '€'))).toEqual([null, null, null]);
+    expect(epsOf(t('€m', 'Basic EPS c', '1.25', '€'))).toEqual([null, null, null]);
+    expect(epsOf(t('US$m', 'Basic EPS (c)', '177.7', '$'), Q3)).toEqual([null, null, null]);
+    // A section label: "Earnings per share (c):" over a "Basic" row, with or without the colon.
+    const section = (sec: string) => doc(table('', [['US$m', 'Q3 2026', 'Q3 2025'], ['', '$', '$']], [['Revenue', '5,000', '4,800'], [sec, '', ''], ['Basic', '1.25', '1.10'], ['Basic earnings per share', '1.25', '1.10']]));
+    expect(epsOf(section('Earnings per share (c):'), Q3)).toEqual([null, null, null]);
+    expect(epsOf(section('Earnings per share (c)'), Q3)).toEqual([null, null, null]);
+    // A head cell over the column that is not a whole mark, with a bare "(c)": blank.
+    expect(epsOf(doc(table('', [['US$m', 'Q3 2026 (c)', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic EPS ($)', '1.25', '1.10']])), Q3)).toEqual([null, null, null]);
+    // Still cents: "cents", "¢", "ct", the explicit forms, and a whole column-mark cell "c" / "(c)".
+    expect(epsOf(t('US$m', 'Basic EPS (cents)', '177.7', '$'), Q3)).toEqual([1.777, null, 'USD']);
+    expect(epsOf(t('US$m', 'Basic EPS (¢)', '177.7', '$'), Q3)).toEqual([1.777, null, 'USD']);
+    expect(epsOf(t('€m', 'Basic EPS (ct)', '45.3', '€'))).toEqual([0.453, null, 'EUR']);
+    expect(epsOf(t('US$m', 'Basic EPS (US cents)', '177.7'), Q3)).toEqual([1.777, null, 'USD']);
+    expect(epsOf(t('US$m', 'Basic earnings per share ($)', '177.7', 'c'), Q3)).toEqual([1.777, null, 'USD']);
+    expect(epsOf(t('€m', 'Basic earnings per share (€)', '45.3', '(c)'))).toEqual([0.453, null, 'EUR']);
+    // A footnote letter other than c, and a clean label, still read.
+    expect(epsOf(t('US$m', 'Basic earnings per share (a)', '1.25', '$'), Q3)).toEqual([1.25, null, 'USD']);
+  });
+
+  it('R3-2: "accum", "accum.", "cum.", "cumul" block a quarter like "accumulated"', () => {
+    const q = (head: string) => {
+      const v = readEuropeRelease(doc(table('', [['€m', head]], [['Revenue', '5,000'], ['Basic EPS (€)', '1.25']])), EU_Q3);
+      return v.span === 'quarter' ? v.revenue : null;
+    };
+    for (const head of ['Q3 2026 accum.', 'Q3 2026 accum', 'Accum. Q3 2026', 'Q3 2026 cum.', 'Q3 2026 cumul.', 'Cumul Q3 2026', 'Q3 2026 accumulated']) {
+      expect([head, q(head)]).toEqual([head, null]);
+    }
+    expect(q('Q3 2026')).toBe(5_000_000_000);
+  });
+
+  it('a "(p)" EPS label is pence only when no other currency appears in the table', () => {
+    const p = (unit: string, caption = '') => epsOf(doc(table(caption, [[unit, 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share (p)', '12.3', '10.1']])), Q3);
+    expect(p('$m')).toEqual([null, null, null]);
+    expect(p('US$m')).toEqual([null, null, null]);
+    expect(p('€m')).toEqual([null, null, null]);
+    expect(p('', '(in millions of euros)')).toEqual([null, null, null]);
+    expect(p('£m')).toEqual([12.3, null, 'GBp']);
+    expect(p('')).toEqual([12.3, null, 'GBp']);
+    // A "$" column unit on another column of the table counts too.
+    expect(epsOf(doc(table('', [['£m', 'Q3 2026', 'Q3 2026 US$m']], [['Revenue', '5,000', '6,000'], ['Basic earnings per share (p)', '12.3', '15.0']])), Q3)).toEqual([null, null, null]);
+    // "pence" spelled out is no footnote letter: still pence.
+    expect(epsOf(doc(table('', [['$m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share (pence)', '12.3', '10.1']])), Q3)).toEqual([12.3, null, 'GBp']);
+  });
+
+  it('period words in the caption above a table: no column of it is read as a quarter', () => {
+    const v = (caption: string, p: Parameters<typeof readEuropeRelease>[1] = EU_Q3, heads = ['€m', 'Q3 2026', 'Q3 2025']) =>
+      readEuropeRelease(doc(table(caption, [heads], [['Revenue', '5,000', '4,800'], ['Basic EPS (€)', '1.25', '1.10']])), p);
+    for (const caption of ['Nine months to 30 September 2026', 'Six months ended 30 June 2026', 'Year to date', 'H1 2026 results', 'Cumulative figures']) {
+      const r = v(caption);
+      expect([caption, r.revenue, r.eps, r.span]).toEqual([caption, null, null, null]);
+    }
+    expect(v('Third quarter 2026 results').revenue).toBe(5_000_000_000);
+    // The YTD column of such a table still reads as the YTD span.
+    const r = v('Nine months to 30 September 2026', EU_Q3, ['€m', '9M 2026', '9M 2025']);
+    expect([r.revenue, r.span, r.ytdMonths]).toEqual([5_000_000_000, 'ytd', 9]);
   });
 });
