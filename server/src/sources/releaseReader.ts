@@ -3,7 +3,9 @@
  * (profile 'us', `readUsRelease`), a foreign issuer's 6-K (profile 'hk':
  * RMB / US$ / HK$ columns, per-ADS rows, half-year and full-year columns) or a
  * Japanese issuer's 6-K (profile 'jp': yen only, basic and diluted EPS, quarter
- * or year-to-date columns; see `readJp`).
+ * or year-to-date columns; see `readJp`) or a UK / European issuer's 6-K or 8-K
+ * (profiles 'uk' / 'eu': allowlisted currency units, pence vs pounds, basic and
+ * diluted EPS, quarter or year-to-date columns; see `readEu`).
  *
  * Rule of thumb: uncertain means blank. A value is returned only when its row
  * label, its column header (the period ending `periodEnd` with the expected span,
@@ -313,8 +315,11 @@ function units(text: string, re: RegExp = UNIT_RE): Set<number> {
 
 // ---------------------------------------------------------------- currencies (profile 'hk')
 
-/** 'JPY' is only ever produced by profile 'jp'; the 'us' / 'hk' currency detection never names yen. */
-export type Currency = 'CNY' | 'USD' | 'HKD' | 'JPY';
+/**
+ * 'JPY' is only ever produced by profile 'jp'; 'EUR' / 'GBP' / 'GBp' (pence) / 'CHF' / 'DKK' / 'SEK' / 'NOK' only by
+ * profiles 'uk' / 'eu'. The 'us' / 'hk' currency detection never names them.
+ */
+export type Currency = 'CNY' | 'USD' | 'HKD' | 'JPY' | 'EUR' | 'GBP' | 'GBp' | 'CHF' | 'DKK' | 'SEK' | 'NOK';
 
 const CNY_RE = /\brmb\b|renminbi/i;
 const HKD_RE = /hk\$|\bhkd\b|\bhk dollars?\b|hong kong dollars?/i;
@@ -416,20 +421,21 @@ const UNIT_ROW_CELL = /^\(?\s*(?:rmb|renminbi|us\$|hk\$|\$|usd|hkd)?\s*(?:'?000|
 
 export interface ReaderOptions {
   periodEnd: string;
-  /** 'nine' (nine months year-to-date) is used by profile 'jp'. */
+  /** 'nine' (nine months year-to-date) is used by profiles 'jp', 'uk' and 'eu'. */
   span: 'quarter' | 'half' | 'nine' | 'year';
-  profile: 'us' | 'hk' | 'jp';
+  profile: 'us' | 'hk' | 'jp' | 'uk' | 'eu';
   /** Profile 'hk': only columns in this currency are read. */
   currency?: Currency;
   /** Profile 'hk': one ADS is one share (ADR ratio 1), so a combined "per share/ADS" row is per share. */
   shareIsAds?: boolean;
-  /** Profile 'jp': the release's fiscal quarter; a "2Q" / "Q2" column is read only when it names this quarter. */
+  /** Profiles 'jp' / 'uk' / 'eu': the release's fiscal quarter; a "2Q" / "Q2" column is read only when it names this quarter. */
   fiscalQuarter?: 1 | 2 | 3 | 4;
-  /** Profile 'jp': the fiscal-year label (calendar year the fiscal year ends in); an "FY2027" column must match it. */
+  /** Profiles 'jp' / 'uk' / 'eu': the fiscal-year label (calendar year the fiscal year ends in); an "FY2027" column must match it. */
   fiscalYear?: number;
   /**
    * Profile 'jp': the issuer as the universe knows it (English name variants, ADR ticker). Besides generic words these
    * are the only names a group heading may carry; without it, a heading naming any company is not the group.
+   * Profiles 'uk' / 'eu': the ticker names a bank, whose "Total income" line is its revenue.
    */
   issuer?: JpIssuer;
 }
@@ -447,10 +453,14 @@ export interface ReaderResult {
   /** Adjusted / non-GAAP EPS (profile 'us' only; never read for 'hk'). */
   epsAdjusted: number | null;
   epsGaap: number | null;
-  /** Basic EPS per share (profile 'jp' only; null for 'us' / 'hk'). */
+  /** Basic EPS per share (profiles 'jp' / 'uk' / 'eu' only; null for 'us' / 'hk'). */
   epsBasic: number | null;
   revenue: number | null;
   unit: number | null; /* multiplier applied to revenue */
+  /** Profiles 'uk' / 'eu': the currency of `revenue` as the release states it (null for the other profiles). */
+  revenueCurrency: Currency | null;
+  /** Profiles 'uk' / 'eu': the currency of `epsBasic` / `epsGaap` ('GBp' for pence; null for the other profiles). */
+  epsCurrency: Currency | null;
   notes: string[];
 }
 
@@ -463,12 +473,13 @@ export function readUsRelease(html: string, quarterEnd: string): ReleaseValues {
 
 export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
   if (opts.profile === 'jp') return readJp(html, opts);
+  if (opts.profile === 'uk' || opts.profile === 'eu') return readEu(html, opts);
   const notes: string[] = [];
   const hk = opts.profile === 'hk';
   const qe = new Date(`${opts.periodEnd}T00:00:00Z`);
   const found: Record<Field, Candidate[]> = { epsAdjusted: [], epsGaap: [], epsAds: [], revenue: [] };
   if (Number.isNaN(qe.getTime())) {
-    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
+    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, revenueCurrency: null, epsCurrency: null, notes: [hk ? 'bad periodEnd' : 'bad quarterEnd'] };
   }
 
   const tables = parseTables(html, { rowspan: hk });
@@ -652,6 +663,8 @@ export function readRelease(html: string, opts: ReaderOptions): ReaderResult {
     epsBasic: null,
     revenue: rev ? Math.round(rev.value) : null,
     unit: rev?.unit ?? null,
+    revenueCurrency: null,
+    epsCurrency: null,
     notes,
   };
 }
@@ -1242,7 +1255,7 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
   const notes: string[] = [];
   const pe = new Date(`${opts.periodEnd}T00:00:00Z`);
   if (Number.isNaN(pe.getTime())) {
-    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, notes: ['bad periodEnd'] };
+    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, revenueCurrency: null, epsCurrency: null, notes: ['bad periodEnd'] };
   }
   const span = opts.span;
   const fiscal: JpFiscal = { quarter: opts.fiscalQuarter, year: opts.fiscalYear };
@@ -1475,6 +1488,411 @@ function readJp(html: string, opts: ReaderOptions): ReaderResult {
     epsBasic: basic?.value ?? null,
     revenue: rev ? Math.round(rev.value) : null,
     unit: rev?.unit ?? null,
+    revenueCurrency: null,
+    epsCurrency: null,
+    notes,
+  };
+}
+
+// ---------------------------------------------------------------- profiles 'uk' / 'eu'
+//
+// A separate pass, so the 'us' / 'hk' / 'jp' paths above are untouched. UK and continental releases state figures in
+// "£m", "€ million", "DKK million", "(in millions of euros)"…, EPS in pence or in the reporting currency, and print a
+// quarter, half-year, nine-month or full-year column. One span is read per call; nothing is ever computed from
+// another span. Uncertain means blank: no allowlisted unit, two currencies, disagreeing candidates → null.
+
+type EuSpan = 'quarter' | 'half' | 'nine' | 'year';
+type EuField = 'revenue' | 'basic' | 'diluted' | 'both';
+type EuCurrency = 'EUR' | 'GBP' | 'GBp' | 'USD' | 'CHF' | 'DKK' | 'SEK' | 'NOK';
+
+/** Banks whose top line is "Total income" (US tickers). */
+const EU_BANKS = new Set(['HSBC', 'BCS', 'LYG', 'NWG', 'ING', 'SAN', 'BBVA', 'UBS', 'DB']);
+
+/** Currency words of an "(in millions of …)" statement. */
+const EU_CUR_WORDS: Array<[EuCurrency, RegExp]> = [
+  ['EUR', /^(?:euros?|eur|€)$/],
+  ['GBP', /^(?:pounds?(?:\s+sterling)?|sterling|gbp|£)$/],
+  ['USD', /^(?:u\.?\s?s\.?\s*dollars?|us\s+dollars?|dollars?|usd|us\$|\$)$/],
+  ['CHF', /^(?:swiss\s+francs?|chf)$/],
+  ['DKK', /^(?:danish\s+kron(?:er|e)|dkk)$/],
+  ['SEK', /^(?:swedish\s+kron(?:or|a)|sek)$/],
+  ['NOK', /^(?:norwegian\s+kron(?:er|e)|nok)$/],
+];
+
+/**
+ * Allowlisted unit statements: "£m", "£ million(s)", "£bn", "$m", "US$m", "US$ million(s)", "€m", "€ million(s)",
+ * "EUR million(s)", "EUR m", "CHF million(s)", "DKK million(s)", "SEK m(illion)", "MSEK", "NOK million(s)", "MNOK",
+ * "(in millions of …)" — with an optional "(Figures / Amounts) (are) (in)" lead, ", except per share …" and "unless
+ * otherwise indicated". Nothing else counts as a unit.
+ */
+const EU_UNITS: Array<[RegExp, EuCurrency, number]> = [
+  [/^£\s?(?:m|millions?)$/, 'GBP', 1e6],
+  [/^£\s?bn$/, 'GBP', 1e9],
+  [/^(?:us)?\$\s?m$/, 'USD', 1e6],
+  [/^us\$\s?millions?$/, 'USD', 1e6],
+  [/^€\s?(?:m|millions?)$/, 'EUR', 1e6],
+  [/^eur\s?(?:m|millions?)$/, 'EUR', 1e6],
+  [/^chf\s+millions?$/, 'CHF', 1e6],
+  [/^dkk\s+millions?$/, 'DKK', 1e6],
+  [/^sek\s?(?:m|millions?)$|^msek$/, 'SEK', 1e6],
+  [/^nok\s+millions?$|^mnok$/, 'NOK', 1e6],
+];
+
+interface EuUnit { mult: number; cur: EuCurrency }
+
+function euUnit(text: string): EuUnit | null {
+  let core = text.trim().toLowerCase();
+  if (/^\(/.test(core) && /\)$/.test(core)) core = core.slice(1, -1).trim();
+  core = core
+    .replace(/\s*,?\s*unless\s+otherwise\s+(?:indicated|stated|noted)\s*$/, '')
+    .replace(EXCEPT_CLAUSE, '')
+    .replace(/^(?:(?:all\s+)?(?:figures|amounts)\s+(?:are\s+)?(?:stated\s+|expressed\s+|shown\s+)?)?(?:in\s+)?/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  for (const [re, cur, mult] of EU_UNITS) if (re.test(core)) return { mult, cur };
+  const m = core.match(/^millions\s+of\s+(.+)$/);
+  if (m) for (const [cur, re] of EU_CUR_WORDS) if (re.test(m[1]!.trim())) return { mult: 1e6, cur };
+  return null;
+}
+
+/** A header cell that is wholly a unit once its years are dropped ("2026 $m" → "$m"). */
+const euCellUnit = (text: string): EuUnit | null => (text ? euUnit(text.replace(/\b(?:19|20)\d{2}\b/g, ' ')) : null);
+
+/** A header cell that is only a currency mark ("$", "£", "€", "p", "pence", "(DKK)"). */
+const EU_CURRENCY_MARK = /^\(?\s*(£|€|\$|us\$|p|pence|eur|euros?|usd|gbp|dkk|sek|chf|nok)\s*\)?$/i;
+
+/** Currencies a text names (EPS): pence, pounds, euros, dollars, … Nominal values ("per $0.25 / 25p ordinary share") are dropped. */
+function euCurrencies(text: string): Set<EuCurrency> {
+  const t = text
+    .replace(/per\s+(?:us)?[$£€]\s?\d+(?:\.\d+)?\s*(?:ordinary\s+)?share/gi, 'per share')
+    .replace(/per\s+\d+(?:\.\d+)?\s*p(?:ence)?\s+(?:ordinary\s+)?share/gi, 'per share');
+  const out = new Set<EuCurrency>();
+  if (/\bpence\b|\(\s*p\s*\)|\sp\s*$|^\s*p\s*$/i.test(t)) out.add('GBp');
+  if (/£|\bgbp\b|\bpounds?\b|\bsterling\b/i.test(t)) out.add('GBP');
+  if (/€|\beur\b|\beuros?\b/i.test(t)) out.add('EUR');
+  if (/\$|\busd\b|\bu\.\s?s\.\s?dollars?\b|\bus dollars?\b/i.test(t)) out.add('USD');
+  if (/\bchf\b|swiss francs?/i.test(t)) out.add('CHF');
+  if (/\bdkk\b|danish kron/i.test(t)) out.add('DKK');
+  if (/\bsek\b|\bmsek\b|swedish kron/i.test(t)) out.add('SEK');
+  if (/\bnok\b|\bmnok\b|norwegian kron/i.test(t)) out.add('NOK');
+  return out;
+}
+
+/** The one currency a text names: undefined for none, null for several. */
+function euOneCurrency(text: string): EuCurrency | null | undefined {
+  const s = euCurrencies(text);
+  return s.size === 0 ? undefined : s.size === 1 ? [...s][0]! : null;
+}
+
+/** Pounds and pence are one currency for the convenience-column check. */
+const euFamily = (c: EuCurrency): EuCurrency => (c === 'GBp' ? 'GBP' : c);
+
+/** Figures signed "£1.23", "€12.95", "US$1.45", "12.3p": the sign is taken off and remembered by the cell start. */
+function euCells(cells: Cell[]): { cells: Cell[]; signs: Map<number, EuCurrency> } {
+  const signs = new Map<number, EuCurrency>();
+  const out = cells.map((c) => {
+    let m = c.text.match(/^(£|€|us\$)\s*(\(?[-–−]?\d[\d,]*(?:\.\d+)?\)?)$/i);
+    if (m) { signs.set(c.start, m[1] === '£' ? 'GBP' : m[1] === '€' ? 'EUR' : 'USD'); return { ...c, text: m[2]! }; }
+    m = c.text.match(/^(\(?[-–−]?\d[\d,]*(?:\.\d+)?\)?)\s*p$/i);
+    if (m) { signs.set(c.start, 'GBp'); return { ...c, text: m[1]! }; }
+    return c;
+  });
+  return { cells: out, signs };
+}
+
+/** A row label for matching: footnotes and every parenthetical ("(pence)", "('revenue')", "($m)") dropped. */
+function euLabel(raw: string): string {
+  return normLabel(raw)
+    .replace(/\([^()]*\)/g, ' ')
+    .replace(/['"]/g, ' ')
+    .replace(/^[-–—•·\s]+/, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s:,.]+$/, '')
+    .trim();
+}
+
+const EU_REVENUE = /^(?:group\s+)?(?:total\s+)?(?:group\s+)?(?:revenues?|turnover)$|^(?:total\s+)?(?:net\s+)?sales$/;
+const EU_TOTAL_INCOME = /^total income$/;
+const EU_NOI = /^net operating income$/;
+/** HSBC's "Net operating income before change in expected credit losses and other credit impairment charges". */
+const EU_NOI_BEFORE = /^net operating income before\b.*\b(?:credit losses|impairments?|provisions?)\b/;
+const EU_EPS_WORDS = /\beps\b|earnings per\b|per (?:ordinary |common )?share\b/;
+/** EPS rows never read: underlying, adjusted, core, headline, normalised, pre-exceptional, per ADS / ADR, … */
+const EU_EPS_EXCLUDE = /underlying|adjusted|\bcore\b|headline|normali[sz]ed|pre[\s-]?exceptional|before exceptional|excluding|\bexcl\b|notable|non[\s-]?(?:gaap|ifrs)|constant currency|\bads\b|\badrs?\b|american depositary|dividend|weighted|number of|book value|cash|forecast|guidance|outlook|pro forma|discontinued|consensus|target/;
+const EU_CONTINUING = /continuing operations/;
+/** Captions, sections and column heads of figures that are not the reported ones. */
+const EU_ADJUSTED = /constant currency|\bcer\b|at constant|organic|pro forma|non[\s-]?(?:gaap|ifrs)|alternative performance|\bunderlying\b|\badjusted\b|\bcore\b|reconcil|excluding|notable items|like[\s-]for[\s-]like/i;
+/** A caption naming another breakdown than the group's: a segment, division, region or business. */
+const EU_SEGMENT = /segment|division|region|business|by\s+(?:product|geograph|market|country)/i;
+
+type EuRowField = EuField | 'noi' | 'noiBefore';
+
+/**
+ * Revenue: "(Group) (total) revenue(s)", "turnover", "(total) (net) sales", "total income" (banks only), "net operating
+ * income" (not when a "net operating income before … impairment" row stands in the same table: that one is read).
+ * Never net interest income, operating / gross profit, profit before tax, adjusted / underlying / constant-currency /
+ * organic revenue (the anchored list). EPS: "basic" / "diluted" with an EPS word; never the excluded kinds.
+ */
+function euField(label: string, bank: boolean): { field: EuRowField; continuing: boolean } | null {
+  // Revenue labels are matched without their parentheticals; EPS labels with them ("EPS (basic; in euros)").
+  const bare = euLabel(label);
+  if (EU_REVENUE.test(bare)) return { field: 'revenue', continuing: false };
+  if (EU_TOTAL_INCOME.test(bare)) return bank ? { field: 'revenue', continuing: false } : null;
+  if (EU_NOI_BEFORE.test(bare)) return { field: 'noiBefore', continuing: false };
+  if (EU_NOI.test(bare)) return { field: 'noi', continuing: false };
+  label = normLabel(label);
+  if (!EU_EPS_WORDS.test(label) || EU_EPS_EXCLUDE.test(label)) return null;
+  const continuing = EU_CONTINUING.test(label);
+  const dil = /dilut/.test(label);
+  const basic = /\bbasic\b/.test(label);
+  if (dil && basic) return { field: 'both', continuing };
+  if (dil) return { field: 'diluted', continuing };
+  if (basic) return { field: 'basic', continuing };
+  return null;
+}
+
+const EU_H2 = /\bh2\b|\b2h\b|\bsecond[\s-]half\b/i;
+const EU_HALF = /\b(?:six|6)[\s-]*months?\b|\bh1\b|\b1h\b|\bhalf[\s-]*year\b|\bfirst[\s-]half\b/i;
+const EU_NINE = /\b(?:nine|9)[\s-]*months?\b|\b9m\b/i;
+const EU_QUARTER = /\b(?:three|3)[\s-]*months?\b|\bquarter\b|\bq[1-4](?![a-z])|\b[1-4]q(?![a-z])/i;
+const EU_YEAR = /\bfy(?![a-z])|\bfull[\s-]*year\b|\byears?\s+(?:ended|to)\b|\b(?:twelve|12)[\s-]*months?\b/i;
+
+function euKinds(text: string): Set<EuSpan | 'h2' | 'ambiguous'> {
+  const { ranges, rest } = jpRanges(text);
+  const out = new Set<EuSpan | 'h2' | 'ambiguous'>();
+  for (const r of ranges) out.add(r.span ?? 'ambiguous');
+  if (EU_H2.test(rest)) out.add('h2');
+  const r2 = rest.replace(new RegExp(EU_H2.source, 'gi'), ' ');
+  if (EU_HALF.test(r2)) out.add('half');
+  if (EU_NINE.test(r2)) out.add('nine');
+  if (EU_QUARTER.test(r2)) out.add('quarter');
+  if (EU_YEAR.test(r2)) out.add('year');
+  return out;
+}
+
+/** Period tokens with a year: "Q3 2026", "Q3 26", "3Q26", "H1 2026", "Half year 2026", "9M 2026", "FY 2026", "Full year 2026". */
+function euTokens(text: string): Array<{ span: EuSpan; q?: number; year: number }> {
+  const out: Array<{ span: EuSpan; q?: number; year: number }> = [];
+  const Y = String.raw`\s*'?\s*(\d{4}|\d{2})\b`;
+  for (const m of text.matchAll(new RegExp(String.raw`\bq([1-4])${Y}`, 'gi'))) out.push({ span: 'quarter', q: Number(m[1]), year: fullYear(m[2]!) });
+  for (const m of text.matchAll(new RegExp(String.raw`\b([1-4])q${Y}`, 'gi'))) out.push({ span: 'quarter', q: Number(m[1]), year: fullYear(m[2]!) });
+  for (const m of text.matchAll(new RegExp(String.raw`\b(?:h1|1h|half[\s-]*year|first[\s-]half)${Y}`, 'gi'))) out.push({ span: 'half', year: fullYear(m[1]!) });
+  for (const m of text.matchAll(new RegExp(String.raw`\b(?:9m|nine[\s-]*months)${Y}`, 'gi'))) out.push({ span: 'nine', year: fullYear(m[1]!) });
+  for (const m of text.matchAll(new RegExp(String.raw`\b(?:fy|full[\s-]*year)${Y}`, 'gi'))) out.push({ span: 'year', year: fullYear(m[1]!) });
+  return out;
+}
+
+/** "31 March" / "March 31" with no year after it, as [month, day]. */
+function euDayMonth(text: string): [number, number] | null {
+  const a = text.match(new RegExp(String.raw`\b(\d{1,2})\s+${MONTH_RE}\b(?!\.?\s*,?\s*\d{4})`, 'i'));
+  if (a) return [month(a[2]!), Number(a[1])];
+  const b = text.match(new RegExp(String.raw`\b${MONTH_RE}\.?\s+(\d{1,2})\b(?!\s*,?\s*\d{4})`, 'i'));
+  return b ? [month(b[1]!), Number(b[2])] : null;
+}
+
+/**
+ * Does a column (its own head `own`; the label column's head and the header block as fallbacks for the span) name
+ * `span` ending `pe`? Exactly one span may be named (an H2 / second-half head is never read). A dated column must be
+ * within 15 days of `pe` ("31 March" in the label column takes the year of the column's own head). Undated, the
+ * column's own tokens must carry a year: "Q3 2026" is read only for a calendar-aligned fiscal year (the period end
+ * falls in the year the fiscal year ends) and the release's own quarter. Comparative years never match.
+ */
+function euColumn(own: string, labelCol: string, block: string, pe: Date, span: EuSpan, fiscal: JpFiscal): boolean {
+  if (!own) return false;
+  if (NOT_PERIOD.test(own) || ADJUSTMENT_COL.test(own) || EU_ADJUSTED.test(own) || JP_FORECAST.test(own)) return false;
+  let kinds = euKinds(own);
+  if (!kinds.size) kinds = euKinds(labelCol);
+  if (!kinds.size) kinds = euKinds(block);
+  if (kinds.size !== 1 || !kinds.has(span)) return false;
+  const near = ([y, m, d]: [number, number, number]) => m > 0 && daysApart(y, m, d, pe) <= 15;
+  let dates = jpDates(own);
+  if (!dates.length) dates = jpDates(labelCol);
+  if (dates.length) return dates.every(near);
+  const years = new Set([...own.matchAll(/\b(19|20)(\d{2})\b/g)].map((m) => Number(m[1]! + m[2]!)));
+  const dm = euDayMonth(own) ?? euDayMonth(labelCol);
+  if (dm && years.size === 1) return near([[...years][0]!, dm[0], dm[1]]);
+  const tokens = euTokens(own);
+  const peYear = pe.getUTCFullYear();
+  if (!tokens.length || fiscal.year !== peYear) return false;
+  return tokens.every((t) => t.span === span && t.year === peYear && (t.q === undefined || t.q === fiscal.quarter));
+}
+
+interface EuCandidate { value: number; cur: EuCurrency; continuing: boolean }
+
+interface EuRow { field: EuRowField; continuing: boolean; nums: Num[]; signs: Map<number, EuCurrency>; headers: Cell[][]; rawLabel: string }
+
+function readEu(html: string, opts: ReaderOptions): ReaderResult {
+  const notes: string[] = [];
+  const pe = new Date(`${opts.periodEnd}T00:00:00Z`);
+  if (Number.isNaN(pe.getTime())) {
+    return { epsShare: null, epsShareStated: false, epsAds: null, epsAdjusted: null, epsGaap: null, epsBasic: null, revenue: null, unit: null, revenueCurrency: null, epsCurrency: null, notes: ['bad periodEnd'] };
+  }
+  const span = opts.span;
+  const fiscal: JpFiscal = { quarter: opts.fiscalQuarter, year: opts.fiscalYear };
+  const bank = opts.issuer !== undefined && EU_BANKS.has(opts.issuer.ticker);
+  const found: Record<'revenue' | 'basic' | 'diluted', EuCandidate[]> = { revenue: [], basic: [], diluted: [] };
+
+  const tables = parseTables(html, { rowspan: true });
+  // A table's caption: the last block of text right above it (empty when another table stands right above). Split
+  // with the same pattern as `parseTables`, so the indexes line up.
+  const segs = html.split(/<table\b[\s\S]*?<\/table>/gi);
+  const captions = tables.map((_, i) => segs[i]!.split(JP_BLOCK_END).map((b) => decode(b)).filter(Boolean).pop() ?? '');
+  const epsRow = (t: Table) => t.rows.some((r) => r.some((c) => c.text && EU_EPS_WORDS.test(normLabel(c.text))));
+  const docHasEps = tables.some(epsRow);
+  const unitRow = (r: Cell[]) => r.every((c) => !c.text || euCellUnit(c.text) !== null || EU_CURRENCY_MARK.test(c.text) || c.text === '%');
+
+  for (const [ti, table] of tables.entries()) {
+    const caption = captions[ti]!;
+    if (EU_ADJUSTED.test(caption) || JP_FORECAST.test(caption)) continue;
+    // Revenue only from a table with a per-share line (the income statement or the results summary); a release with
+    // no per-share line anywhere (a trading update) may give it from a table that is not a segment breakdown.
+    const revenueOk = epsRow(table) || (!docHasEps && !EU_SEGMENT.test(caption));
+
+    let headers: Cell[][] = [];
+    let titles: Cell[][] = [];
+    let lastWasData = false;
+    let section = '';
+    let sectionRaw = '';
+    const nonData: Cell[][] = [];
+    const rowsOut: EuRow[] = [];
+
+    for (const rawCells of table.rows) {
+      const { cells, signs } = euCells(rawCells);
+      const li = cells.findIndex((c) => c.text);
+      const first = cells[li]!;
+      const hasLabel = /[a-z]/i.test(first.text) && !/^\(?\s*\d/.test(first.text);
+      const nums = rowNumbers(cells, hasLabel ? li + 1 : li);
+      const yearRow = nums.length > 0 && nums.every((n) => isYear(n) && !n.dollar && !n.pct);
+      const otherText = cells.slice(li + 1).some((c) => c.text);
+      if (nums.length && !yearRow) {
+        // A subtotal row without a label is data too: it does not start a new header block.
+        lastWasData = true;
+        titles = [];
+        if (!hasLabel) continue;
+        let rawLabel = first.text;
+        // "Basic" / "Diluted" under "Earnings per share (pence)" takes the parent's label and its currency.
+        if (/^(basic|diluted|basic and diluted)$/.test(euLabel(first.text)) && section) rawLabel = `${sectionRaw} ${first.text}`;
+        const f = euField(rawLabel, bank);
+        const vals = nums.filter((n) => !n.pct);
+        if (f && vals.length && !EU_ADJUSTED.test(section)) rowsOut.push({ ...f, nums: vals, signs, headers, rawLabel });
+        if (/:\s*$/.test(first.text)) { section = euLabel(first.text); sectionRaw = first.text; }
+        continue;
+      }
+      nonData.push(cells);
+      if (!otherText) {
+        // Label-only row: a section ("Earnings per share (pence)", "Alternative performance measures") or a title.
+        section = euLabel(first.text);
+        sectionRaw = first.text;
+        if (lastWasData) titles = [...titles, cells];
+        else headers = [...headers, cells];
+        continue;
+      }
+      // A "$ | $" / "£m | £m" row between data rows restates the columns' units: it does not start a new block.
+      if (lastWasData && unitRow(cells)) {
+        headers = [...headers.filter((r) => !unitRow(r)), cells];
+        continue;
+      }
+      if (lastWasData) headers = titles;
+      headers = [...headers, cells];
+      lastWasData = false;
+      section = '';
+      sectionRaw = '';
+    }
+    if (!rowsOut.length) continue;
+
+    const figureCols = new Set(rowsOut.flatMap((r) => r.nums.map((n) => n.start)));
+    const firstFigure = Math.min(...figureCols);
+    // The table's own unit: whole-unit cells left of the figures (the label column's head) or alone on their row, and
+    // the caption when it is wholly a unit statement or an income-statement title with one in parentheses.
+    const tableUnits = new Map<string, EuUnit>();
+    const addUnit = (u: EuUnit | null) => { if (u) tableUnits.set(`${u.cur}:${u.mult}`, u); };
+    for (const r of nonData) {
+      const texts = r.filter((c) => c.text);
+      for (const c of texts) if (c.start + c.span <= firstFigure || texts.length === 1) addUnit(euUnit(c.text));
+    }
+    addUnit(euUnit(caption));
+    if (statementTitle(caption) != null) for (const m of caption.matchAll(new RegExp(PAREN_GROUP, 'g'))) addUnit(euUnit(m[0]));
+    const tableUnit = tableUnits.size === 1 ? [...tableUnits.values()][0]! : null;
+    const tableCur = new Set([...tableUnits.values()].map((u) => euFamily(u.cur)));
+
+    const hasNoiBefore = rowsOut.some((r) => r.field === 'noiBefore');
+    for (const row of rowsOut) {
+      if (row.field === 'noi' && hasNoiBefore) continue; // net operating income after impairments
+      const field: EuField = row.field === 'noi' || row.field === 'noiBefore' ? 'revenue' : row.field;
+      if (field === 'revenue' && !revenueOk) continue;
+      const blockText = row.headers.flat().map((c) => c.text).join(' ');
+      const labelCol = row.headers.map((r) => r.filter((c) => c.text && c.start === 0 && c.span === 1).map((c) => c.text).join(' ')).join(' ').trim();
+      const rowUnits = [...row.rawLabel.matchAll(new RegExp(PAREN_GROUP, 'g'))].map((m) => euUnit(m[0])).filter((u): u is EuUnit => u !== null);
+      const labelCur = euOneCurrency(row.rawLabel);
+      for (const n of row.nums) {
+        const overCells = row.headers.flatMap((r) => r.filter((c) => c.text && c.start < n.end && c.start + c.span > n.start && !(c.start === 0 && c.span === 1)));
+        const own = overCells.map((c) => c.text).join(' ').trim();
+        if (!euColumn(own, labelCol, blockText, pe, span, fiscal)) continue;
+        // The column's currency: its unit cells ("€m", "US$m") and currency marks ("$", "pence").
+        const colUnits = overCells.map((c) => euCellUnit(c.text)).filter((u): u is EuUnit => u !== null);
+        const marks = overCells.filter((c) => EU_CURRENCY_MARK.test(c.text)).map((c) => euOneCurrency(c.text));
+        const markCurs = marks.filter((c): c is EuCurrency => !!c);
+        const colCurs = new Set([...colUnits.map((u) => euFamily(u.cur)), ...markCurs.map(euFamily)]);
+        if (marks.includes(null) || colCurs.size > 1) continue;
+        // A column in another currency than the table's (a convenience translation) is skipped.
+        if (colCurs.size === 1 && tableCur.size === 1 && [...colCurs][0] !== [...tableCur][0]) continue;
+        const sign = row.signs.get(n.start) ?? (n.dollar ? 'USD' : undefined);
+
+        if (field === 'revenue') {
+          if (n.value <= 0 || n.decimals > 2) continue;
+          const units = rowUnits.length ? rowUnits : colUnits.length ? colUnits : tableUnit ? [tableUnit] : [];
+          const distinct = new Set(units.map((u) => `${u.cur}:${u.mult}`));
+          if (distinct.size !== 1) { if (!distinct.size) notes.push('revenue: no unit stated for table'); continue; }
+          const unit = units[0]!;
+          if (sign && euFamily(sign) !== unit.cur) continue;
+          found.revenue.push({ value: Math.round(n.value * unit.mult), cur: unit.cur, continuing: row.continuing });
+        } else {
+          // EPS is never scaled. Its currency: the figure's sign, the row label and the column's currency mark — all
+          // that state one must agree ("(pence)" under a "£" mark disagrees); none stated → not read.
+          if (n.decimals < 1 || n.decimals > 3 || Math.abs(n.value) >= 100_000) continue;
+          if (labelCur === null) continue;
+          const stated = new Set<EuCurrency>([...(sign ? [sign] : []), ...(labelCur ? [labelCur] : []), ...markCurs]);
+          if (stated.size !== 1) continue;
+          const cur = [...stated][0]!;
+          if (field === 'basic' || field === 'both') found.basic.push({ value: n.value, cur, continuing: row.continuing });
+          if (field === 'diluted' || field === 'both') found.diluted.push({ value: n.value, cur, continuing: row.continuing });
+        }
+      }
+    }
+  }
+
+  const settle = (field: 'revenue' | 'basic' | 'diluted'): EuCandidate | null => {
+    let c = found[field];
+    // A continuing-operations row is read only when no total row is.
+    if (c.some((x) => !x.continuing)) c = c.filter((x) => !x.continuing);
+    if (!c.length) return null;
+    const same = (a: EuCandidate, b: EuCandidate) =>
+      a.cur === b.cur && (field === 'revenue' ? Math.abs(a.value - b.value) <= 0.001 * Math.abs(b.value) : Math.abs(a.value - b.value) < 1e-6);
+    const distinct = c.filter((x, i) => c.findIndex((y) => same(x, y)) === i);
+    if (distinct.length > 1) {
+      notes.push(`${field}: candidates disagree (${distinct.map((d) => `${d.value} ${d.cur}`).join(', ')})`);
+      return null;
+    }
+    return c[0]!;
+  };
+  const rev = settle('revenue');
+  let basic = settle('basic');
+  let diluted = settle('diluted');
+  if (basic && diluted && basic.cur !== diluted.cur) {
+    notes.push(`eps: basic in ${basic.cur}, diluted in ${diluted.cur}`);
+    basic = diluted = null;
+  }
+  return {
+    epsShare: diluted?.value ?? null,
+    epsShareStated: found.diluted.length > 0,
+    epsAds: null,
+    epsAdjusted: null,
+    epsGaap: diluted?.value ?? null,
+    epsBasic: basic?.value ?? null,
+    revenue: rev?.value ?? null,
+    unit: null,
+    revenueCurrency: rev?.cur ?? null,
+    epsCurrency: basic?.cur ?? diluted?.cur ?? null,
     notes,
   };
 }
