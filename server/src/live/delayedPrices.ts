@@ -26,9 +26,9 @@ export interface DelayedPricesDeps {
   quotes?: (yahooSymbols: string[]) => Promise<Map<string, Quote>>;
 }
 
-/** What differs between the markets polled this way (HK, Japan). */
+/** What differs between the markets polled this way (HK, Japan, UK, Europe). */
 export interface DelayedMarket {
-  market: 'HK' | 'JP';
+  market: 'HK' | 'JP' | 'UK' | 'EU';
   zone: string;
   isTradingDay(d: string): boolean;
   /** Session window, minutes from local midnight, inclusive. */

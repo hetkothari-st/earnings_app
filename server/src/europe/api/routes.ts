@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { isAdmin } from '../../auth/store.js';
 import { config } from '../../config.js';
 import type { IndexQuote } from '../../sources/yahoo.js';
-import { getEuropeReport, lastEsefAt, lastEuropeSecSeenAt, lastSignalAt, listEuropeRange } from '../db/europeRepo.js';
+import { getEuropeReport, lastEsefAt, lastEuropeSecSeenAt, lastEuropeUniverseRun, lastSignalAt, listEuropeRange } from '../db/europeRepo.js';
 import { exchangesOf, type EuropeMarket, type ExchangeId } from '../exchanges.js';
 import { EUROPE_INDICES } from '../sources/yahooEurope.js';
 import { toEuropeDto } from './dto.js';
@@ -85,14 +85,16 @@ export function registerEuropeRoutes(
 }
 
 /**
- * What only the running server knows for the admin page: the Tradegate poller and, once a universe build has run in
- * this process, its left-out count and time per market (not stored; null until then).
+ * What only the running server knows for the admin page: the Tradegate poller. `universe` may override the stored
+ * last complete build per market (`europe_universe_runs`, written when a complete build is synced); without either,
+ * the left-out count and time are null.
  */
 export type EuropeAdminSource = () => Pick<EuropeAdminDto, 'tradegate'> & {
   universe?: Partial<Record<EuropeMarket, { leftOut: number; at: string }>>;
 };
 
-function marketAdmin(db: DatabaseSync, market: EuropeMarket, universe: { leftOut: number; at: string } | undefined): EuropeMarketAdmin {
+function marketAdmin(db: DatabaseSync, market: EuropeMarket, live: { leftOut: number; at: string } | undefined): EuropeMarketAdmin {
+  const universe = live ?? lastEuropeUniverseRun(db, market) ?? undefined;
   const c = db.prepare(`SELECT COALESCE(SUM(active = 1 AND level = 'full'), 0) AS full, COALESCE(SUM(active = 1 AND level != 'full'), 0) AS basic,
       COALESCE(SUM(active = 0), 0) AS inactive FROM europe_stocks WHERE market = ?`).get(market) as { full: number; basic: number; inactive: number };
   return {

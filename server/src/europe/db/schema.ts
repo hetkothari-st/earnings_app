@@ -168,6 +168,13 @@ CREATE TABLE IF NOT EXISTS europe_bank_holidays (
   title TEXT,
   fetched_at TEXT NOT NULL
 );
+
+-- The last complete universe build per market (synced), for the admin page after a restart. No row: never built.
+CREATE TABLE IF NOT EXISTS europe_universe_runs (
+  market TEXT PRIMARY KEY CHECK (market IN ('UK','EU')),
+  left_out INTEGER NOT NULL,
+  built_at TEXT NOT NULL
+);
 `;
 
 /** Columns that databases created before they existed still need. */

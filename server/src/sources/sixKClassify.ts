@@ -364,6 +364,11 @@ const HALF_BEFORE = /half[- ]$/i;
  */
 function europeMentions(text: string, fyEndMonth: number): PeriodMention[] {
   const out: PeriodMention[] = [];
+  // AB InBev "three-month period ended 31 March 2025", STMicroelectronics "Six-month period ended June 27, 2026".
+  for (const m of text.matchAll(/\b(three|six|nine|twelve|3|6|9|12)[- ]month\s+periods?\s+ended\s+/gi)) {
+    const d = dateAt(text, m.index! + m[0].length);
+    if (d) out.push({ end: d.date, span: EU_MONTH_SPAN[m[1]!.toLowerCase()]!, index: m.index! });
+  }
   for (const m of text.matchAll(/\b(three|six|nine|twelve)\s+months\s+to\s+/gi)) {
     const d = dateAt(text, m.index! + m[0].length);
     if (d) out.push({ end: d.date, span: JP_MONTH_WORD_SPAN[m[1]!.toLowerCase()]!, index: m.index! });
@@ -400,6 +405,7 @@ const MONTH_ANY_RE = '(January|February|March|April|May|June|July|August|Septemb
 const MONTH_RANGE = new RegExp(`\\b${MONTH_ANY_RE}\\.?\\s*[-–~～]\\s*${MONTH_ANY_RE}\\.?,?\\s*(\\d{4})\\b`, 'gi');
 const RANGE_SPAN: Record<number, SixKSpan> = { 3: 'quarter', 6: 'half', 9: 'nine', 12: 'year' };
 const JP_MONTH_WORD_SPAN: Record<string, SixKSpan> = { three: 'quarter', six: 'half', nine: 'nine', twelve: 'year' };
+const EU_MONTH_SPAN: Record<string, SixKSpan> = { ...JP_MONTH_WORD_SPAN, 3: 'quarter', 6: 'half', 9: 'nine', 12: 'year' };
 
 /** `'jp'` month-range headers: the range's end month, span by its length (3, 6, 9 or 12 months; any other is skipped). */
 function monthRangeMentions(text: string): PeriodMention[] {
@@ -664,9 +670,14 @@ export function classifySixK(
       if (p) return { kind: 'results', periodEnd: p.end, span: p.span };
     }
   } else if (RESULTS_PHRASE[profile].test(text.slice(0, 5000))) {
-    // A results release cannot report a period ending after it was filed (`filedOn`: the acceptance date).
+    // A results release cannot report a period ending after it was filed (`filedOn`: the acceptance date). 'uk' / 'eu':
+    // nor a full year ending more than 100 days before it (the 'jp' window) — a passing mention of the previous annual
+    // report ("our annual report for the year ended 31 December 2025" in an interim report) never dates a release.
+    const recentFrom = isEurope(profile) && opts.filedOn
+      ? DateTime.fromISO(opts.filedOn, { zone: 'utc' }).minus({ days: JP_RECENT_DAYS }).toISODate()!
+      : null;
     const periods = [...periodMentions(text, profile, opts.fyEndMonth), ...tableHeaderMentions(html, profile, opts.fyEndMonth)]
-      .filter((p) => !opts.filedOn || p.end <= opts.filedOn);
+      .filter((p) => (!opts.filedOn || p.end <= opts.filedOn) && (!recentFrom || p.span !== 'year' || p.end >= recentFrom));
     if (periods.length > 0 && hasResultsTable(html, profile)) {
       // The latest period end is this release's; at that end the most specific span wins. A quarter label (only
       // `'uk'` / `'eu'` have them) counts only when no span is stated at that end.
