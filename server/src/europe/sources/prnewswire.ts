@@ -72,13 +72,21 @@ export function prnReleaseKey(link: string): string {
   return m ? `prn:${m[1]}` : link;
 }
 
+const MONTHS = 'january|february|march|april|may|june|july|august|september|october|november|december';
 const RESULTS = [
   /\b(half[- ]year|interim|full[- ]year|preliminary|annual|Q[1-4]|first|second|third|fourth quarter|nine[- ]month|9M|H1|H2|FY) .*results/i,
   /results for the/i,
   /trading (update|statement)/i,
   /interim management statement/i,
+  // Nordic/EU style (controller ruling): the release itself is called a report. A bare "annual report" is the
+  // later document publication and never counts.
+  /\b(interim|quarterly|half[- ]year|half[- ]yearly|six[- ]month|year[- ]end|full[- ]year) report\b/i,
+  /\bQ[1-4](?: \d{4})? report\b/i,
+  // "SKF Q3 2026: Improved margin ...": a period-and-year headline prefix.
+  /^[^:]{1,60}\bQ[1-4] \d{4}:/i,
+  new RegExp(`\\bfinancial report (?:${MONTHS})\\s*[-–—]+\\s*(?:${MONTHS})\\b`, 'i'),
 ];
-const NEVER = /notice of|date of|to announce|will (announce|report|publish)|conference call|webcast/i;
+const NEVER = /notice of|date of|to announce|will (announce|report|publish)|conference call|webcast|invitation/i;
 
 /** A title that announces published results (not a date notice, an invitation or a call). */
 export function isResultsTitle(title: string): boolean {

@@ -72,4 +72,26 @@ describe('parsePrnRss', () => {
       'IFS industrial AI bookings triple as ARR passes €1.3 billion',
     ]) expect(isResultsTitle(t), t).toBe(false);
   });
+
+  it('EU interim and quarterly report titles count; annual report, AGM and invitations do not', () => {
+    // Every Nordic/EU results release in the live EU earnings fixture.
+    const eu = parsePrnRss(fx('prn_eu.rss'));
+    for (const who of ['Swedish Orphan Biovitrum AB', 'ASSA ABLOY', 'Duni Group', 'Securitas', 'Electrolux Group', 'Essity', 'SKF', 'Autoliv']) {
+      const item = eu.find((i) => i.contributor === who)!;
+      expect(isResultsTitle(item.title), item.title).toBe(true);
+    }
+    expect(eu.find((i) => i.contributor === 'Autoliv')!.title).toBe('Financial Report July - September 2026');
+    for (const t of [
+      'Acme Half-Year Report 2026', 'Acme half year report', 'Acme Half-yearly Report January-June', 'Acme Six-Month Report 2026',
+      'Acme Year-End Report 2025', 'Acme Full-Year Report 2025', 'Acme Q2 report', 'Acme Financial Report January – March 2026',
+    ]) expect(isResultsTitle(t), t).toBe(true);
+    for (const t of [
+      'Annual Report 2025 published',
+      'Acme publishes its Annual Report 2025',
+      'Notice of Annual General Meeting',
+      'Acme Annual General Meeting 2026',
+      'Invitation to presentation of interim report',
+      'Invitation to presentation of Acme Q3 2026 results',
+    ]) expect(isResultsTitle(t), t).toBe(false);
+  });
 });
