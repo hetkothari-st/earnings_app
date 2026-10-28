@@ -3,6 +3,7 @@ import type { Http } from '../sources/http.js';
 import { equityTokens, fetchKiteInstruments } from '../india/sources/foList.js';
 import type { SymbolEntry } from '../api/types.js';
 import type { Db } from '../db/repo.js';
+import { EXCHANGES, type EuropeMarket, type ExchangeId } from '../europe/exchanges.js';
 import { HK_UNIVERSE } from '../hk/universe.js';
 import type { WatchMarket } from './store.js';
 
@@ -34,9 +35,11 @@ export function rankSymbols(entries: IndexEntry[], q: string, limit = 20): Symbo
 
 /** In-memory symbol lists per market. Loaded in the background, never inside a request. */
 export class SymbolIndex {
-  private lists: Record<WatchMarket, IndexEntry[]> = { US: [], IN: [], HK: [], JP: [] };
-  private sets: Record<WatchMarket, Set<string>> = { US: new Set(), IN: new Set(), HK: new Set(), JP: new Set() };
-  private names: Record<WatchMarket, Map<string, string>> = { US: new Map(), IN: new Map(), HK: new Map(), JP: new Map() };
+  private lists: Record<WatchMarket, IndexEntry[]> = { US: [], IN: [], HK: [], JP: [], UK: [], EU: [] };
+  private sets: Record<WatchMarket, Set<string>> = { US: new Set(), IN: new Set(), HK: new Set(), JP: new Set(), UK: new Set(), EU: new Set() };
+  private names: Record<WatchMarket, Map<string, string>> = {
+    US: new Map(), IN: new Map(), HK: new Map(), JP: new Map(), UK: new Map(), EU: new Map(),
+  };
   set(market: WatchMarket, entries: IndexEntry[]): void {
     this.lists[market] = entries.map((e) => ({ ...e, words: words(e.name) }));
     this.sets[market] = new Set(entries.map((e) => e.symbol));
@@ -94,6 +97,19 @@ export function jpEntries(db?: Db): IndexEntry[] {
 }
 
 /**
+ * UK or Europe: active europe_stocks of the market, by Yahoo symbol. The name is the served one (curated for full level,
+ * Yahoo's preferred for basic); `exchange` is the exchange's name, or the stored id for an id not in EXCHANGES (the
+ * stock stays searchable and watchable; only the label falls back).
+ */
+export function europeEntries(db: Db | undefined, market: EuropeMarket): IndexEntry[] {
+  if (!db) return [];
+  const rows = db.prepare(`SELECT symbol, exchange, CASE WHEN level = 'full' THEN name ELSE COALESCE(profile_name, name) END AS name,
+      market_cap AS cap FROM europe_stocks WHERE market = ? AND active = 1`)
+    .all(market) as { symbol: string; exchange: ExchangeId; name: string; cap: number | null }[];
+  return rows.map((r) => ({ symbol: r.symbol, name: r.name, exchange: EXCHANGES[r.exchange]?.name ?? r.exchange, weight: r.cap ?? undefined }));
+}
+
+/**
  * Loads the lists now and every 24 h. A failed load keeps the previous list; the timer does not keep the process alive.
  * Until a market is loaded its search is empty and PUT falls back to a format check.
  */
@@ -123,5 +139,7 @@ export function startSymbolRefresh(
   run('IN');
   run('HK');
   run('JP');
+  run('UK');
+  run('EU');
   return () => { stopped = true; for (const t of timers.values()) clearTimeout(t); };
 }
