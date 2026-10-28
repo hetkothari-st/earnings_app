@@ -33,15 +33,28 @@ export async function untarStream(
   source: AsyncIterable<Uint8Array>,
   want: (name: string) => boolean,
 ): Promise<Map<string, Uint8Array>> {
-  const r = new TarReader(want);
   const it = source[Symbol.asyncIterator]();
+  const state = { exhausted: false };
+  try {
+    return await readAll(it, new TarReader(want), state);
+  } finally {
+    // After a parse or zlib error the body is not read to the end: close it, so a fetch body is cancelled.
+    if (!state.exhausted) await it.return?.().catch(() => undefined);
+  }
+}
+
+async function readAll(
+  it: AsyncIterator<Uint8Array>,
+  r: TarReader,
+  state: { exhausted: boolean },
+): Promise<Map<string, Uint8Array>> {
   // Peek enough bytes to see the gzip magic.
   const head: Uint8Array[] = [];
   let headLen = 0;
   let done = false;
   while (headLen < 2) {
     const n = await it.next();
-    if (n.done) { done = true; break; }
+    if (n.done) { done = state.exhausted = true; break; }
     head.push(n.value);
     headLen += n.value.length;
   }
@@ -49,6 +62,7 @@ export async function untarStream(
     yield* head;
     if (done) return;
     for (let n = await it.next(); !n.done; n = await it.next()) yield n.value;
+    state.exhausted = true;
   }
   const first = concat(head);
   if (isGzip(first)) {

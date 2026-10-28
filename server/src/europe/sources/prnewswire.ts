@@ -74,19 +74,32 @@ export function prnReleaseKey(link: string): string {
 
 const MONTHS = 'january|february|march|april|may|june|july|august|september|october|november|december';
 const RESULTS = [
-  /\b(half[- ]year|interim|full[- ]year|preliminary|annual|Q[1-4]|first|second|third|fourth quarter|nine[- ]month|9M|H1|H2|FY) .*results/i,
-  /results for the/i,
+  // The brief's period words, with two controller rulings (fix round 1): "(first|second|third|fourth) quarter"
+  // (the brief's alternation let a bare "first" trigger), and "annual" only directly before "results".
+  /\b(half[- ]year|interim|full[- ]year|preliminary|Q[1-4]|(first|second|third|fourth) quarter|nine[- ]month|9M|H1|H2|FY) .*results/i,
+  /\b(annual|full[- ]year|year[- ]end) results\b/i,
+  // "Results for the Second Quarter", "Results for the 2st quarter": a period word must follow, so
+  // "positive results for the Phase 3 trial" does not count.
+  /\bresults for the (\d+(st|nd|rd|th) )?(first|second|third|fourth|quarter|half|year|period|nine|six|three|twelve|financial|fiscal|full)\b/i,
   /trading (update|statement)/i,
   /interim management statement/i,
   // Nordic/EU style (controller ruling): the release itself is called a report. A bare "annual report" is the
   // later document publication and never counts.
   /\b(interim|quarterly|half[- ]year|half[- ]yearly|six[- ]month|year[- ]end|full[- ]year) report\b/i,
   /\bQ[1-4](?: \d{4})? report\b/i,
-  // "SKF Q3 2026: Improved margin ...": a period-and-year headline prefix.
-  /^[^:]{1,60}\bQ[1-4] \d{4}:/i,
+  // "SKF Q3 2026: Improved margin ...": a period-and-year prefix right after the issuer name, read as one to four
+  // capitalised words, so "Norwegian traffic figures Q3 2026:" does not count. Case-sensitive on purpose.
+  /^(?:[\p{Lu}\p{N}][\p{L}\p{N}&.+'’-]*\s+){1,4}Q[1-4] \d{4}:/u,
   new RegExp(`\\bfinancial report (?:${MONTHS})\\s*[-–—]+\\s*(?:${MONTHS})\\b`, 'i'),
 ];
-const NEVER = /notice of|date of|to announce|will (announce|report|publish)|conference call|webcast|invitation/i;
+/** Date notices, invitations, presentations, reminders, calls and meetings: never the release itself. */
+const NEVER = new RegExp([
+  'notice of', '\\bdates? (for|of)\\b', 'to announce', 'will (announce|report|publish)',
+  '\\bto (publish|release|present|host|hold|announce)\\b', '\\b(to be|will be) (published|released|presented)\\b',
+  '\\bpresentation\\b', '\\breminder\\b', 'invitation',
+  'teleconference', 'telephone conference', 'conference call', 'webcast', 'audiocast',
+  'general meeting', '\\bAGM\\b', '\\bEGM\\b',
+].join('|'), 'i');
 
 /** A title that announces published results (not a date notice, an invitation or a call). */
 export function isResultsTitle(title: string): boolean {

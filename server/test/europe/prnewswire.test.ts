@@ -94,4 +94,46 @@ describe('parsePrnRss', () => {
       'Invitation to presentation of Acme Q3 2026 results',
     ]) expect(isResultsTitle(t), t).toBe(false);
   });
+
+  it('date notices, presentations, reminders, meetings and trial headlines are not results (fix round 1)', () => {
+    for (const t of [
+      'Sobi to publish Q3 2026 report on 29 October',
+      'Electrolux Group to publish interim report on 24 October',
+      'Acme Q3 2026 report to be published on 5 November',
+      'Acme: Presentation of Q3 2026 report',
+      'Welcome to Acme Q3 report presentation',
+      'Reminder: Acme interim report Q3 tomorrow',
+      'Acme Q3 2026: Date for publication of interim report',
+      'Acme to release Q3 results on 5 November',
+      'Acme to present Q3 2026 results on 5 November',
+      'Acme to host Q3 2026 results teleconference',
+      'Acme Q3 2026 results will be released on 5 November',
+      'Acme Q3 results audiocast',
+      'Dates for 2027 financial reports',
+      'Acme plc Annual General Meeting Results',
+      'AGM Results',
+      'Acme EGM results',
+      'Acme announces first patient dosed; topline results expected 2027',
+      'Acme announces positive results for the Phase 3 trial',
+      'Acme annual meeting: voting results',
+      // The Qn yyyy: prefix must follow the issuer name, not other words.
+      'Norwegian traffic figures Q3 2026: passenger numbers up',
+    ]) expect(isResultsTitle(t), t).toBe(false);
+    for (const t of [
+      'Acme annual results 2025', 'Acme Year-End Results 2025', 'Acme Results for the Nine Months to September',
+      'Acme Results for the Year Ended 31 March 2026', 'Ørsted Q3 2026: Strong quarter', 'Novo Nordisk Q3 2026: Sales up',
+    ]) expect(isResultsTitle(t), t).toBe(true);
+  });
+
+  it('the live UK and EU feeds keep exactly their results items', () => {
+    const yes = (f: string) => parsePrnRss(fx(f)).filter((i) => isResultsTitle(i.title)).map((i) => i.contributor);
+    expect(yes('prn_uk.rss')).toEqual([
+      'Pearson', 'Truist Financial Corporation', 'Bank of America Corporation', 'Gentoo Media Inc', 'KT&G Corporation',
+      'MIAX', 'Waters Corporation', 'Motiva S.A.', 'Markel Group', 'Landis+Gyr Group AG',
+    ]);
+    expect(yes('prn_eu.rss')).toEqual([
+      'Royal Caribbean Group', 'Hycroft Mining Holding Corporation', 'Swedish Orphan Biovitrum AB', 'ASSA ABLOY', 'Autoliv',
+      'Duni Group', 'Securitas', 'Electrolux Group', 'Essity', 'Pearson', 'SKF', 'Truist Financial Corporation', 'Ericsson',
+    ]);
+  });
 });

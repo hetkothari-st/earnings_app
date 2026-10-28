@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { isDilaResults, listDilaFiles, parseDilaArchive, parseDilaArchiveStream } from '../../src/europe/sources/dila.js';
 import type { DilaDoc } from '../../src/europe/sources/dila.js';
+import { SourceFormatError } from '../../src/sources/http.js';
+import { untarEntries } from '../../src/sources/tar.js';
 
 const fx = (n: string) => new Uint8Array(readFileSync(new URL(`../fixtures/europe/feeds/${n}`, import.meta.url)));
 
@@ -59,4 +61,67 @@ describe('DILA AMF flow', () => {
     const agm: DilaDoc = { ...nano, type: '002001', title: 'Avis de réunion — assemblée générale (résultats annuels)' };
     expect(isDilaResults(agm)).toBe(false);
   });
+
+  it('listing accepts absolute hrefs on the DILA host only', () => {
+    const html = [
+      '<a href="https://echanges.dila.gouv.fr/OPENDATA/AMF/amf-gz_27102026_0800.tar.gz">x</a>',
+      '<a href="./amf-gz_27102026_1000.tar.gz">x</a>',
+      '<a href="/OPENDATA/AMF/amf-gz_27102026_1800.tar.gz">x</a>',
+      '<a href="https://other.example/OPENDATA/AMF/amf-gz_27102026_1200.tar.gz">x</a>',
+    ].join('\n');
+    expect(listDilaFiles(html, '2026-10-27')).toEqual([
+      'amf-gz_27102026_0800.tar.gz', 'amf-gz_27102026_1000.tar.gz', 'amf-gz_27102026_1800.tar.gz',
+    ]);
+  });
+
+  it('a non-AMF record is skipped and counted; a batch with none valid throws', async () => {
+    const good = new TextDecoder().decode(untarEntries(fx('dila_sample.tar.gz'), (n) => n.endsWith('MDMKW111969_20260331.xml')).values().next().value);
+    const stats = { skipped: 0 };
+    const docs = parseDilaArchive(tarOf({ 'xml/MKW/2026/03/MDMKW111969_20260331.xml': good, 'xml/X/junk.xml': '<foo/>' }), stats);
+    expect(docs.map((d) => d.id)).toEqual(['MDMKW111969_20260331']);
+    expect(stats.skipped).toBe(1);
+    const sStats = { skipped: 0 };
+    await parseDilaArchiveStream(chunks(tarOf({ 'xml/a.xml': '<foo/>', 'xml/b.xml': good }), 300), sStats);
+    expect(sStats.skipped).toBe(1);
+    expect(() => parseDilaArchive(tarOf({ 'xml/X/junk.xml': '<foo/>' }))).toThrow(SourceFormatError);
+    expect(parseDilaArchive(tarOf({}))).toEqual([]);
+  });
+
+  it('a filing time without a zone offset is read as Europe/Paris', () => {
+    const good = new TextDecoder().decode(untarEntries(fx('dila_sample.tar.gz'), (n) => n.endsWith('MDMKW111969_20260331.xml')).values().next().value);
+    const summer = good.replace('INF_DAT_EMT="2026-03-31T22:15:00+02:00"', 'INF_DAT_EMT="2026-03-31T22:15:00"');
+    const winter = good.replace('INF_DAT_EMT="2026-03-31T22:15:00+02:00"', 'INF_DAT_EMT="2026-01-15T07:00:00"');
+    expect(summer).not.toBe(good);
+    expect(parseDilaArchive(tarOf({ 'xml/a.xml': summer }))[0]!.filedAt).toBe('2026-03-31T20:15:00.000Z');
+    expect(parseDilaArchive(tarOf({ 'xml/a.xml': winter }))[0]!.filedAt).toBe('2026-01-15T06:00:00.000Z');
+  });
 });
+
+/** A minimal ustar archive of text files, ending with the two zero blocks. */
+function tarOf(files: Record<string, string>): Uint8Array {
+  const enc = new TextEncoder();
+  const blocks: Uint8Array[] = [];
+  const put = (h: Uint8Array, off: number, s: string) => h.set(enc.encode(s), off);
+  for (const [name, text] of Object.entries(files)) {
+    const data = enc.encode(text);
+    const h = new Uint8Array(512);
+    put(h, 0, name);
+    put(h, 100, '0000644\0');
+    put(h, 108, '0000000\0');
+    put(h, 116, '0000000\0');
+    put(h, 124, data.length.toString(8).padStart(11, '0') + '\0');
+    put(h, 136, '00000000000\0');
+    put(h, 148, '        ');
+    put(h, 156, '0');
+    put(h, 257, 'ustar\0');
+    put(h, 263, '00');
+    const sum = h.reduce((a, b) => a + b, 0);
+    put(h, 148, sum.toString(8).padStart(6, '0') + '\0 ');
+    blocks.push(h, data, new Uint8Array((512 - (data.length % 512)) % 512));
+  }
+  blocks.push(new Uint8Array(1024));
+  const out = new Uint8Array(blocks.reduce((s, b) => s + b.length, 0));
+  let o = 0;
+  for (const b of blocks) { out.set(b, o); o += b.length; }
+  return out;
+}

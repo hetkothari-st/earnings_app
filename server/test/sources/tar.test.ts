@@ -56,4 +56,32 @@ describe('untarEntries', () => {
     // Garbage is not a tar.
     expect(() => untarEntries(new TextEncoder().encode('<html>not found</html>'.padEnd(1024, ' ')), isXml)).toThrow(SourceFormatError);
   });
+
+  it('a parse or zlib error closes the source (a fetch body is cancelled, not left open)', async () => {
+    /** An endless body that records whether it was closed, as a fetch ReadableStream would be cancelled. */
+    const body = (first: Uint8Array, filler: Uint8Array) => {
+      const s = { pulled: 0, returned: false };
+      const iter: AsyncIterableIterator<Uint8Array> = {
+        [Symbol.asyncIterator]() { return iter; },
+        async next() {
+          if (s.returned) return { done: true, value: undefined };
+          return { done: false, value: s.pulled++ === 0 ? first : filler };
+        },
+        async return() { s.returned = true; return { done: true, value: undefined }; },
+      };
+      return { s, iter };
+    };
+    // Plain tar path: the first header fails its checksum.
+    const html = body(new TextEncoder().encode('<html>not found</html>'.padEnd(1024, ' ')), new Uint8Array(4096));
+    await expect(untarStream(html.iter, isXml)).rejects.toThrow(SourceFormatError);
+    expect(html.s.returned).toBe(true);
+    // Gzip path: a valid gzip header followed by bytes that do not inflate.
+    const gz = fx('dila_sample.tar.gz');
+    const bad = new Uint8Array(gz.subarray(0, 2000));
+    bad.fill(0xff, 20);
+    const zl = body(bad, new Uint8Array(4096).fill(0xff));
+    await expect(untarStream(zl.iter, isXml)).rejects.toThrow(SourceFormatError);
+    expect(zl.s.returned).toBe(true);
+    expect(zl.s.pulled).toBeLessThan(1000);
+  });
 });
