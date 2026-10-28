@@ -1,0 +1,544 @@
+{
+ "documentInfo": {
+  "documentType": "https://xbrl.org/2021/xbrl-json",
+  "features": {
+   "xbrl:canonicalValues": true
+  },
+  "namespaces": {
+   "haysplc": "http://haysplc.com/xbrl/2025",
+   "ifrs-full": "https://xbrl.ifrs.org/taxonomy/2024-03-27/ifrs-full",
+   "iso4217": "http://www.xbrl.org/2003/iso4217",
+   "scheme": "http://standards.iso.org/iso/17442",
+   "xbrl": "https://xbrl.org/2021",
+   "xbrli": "http://www.xbrl.org/2003/instance"
+  },
+  "taxonomy": [
+   "http://haysplc.com/xbrl/2025/213800QC8AWD4BO8TH08-2026-06-30.xsd"
+  ]
+ },
+ "facts": {
+  "fact-22": {
+   "value": "6421200000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:Revenue",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-23": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:Revenue",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-24": {
+   "value": "6421200000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:Revenue",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-25": {
+   "value": "6607000000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:Revenue",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-26": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:Revenue",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-27": {
+   "value": "6607000000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:Revenue",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-64": {
+   "value": "19300000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-65": {
+   "value": "-77500000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-66": {
+   "value": "-58200000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-67": {
+   "value": "20900000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-68": {
+   "value": "-28700000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-69": {
+   "value": "-7800000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-70": {
+   "value": "19300000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLossAttributableToOwnersOfParent",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-71": {
+   "value": "-77500000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLossAttributableToOwnersOfParent",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-72": {
+   "value": "-58200000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLossAttributableToOwnersOfParent",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-73": {
+   "value": "20900000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLossAttributableToOwnersOfParent",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-74": {
+   "value": "-28700000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLossAttributableToOwnersOfParent",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-75": {
+   "value": "-7800000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLossAttributableToOwnersOfParent",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-76": {
+   "value": "0.0121",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:BasicEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-77": {
+   "value": "-0.0485",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:BasicEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-78": {
+   "value": "-0.0364",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:BasicEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-79": {
+   "value": "0.0131",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:BasicEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-80": {
+   "value": "-0.018",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:BasicEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-81": {
+   "value": "-0.0049",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:BasicEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-82": {
+   "value": "0.0121",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:DilutedEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-83": {
+   "value": "-0.0485",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:DilutedEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-84": {
+   "value": "-0.0364",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:DilutedEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-85": {
+   "value": "0.0131",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:DilutedEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:BeforeExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-86": {
+   "value": "-0.018",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:DilutedEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "haysplc:ConsolidatedIncomeStatementAxis": "haysplc:ExceptionalItemsMember",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-87": {
+   "value": "-0.0049",
+   "decimals": 4,
+   "dimensions": {
+    "concept": "ifrs-full:DilutedEarningsLossPerShare",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "unit": "iso4217:GBP/xbrli:shares"
+   }
+  },
+  "fact-88": {
+   "value": "-58200000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-89": {
+   "value": "-7800000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-198": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:IssuedCapitalMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-199": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:SharePremiumMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-200": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:MergerReserveMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-201": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:CapitalRedemptionReserveMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-202": {
+   "value": "-58200000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:RetainedEarningsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-203": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:ReserveOfExchangeDifferencesOnTranslationMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-204": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:ReserveOfSharebasedPaymentsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-205": {
+   "value": "-58200000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-302": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:IssuedCapitalMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-303": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:SharePremiumMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-304": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:MergerReserveMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-305": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:CapitalRedemptionReserveMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-306": {
+   "value": "-7800000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:RetainedEarningsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-307": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:ReserveOfExchangeDifferencesOnTranslationMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-308": {
+   "value": "0.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "ifrs-full:ComponentsOfEquityAxis": "ifrs-full:ReserveOfSharebasedPaymentsMember",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-309": {
+   "value": "-7800000.0",
+   "decimals": -5,
+   "dimensions": {
+    "concept": "ifrs-full:ProfitLoss",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2024-07-01T00:00:00/2025-07-01T00:00:00",
+    "unit": "iso4217:GBP"
+   }
+  },
+  "fact-16": {
+   "value": "Hays plc",
+   "dimensions": {
+    "concept": "ifrs-full:NameOfReportingEntityOrOtherMeansOfIdentification",
+    "language": "en",
+    "entity": "scheme:213800QC8AWD4BO8TH08",
+    "period": "2025-07-01T00:00:00/2026-07-01T00:00:00"
+   }
+  }
+ }
+}

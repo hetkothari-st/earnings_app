@@ -1,0 +1,3 @@
+User-agent: *
+Disallow: /json/
+Sitemap: https://www.tradegatebsx.com/sitemap.xml
