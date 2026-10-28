@@ -8,8 +8,7 @@
  * Dropped (no primary line on a target exchange; controller ruling, not added): ARM, SPOT, NXPI, BNTX, CHKP, CRH.
  */
 
-/** Matches `EuropeMarket` in europe/exchanges.ts (Task 1); kept local so this file stands alone. */
-type EuropeMarket = 'UK' | 'EU';
+import type { EuropeMarket } from './exchanges.js';
 
 export interface EuropeFullEntry {
   market: EuropeMarket;
