@@ -879,22 +879,6 @@
     "checked": true,
     "note": "Bank, fiscal Q2. A three-month total income is stated: \"Non-IFRS financial measures\" table \"1. Total income excluding notable items\", column \"Quarter ended 30 June 2025 £m\": row \"Total income\" 4,005 (reported, before notable items). No quarter EPS. Quarter first, so the half-year statement (Total income 7,985; basic 30.9p / fully diluted 30.5p) is not the read span."
   },
-  "AZN_2024-09-30.htm": {
-    "adr": "AZN",
-    "cik": 901832,
-    "accession": "0001654954-24-014089",
-    "periodEnd": "2024-09-30",
-    "fiscalQuarter": 3,
-    "revenue": 13565000000,
-    "revenueCurrency": "USD",
-    "eps": 0.92,
-    "epsDiluted": 0.91,
-    "epsCurrency": "USD",
-    "span": "quarter",
-    "ytdMonths": null,
-    "checked": true,
-    "note": "Table 19 \"Condensed consolidated statement of comprehensive income: Q3 2024\", column \"For the quarter ended 30 September | 2024 $m\": row \"Total Revenue\" 13,565; rows \"Basic earnings per $0.25 Ordinary Share\" $0.92 / \"Diluted earnings per $0.25 Ordinary Share\" $0.91 (9M table 18: $3.57 / $3.54, not read: quarter first)."
-  },
   "BP_2024-12-31.htm": {
     "adr": "BP",
     "cik": 313807,
@@ -910,22 +894,6 @@
     "ytdMonths": 12,
     "checked": true,
     "note": "Fiscal Q4: full year. Group income statement ($ million), column \"Year 2024\": row \"Sales and other operating revenues (Note 6)\" 189,185; \"Per ordinary share (cents)\" rows \"Basic\" 2.38 / \"Diluted\" 2.32 US cents = $0.0238 / $0.0232."
-  },
-  "PUK_2024-12-31.htm": {
-    "adr": "PUK",
-    "cik": 1116578,
-    "accession": "0001654954-25-003044",
-    "periodEnd": "2024-12-31",
-    "fiscalQuarter": 4,
-    "revenue": null,
-    "revenueCurrency": null,
-    "eps": 0.841,
-    "epsDiluted": null,
-    "epsCurrency": "USD",
-    "span": "ytd",
-    "ytdMonths": 12,
-    "checked": true,
-    "note": "Insurer, fiscal Q4: full year; no revenue line. \"Key summary financials\", column \"2024 $m\": row \"Basic earnings per share based on IFRS profit after tax* (cents)\" 84.1 (US cents) = $0.841 (adjusted-operating-profit EPS 89.7 not taken). No diluted EPS stated."
   },
   "SNN_2025-06-28.htm": {
     "adr": "SNN",
