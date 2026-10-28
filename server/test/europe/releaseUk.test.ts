@@ -1,0 +1,211 @@
+import { describe, expect, it } from 'vitest';
+import { readEuropeRelease, type EuropeReleaseValues } from '../../src/europe/sources/releaseEurope.js';
+
+/**
+ * UK profile fixes found by the Task 17 corpus (test/fixtures/europe/releases/uk). Each keeps the reader fail-closed:
+ * it only turns a value into a blank, or reads a figure the release states in an allowlisted form.
+ */
+const table = (caption: string, head: string[][], rows: string[][]) =>
+  `${caption ? `<p>${caption}</p>` : ''}<table>${[...head, ...rows].map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
+const doc = (...tables: string[]) => `<html><body><p>Results announcement</p>${tables.join('<p>Notes follow.</p>')}</body></html>`;
+const pick = (v: EuropeReleaseValues) => {
+  const { notes: _notes, ...rest } = v;
+  return rest;
+};
+const BLANK = { revenue: null, revenueCurrency: null, eps: null, epsDiluted: null, epsCurrency: null, span: null, ytdMonths: null };
+
+const H1 = { periodEnd: '2026-06-30', fiscalQuarter: 2 as const, profile: 'uk' as const };
+const Q3 = { periodEnd: '2026-09-30', fiscalQuarter: 3 as const, profile: 'uk' as const };
+
+describe('readEuropeRelease (uk) — the quarter is the release\'s span when it states quarter figures', () => {
+  // The half-year income statement (revenue, EPS) and, elsewhere, a three-month revenue figure in a table the quarter
+  // pass does not read (no per-share line in it; a non-GAAP caption; a label that is not "Revenue").
+  const statement = table('Condensed consolidated income statement', [['£m', 'Six months ended 30 June 2026', 'Six months ended 30 June 2025']], [
+    ['Revenue', '6,373', '6,663'],
+    ['Basic earnings per share (pence)', '1.8', '4.1'],
+  ]);
+
+  it('a Q2 revenue table without a per-share line: the six-month column is not read in its place', () => {
+    const q2 = table('', [['£ million', 'Q2 2026', '% reported']], [['Revenue', '3,343', '(2.3)']]);
+    expect(pick(readEuropeRelease(doc(q2, statement), H1))).toEqual(BLANK);
+  });
+
+  it('a quarter column under a non-GAAP caption, or under a row label that is no revenue label: also blank', () => {
+    const nonGaap = table('Non-GAAP measures', [['', 'Quarter ended 30 June 2026', ''], ['', 'Q2 2026', 'Q2 2025'], ['', '£m', '£m']], [['Revenue', '3,343', '3,421']]);
+    expect(pick(readEuropeRelease(doc(statement, nonGaap), H1))).toEqual(BLANK);
+    const asReported = table('', [['Revenue In millions of £', 'Second Quarter Ended', '', 'Six Months Ended', ''], ['', '30 June 2026', '30 June 2025', '30 June 2026', '30 June 2025']], [
+      ['As reported', '3,343', '3,421', '6,373', '6,663'],
+    ]);
+    expect(pick(readEuropeRelease(doc(asReported, statement), H1))).toEqual(BLANK);
+  });
+
+  it('no quarter column anywhere: the six / nine-month column is read as before', () => {
+    expect(pick(readEuropeRelease(doc(statement), H1))).toEqual({
+      revenue: 6_373_000_000, revenueCurrency: 'GBP', eps: 1.8, epsDiluted: null, epsCurrency: 'GBp', span: 'ytd', ytdMonths: 6,
+    });
+    const nine = table('', [['£m', 'Nine months ended 30 September 2026', 'Nine months ended 30 September 2025']], [['Revenue', '9,000', '8,500'], ['Basic earnings per share (pence)', '30.1', '28.0']]);
+    expect(pick(readEuropeRelease(doc(nine), Q3))).toEqual({
+      revenue: 9_000_000_000, revenueCurrency: 'GBP', eps: 30.1, epsDiluted: null, epsCurrency: 'GBp', span: 'ytd', ytdMonths: 9,
+    });
+    // A prior-year quarter column (comparative only) is no quarter figure of this release.
+    const priorQ = table('', [['£m', 'Q2 2025']], [['Revenue', '3,421']]);
+    expect(readEuropeRelease(doc(priorQ, statement), H1).span).toBe('ytd');
+  });
+
+  it('a quarter figure that is read stays the answer; a percent-only quarter table does not block the half year', () => {
+    const q2eps = table('', [['£m', 'Q2 2026', 'Q2 2025']], [['Revenue', '3,343', '3,421'], ['Basic earnings per share (pence)', '0.9', '2.0']]);
+    expect(pick(readEuropeRelease(doc(q2eps, statement), H1))).toEqual({
+      revenue: 3_343_000_000, revenueCurrency: 'GBP', eps: 0.9, epsDiluted: null, epsCurrency: 'GBp', span: 'quarter', ytdMonths: null,
+    });
+    const growth = table('', [['', 'Q1 2026', 'Q2 2026'], ['', '%', '%']], [['Revenue growth', '3.1%', '2.3%']]);
+    expect(readEuropeRelease(doc(growth, statement), H1).span).toBe('ytd');
+  });
+
+  it('the eu profile is unchanged', () => {
+    const q2 = table('', [['€ million', 'Q2 2026', '% reported']], [['Revenue', '3,343', '(2.3)']]);
+    const st = table('', [['€m', 'Six months ended 30 June 2026']], [['Revenue', '6,373'], ['Basic earnings per share (€)', '1.80']]);
+    expect(readEuropeRelease(doc(q2, st), { ...H1, profile: 'eu' }).span).toBe('ytd');
+  });
+});
+
+describe('readEuropeRelease (uk) — a spanning "Quarter ended" head over dated columns', () => {
+  const Q1 = { periodEnd: '2026-03-31', fiscalQuarter: 1 as const, profile: 'uk' as const };
+  const bank = { names: ['HSBC Holdings plc'], ticker: 'HSBC' };
+  const hsbc = (title: string) => doc(table('', [['', title, '', ''], ['', '31 Mar 2026', '31 Dec 2025', '31 Mar 2025']], [
+    ['Net operating income before change in expected credit losses and other credit impairment charges (\'revenue\') ($m)', '18,624', '16,364', '17,649'],
+    ['Basic earnings per share ($)', '0.41', '0.28', '0.39'],
+    ['Diluted earnings per share ($)', '0.40', '0.27', '0.39'],
+  ]).replace(`<td>${title}</td><td></td><td></td>`, `<td colspan="3">${title}</td>`));
+
+  it('reads the release\'s own dated column under the title', () => {
+    expect(pick(readEuropeRelease(hsbc('Quarter ended'), { ...Q1, issuer: bank }))).toEqual({
+      revenue: 18_624_000_000, revenueCurrency: 'USD', eps: 0.41, epsDiluted: 0.4, epsCurrency: 'USD', span: 'quarter', ytdMonths: null,
+    });
+    expect(readEuropeRelease(hsbc('Three months ended'), { ...Q1, issuer: bank }).eps).toBe(0.41);
+  });
+
+  it('never a title that is no allowlisted quarter head, or that carries a range / cumulative word', () => {
+    for (const title of ['Period ended', 'Results', 'Quarter ended (cumulative)', 'Year to date quarter ended', 'Six months ended']) {
+      expect([title, readEuropeRelease(hsbc(title), { ...Q1, issuer: bank }).eps]).toEqual([title, null]);
+    }
+  });
+});
+
+describe('readEuropeRelease (uk) — "Half-year to <date>" is six months, not a year', () => {
+  const H1x = { periodEnd: '2026-06-30', fiscalQuarter: 2 as const, profile: 'uk' as const };
+  const one = (head: string[][]) => doc(table('', head, [['Revenue ($m)', '37,742', '34,122'], ['Basic earnings per share ($)', '0.85', '0.65']]));
+
+  it('reads the half-year column', () => {
+    for (const head of [[['', 'Half-year to 30 Jun 2026', 'Half-year to 30 Jun 2025']], [['', 'Half year ended 30 June 2026', 'Half year ended 30 June 2025']], [['', 'Half-year to', ''], ['', '30 Jun 2026', '30 Jun 2025']]]) {
+      expect(pick(readEuropeRelease(one(head), H1x))).toEqual({
+        revenue: 37_742_000_000, revenueCurrency: 'USD', eps: 0.85, epsDiluted: null, epsCurrency: 'USD', span: 'ytd', ytdMonths: 6,
+      });
+    }
+  });
+
+  it('a fiscal Q4 never reads a "Half-year to" column as the year; a head naming both spans stays blank', () => {
+    const FY = { periodEnd: '2026-06-30', fiscalQuarter: 4 as const, profile: 'uk' as const };
+    expect(readEuropeRelease(one([['', 'Half-year to 30 Jun 2026', 'Half-year to 30 Jun 2025']]), FY).eps).toBeNull();
+    expect(readEuropeRelease(one([['', 'Half year and year ended 30 June 2026', '2025']]), H1x).eps).toBeNull();
+  });
+
+  it('the eu profile is unchanged', () => {
+    expect(readEuropeRelease(one([['', 'Half-year to 30 Jun 2026', 'Half-year to 30 Jun 2025']]), { ...H1x, profile: 'eu' }).eps).toBeNull();
+  });
+});
+
+describe('readEuropeRelease (uk) — a nil row ("—" in every figure column) is data, not a new header block', () => {
+  const Q3x = { periodEnd: '2025-09-30', fiscalQuarter: 3 as const, profile: 'uk' as const };
+  const statement = (nil: string) => doc(table('', [['For the quarter ended 30 September', '2025 $m', '2024 $m']], [
+    ['Total Revenue', '15,191', '13,565'],
+    ['Fair value movements related to own credit risk', nil, nil],
+    ['Basic earnings per $0.25 Ordinary Share', '$1.64', '$0.92'],
+    ['Diluted earnings per $0.25 Ordinary Share', '$1.62', '$0.91'],
+  ]));
+
+  it('the rows below it keep the table head', () => {
+    for (const nil of ['-', '—', '–']) {
+      expect(pick(readEuropeRelease(statement(nil), Q3x))).toEqual({
+        revenue: 15_191_000_000, revenueCurrency: 'USD', eps: 1.64, epsDiluted: 1.62, epsCurrency: 'USD', span: 'quarter', ytdMonths: null,
+      });
+    }
+  });
+
+  it('a real head row in the middle still starts a new block; the eu profile is unchanged', () => {
+    const twoBlocks = doc(table('', [['For the quarter ended 30 September', '2025 $m', '2024 $m']], [
+      ['Total Revenue', '15,191', '13,565'],
+      ['For the nine months ended 30 September', '2025 $m', '2024 $m'],
+      ['Basic earnings per $0.25 Ordinary Share', '$5.10', '$3.57'],
+    ]));
+    expect(readEuropeRelease(twoBlocks, Q3x).eps).toBeNull();
+    expect(readEuropeRelease(statement('-'), { ...Q3x, profile: 'eu' }).eps).toBeNull();
+  });
+});
+
+describe('readEuropeRelease (uk) — "&pound;" / "&euro;" are the currency signs', () => {
+  const Q1 = { periodEnd: '2026-03-31', fiscalQuarter: 1 as const, profile: 'uk' as const };
+  it('reads "&pound;m" heads and "&euro;" signs as £ / €', () => {
+    const html = doc(table('', [['', 'Q1 2026', 'Q1 2025'], ['', '&pound;m', '&pound;m']], [['Revenue', '4,358', '3,980'], ['Basic earnings per share (pence)', '17.9', '15.5']]));
+    expect(pick(readEuropeRelease(html, Q1))).toEqual({
+      revenue: 4_358_000_000, revenueCurrency: 'GBP', eps: 17.9, epsDiluted: null, epsCurrency: 'GBp', span: 'quarter', ytdMonths: null,
+    });
+    const eur = doc(table('', [['&euro;m', 'Q1 2026', 'Q1 2025']], [['Revenue', '5,723', '5,585'], ['Basic earnings per share', '&euro;1.10', '&euro;0.99']]));
+    expect([readEuropeRelease(eur, Q1).revenueCurrency, readEuropeRelease(eur, Q1).eps, readEuropeRelease(eur, Q1).epsCurrency]).toEqual(['EUR', 1.1, 'EUR']);
+  });
+});
+
+describe('readEuropeRelease (uk) — a row of figures with a unit suffix ("26bps") is data, not a new header block', () => {
+  const Q1 = { periodEnd: '2026-03-31', fiscalQuarter: 1 as const, profile: 'uk' as const };
+  const html = (row: string[]) => doc(table('', [['', 'Q1 2026', 'Q1 2025'], ['', '£m', '£m']], [
+    ['Total revenue', '4,358', '3,980'],
+    row,
+    ['Basic earnings per share (pence)', '17.9', '15.5'],
+  ]));
+  it('the EPS row below keeps the period heads', () => {
+    for (const row of [['Loan impairment rate', '26bps', '19bps'], ['Net interest margin change', '(5) bps', '7bps'], ['Change', '+2ppts', '(1)pp'], ['Cover', '2.1x', '1.9x']]) {
+      expect([row[0], readEuropeRelease(html(row), Q1).eps]).toEqual([row[0], 17.9]);
+    }
+  });
+  it('a row of words is still a head row', () => {
+    expect(readEuropeRelease(html(['Restated', 'Nine months 2026', 'Nine months 2025']), Q1).eps).toBeNull();
+  });
+});
+
+describe('readEuropeRelease (uk) — EPS stated in two currencies (a convenience translation) is blank', () => {
+  const FYx = { periodEnd: '2024-12-31', fiscalQuarter: 4 as const, profile: 'uk' as const };
+  // As RELX: the GBP statement, then the same statement translated into euros (and US dollars) on a summary page.
+  const stmt = (unit: string, rev: string[], eps: string[]) => table('', [['Condensed consolidated income statement', '', ''], ['', 'Year ended 31 December 2023', 'Year ended 31 December 2024'], ['', unit, unit]], [
+    ['Revenue', ...rev], ['Basic earnings per share', ...eps],
+  ]);
+  const gbp = stmt('GBPm', ['9,161', '9,434'], ['94.1p', '103.6p']);
+  const eur = stmt('EURm', ['10,535', '11,132'], ['€1.083', '€1.223']);
+
+  it('the euro translation is never the EPS', () => {
+    const v = readEuropeRelease(doc(gbp, eur), FYx);
+    expect([v.eps, v.epsDiluted, v.epsCurrency]).toEqual([null, null, null]);
+  });
+
+  it('one currency only: read as before', () => {
+    expect([readEuropeRelease(doc(eur), FYx).eps, readEuropeRelease(doc(eur), FYx).epsCurrency]).toEqual([1.223, 'EUR']);
+    const usd = stmt('US$m', ['4,900', '5,000'], ['$1.20', '$1.25']);
+    expect(readEuropeRelease(doc(usd), FYx).eps).toBe(1.25);
+  });
+});
+
+describe('readEuropeRelease (uk) — a "Second Quarter Results" section over dated columns states the quarter', () => {
+  const H1y = { periodEnd: '2025-06-30', fiscalQuarter: 2 as const, profile: 'uk' as const };
+  const summary = table('Smith+Nephew reports results for the second quarter and first half ended 28 June 2025:', [['', '28 June', '29 June', 'Reported'], ['', '2025', '2024', 'growth'], ['', '$m', '$m', '%']], [
+    ['Second Quarter Results 1,2'], ['Revenue', '1,553', '1,441', '7.8'],
+    ['Half Year Results'], ['Operating profit', '429', '328', '30.6'],
+  ]);
+  const h1 = table('', [['', 'Half year', 'Half year'], ['', '2025', '2024'], ['', '$m', '$m']], [['Revenue', '2,961', '2,827'], ['Basic earnings per share ($)', '0.335', '0.245']]);
+
+  it('the half-year column is not read in place of the quarter', () => {
+    expect(pick(readEuropeRelease(doc(summary, h1), H1y))).toEqual(BLANK);
+  });
+
+  it('a half-year section only: the half year is read', () => {
+    const halfOnly = summary.replace('Second Quarter Results 1,2', 'Half Year Results');
+    expect(readEuropeRelease(doc(halfOnly, h1), H1y).revenue).toBe(2_961_000_000);
+  });
+});
