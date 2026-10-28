@@ -147,7 +147,8 @@ CREATE TABLE IF NOT EXISTS europe_esef_seen (
   symbol TEXT,
   period_end TEXT,
   outcome TEXT NOT NULL,             -- 'merged' | 'no-row' | 'blank' (an error is never recorded)
-  seen_at TEXT NOT NULL
+  seen_at TEXT NOT NULL,
+  date_added TEXT                    -- the filing's filings.xbrl.org date_added (ESEF paging); NULL when unknown
 );
 
 -- OpenFIGI answers (Ruling 5): only new ISINs cost requests. A failed request is never stored.
@@ -170,4 +171,6 @@ CREATE TABLE IF NOT EXISTS europe_bank_holidays (
 `;
 
 /** Columns that databases created before they existed still need. */
-export const EUROPE_ADDED_COLUMNS: Record<string, [string, string][]> = {};
+export const EUROPE_ADDED_COLUMNS: Record<string, [string, string][]> = {
+  europe_esef_seen: [['date_added', 'TEXT']],
+};
