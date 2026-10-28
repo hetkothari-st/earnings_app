@@ -162,6 +162,14 @@ CREATE TABLE IF NOT EXISTS europe_figi (
   PRIMARY KEY (isin, exch_code)
 );
 
+-- Yahoo ISIN search answers (STO / CPH universe lines): only new ISINs cost a search. symbols_json '[]' is a confirmed
+-- "no match"; a failed search is never stored.
+CREATE TABLE IF NOT EXISTS europe_isin_search (
+  isin TEXT PRIMARY KEY,
+  symbols_json TEXT NOT NULL,
+  checked_at TEXT NOT NULL
+);
+
 -- gov.uk England and Wales bank holidays (the LSE's closed weekdays).
 CREATE TABLE IF NOT EXISTS europe_bank_holidays (
   date TEXT PRIMARY KEY,

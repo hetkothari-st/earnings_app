@@ -1,12 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { Http } from '../../sources/http.js';
+import { HttpError, SourceFormatError, type Http } from '../../sources/http.js';
 import type { YahooForeignSummary } from '../../sources/yahooForeignSummary.js';
 import type { OptionChain } from '../../types.js';
-import { figiCached, saveFigi } from '../db/europeRepo.js';
+import { figiCached, isinSearchCached, saveFigi, saveIsinSearch } from '../db/europeRepo.js';
 import { EXCHANGES, exchangesOf, type EuropeMarket } from '../exchanges.js';
 import type { createEsefClient } from '../sources/esef.js';
 import type { FirdsShare } from '../sources/firds.js';
-import { figiRunComplete, type FigiAnswer } from '../sources/openFigi.js';
+import type { FigiAnswer } from '../sources/openFigi.js';
 import type { PrnItem } from '../sources/prnewswire.js';
 import { parseSixList, type SixShare } from '../sources/sixList.js';
 import type { EuropeCalRow, EuropeQuote } from '../sources/yahooEurope.js';
@@ -33,8 +33,8 @@ export interface EuropeJobContext {
   /** Daily closes keyed by local date, `from`..`to` inclusive. */
   yahooCloses(symbol: string, from: string, to: string): Promise<Map<string, number>>;
   /**
-   * This market's universe (`buildEuropeUniverseFor`). `complete` is false when any FIRDS part, the SIX list, an
-   * OpenFIGI request or a Yahoo ISIN search failed: the caller must not sync on it.
+   * This market's universe (`buildEuropeUniverseFor`). `complete` is false when a FIRDS part or the SIX list failed,
+   * or one of this market's OpenFIGI jobs or Yahoo ISIN searches failed: the caller must not sync on it.
    */
   buildUniverse(): Promise<{ entries: EuropeUniverseEntry[]; leftOut: number; complete: boolean }>;
   /** gov.uk bank-holidays.json, parsed JSON. UK only; EU never calls it. */
@@ -69,30 +69,74 @@ export interface EuropeUniverseSources {
   names(leis: string[]): Promise<Map<string, string>>;
 }
 
-/** A cached OpenFIGI answer is reused for this long; older ones are asked again (tickers change). */
+/** A cached OpenFIGI answer (or Yahoo ISIN search answer) is reused for this long; older ones are asked again. */
 export const FIGI_CACHE_MAX_AGE_MS = 90 * 86_400_000;
+
+/** Back-off before the 2nd and 3rd try of a failed Yahoo ISIN search (each try still waits on the shared limiter). */
+export const SEARCH_RETRY_DELAYS_MS = [2_000, 10_000] as const;
+
+/** A 429, a 5xx, a timeout or a network error: worth another try. A 404, other 4xx or a format error is not. */
+export function transientFailure(err: unknown): boolean {
+  if (err instanceof SourceFormatError) return false;
+  if (err instanceof HttpError) return err.status === 429 || err.status >= 500;
+  // yahooClient's network / timeout error ("Yahoo request failed (TimeoutError) for ..."), or any other thrown Error.
+  return err instanceof Error && /request failed|timeout|network|fetch failed|ECONNRESET|ETIMEDOUT/i.test(`${err.name} ${err.message}`);
+}
+
+/** `fn` with up to `delays.length` retries after a transient failure; the last failure is thrown. */
+async function withRetry<T>(fn: () => Promise<T>, delays: readonly number[], sleep: (ms: number) => Promise<void>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= delays.length || !transientFailure(err)) throw err;
+      await sleep(delays[attempt]!);
+    }
+  }
+}
+
+const defaultSleep = (ms: number) => new Promise<void>((r) => { setTimeout(r, ms).unref?.(); });
+
+/** The market an OpenFIGI exchCode belongs to (each code is one market's). */
+const MARKET_OF_CODE: ReadonlyMap<string, EuropeMarket> = new Map(
+  Object.values(EXCHANGES).flatMap((e) => Object.values(e.micExchCodes).map((c) => [c, e.market] as const)),
+);
 
 /**
  * One market's universe build (Rulings 4 and 5). Both markets are built from the same sources (the UK-first
- * tie-break needs every line), then `market`'s rows are returned. `complete` is true only when every FIRDS part was
- * read, the SIX list parsed, every OpenFIGI request answered (`figiRunComplete`) and every ISIN search answered:
- * `buildEuropeUniverse` reads a failed OpenFIGI job as "no ticker", so an incomplete run would shrink the universe.
- * OpenFIGI answers are cached in `europe_figi`; a failed job is never cached.
+ * tie-break needs every line), then `market`'s rows are returned. Completeness is judged per market:
+ * - a FIRDS part or the SIX list failing changes the tie-break of both markets, so it makes both incomplete;
+ * - a failed OpenFIGI job (`failed`, or no answer) makes only the market of its exchCode incomplete;
+ * - a failed Yahoo ISIN search (after its retries) makes only the market of its line incomplete (STO / CPH: EU).
+ * `buildEuropeUniverse` reads a failed OpenFIGI job as "no ticker", so an incomplete run would shrink the universe:
+ * the caller never syncs it.
+ * OpenFIGI answers are cached in `europe_figi` and ISIN search answers (a confirmed no-match too) in
+ * `europe_isin_search`, both for 90 days; a failed request is never cached. A search that fails with a 429, a 5xx or
+ * a timeout is tried again after 2 s and 10 s (`opts.sleep` in tests).
  */
 export async function buildEuropeUniverseFor(
   db: DatabaseSync, market: EuropeMarket, src: EuropeUniverseSources, now: string,
+  opts: { sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<{ entries: EuropeUniverseEntry[]; leftOut: number; complete: boolean }> {
-  let complete = true;
+  const sleep = opts.sleep ?? defaultSleep;
+  const complete: Record<EuropeMarket, boolean> = { UK: true, EU: true };
+  const failed: Record<EuropeMarket, number> = { UK: 0, EU: 0 };
+  const both = () => { complete.UK = false; complete.EU = false; };
+  const fail = (m: EuropeMarket | undefined) => {
+    if (!m) { both(); return; }
+    complete[m] = false;
+    failed[m]++;
+  };
   const micsOf = (m: EuropeMarket) => new Set(exchangesOf(m).flatMap((id) => EXCHANGES[id].mics));
   const firdsUk: FirdsShare[] = [];
   const firdsEu: FirdsShare[] = [];
   for (const [source, m, out] of [['fca', 'UK', firdsUk], ['esma', 'EU', firdsEu]] as const) {
     try {
       const r = await src.firds(source, micsOf(m), (s) => out.push(s));
-      if (!r.complete) complete = false;
+      if (!r.complete) both();
     } catch (err) {
       console.warn(`europe universe: FIRDS ${source} failed: ${(err as Error).message}`);
-      complete = false;
+      both();
     }
   }
   let six: SixShare[] = [];
@@ -100,16 +144,17 @@ export async function buildEuropeUniverseFor(
     six = parseSixList(await src.sixList());
   } catch (err) {
     console.warn(`europe universe: SIX list failed: ${(err as Error).message}`);
-    complete = false;
+    both();
   }
   const base = { firdsUk, firdsEu, six };
 
   const nowMs = Date.parse(now);
+  const fresh = (checkedAt: string) => nowMs - Date.parse(checkedAt) < FIGI_CACHE_MAX_AGE_MS;
   const figi: FigiAnswer[] = [];
   const ask: { isin: string; exchCode: string }[] = [];
   for (const job of figiJobsFor(base)) {
     const hit = figiCached(db, job.isin, job.exchCode);
-    if (hit && nowMs - Date.parse(hit.checkedAt) < FIGI_CACHE_MAX_AGE_MS) figi.push({ ...job, tickers: hit.tickers });
+    if (hit && fresh(hit.checkedAt)) figi.push({ ...job, tickers: hit.tickers });
     else ask.push(job);
   }
   if (ask.length > 0) {
@@ -120,23 +165,35 @@ export async function buildEuropeUniverseFor(
       console.warn(`europe universe: OpenFIGI failed: ${(err as Error).message}`);
       answers = ask.map((j) => ({ ...j, tickers: [], failed: true as const }));
     }
-    if (!figiRunComplete(answers)) complete = false;
+    for (const a of answers) if (a.failed) fail(MARKET_OF_CODE.get(a.exchCode));
     const answered = new Set(answers.map((a) => `${a.isin}|${a.exchCode}`));
-    if (ask.some((j) => !answered.has(`${j.isin}|${j.exchCode}`))) complete = false;
+    for (const j of ask) if (!answered.has(`${j.isin}|${j.exchCode}`)) fail(MARKET_OF_CODE.get(j.exchCode));
     for (const a of answers) {
       if (!a.failed) saveFigi(db, { isin: a.isin, exchCode: a.exchCode, tickers: a.tickers, outcome: a.tickers.length > 0 ? 'tickers' : 'no-ticker' }, now);
     }
     figi.push(...answers);
   }
 
+  const searchMarket = new Map<string, EuropeMarket | undefined>();
+  for (const a of figi) if (!searchMarket.has(a.isin) || a.tickers.length > 0) searchMarket.set(a.isin, MARKET_OF_CODE.get(a.exchCode));
   const searched = new Map<string, string[]>();
   for (const isin of searchIsinsFor(figi)) {
+    const hit = isinSearchCached(db, isin);
+    if (hit && fresh(hit.checkedAt)) {
+      searched.set(isin, hit.symbols);
+      continue;
+    }
     try {
-      searched.set(isin, await src.search(isin));
+      const symbols = await withRetry(() => src.search(isin), SEARCH_RETRY_DELAYS_MS, sleep);
+      searched.set(isin, symbols);
+      saveIsinSearch(db, isin, symbols, now);
     } catch (err) {
       console.warn(`europe universe: Yahoo ISIN search ${isin} failed: ${(err as Error).message}`);
-      complete = false;
+      fail(searchMarket.get(isin));
     }
+  }
+  for (const m of ['UK', 'EU'] as const) {
+    if (failed[m] > 0) console.warn(`europe universe: ${failed[m]} ${m} lookups failed; the ${m} build is incomplete`);
   }
 
   let names = new Map<string, string>();
@@ -151,5 +208,5 @@ export async function buildEuropeUniverseFor(
   // the UK-first tie-break would place it, else EU. A dead UK line never pulls an EU ISIN to UK.
   const ukIsins = new Set(firdsUk.filter((s) => s.issuerRequested && !s.terminated).map((s) => s.isin));
   const leftOut = built.leftOut.filter((l) => (ukIsins.has(l.isin) ? 'UK' : 'EU') === market).length;
-  return { entries: market === 'UK' ? built.uk : built.eu, leftOut, complete };
+  return { entries: market === 'UK' ? built.uk : built.eu, leftOut, complete: complete[market] };
 }

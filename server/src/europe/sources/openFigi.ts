@@ -6,7 +6,8 @@
  * request every 250 ms. An unknown ISIN answers `{ warning }` and a malformed one `{ error }`: both mean no ticker.
  * The key travels only in the `X-OPENFIGI-APIKEY` header; it is never put in a URL, a body, a log or an error.
  *
- * One failed request (5xx, a 429 after its retries, a network error, a malformed answer) loses only its own jobs:
+ * A 5xx, a timeout or a network error is tried again after 5 s and 15 s; a 429 after the window. One failed request
+ * (after those retries, or a malformed answer) loses only its own jobs:
  * they come back `failed: true` with no tickers, and `figiRunComplete` is false, so the caller must not cache them as
  * "no ticker" nor treat the run as complete. A 401/403 (bad key) fails every request alike, so it throws.
  */
@@ -39,6 +40,9 @@ const KEYLESS = { jobs: 10, gapMs: 2_500 } as const;
 const KEYED = { jobs: 100, gapMs: 250 } as const;
 /** On a 429, wait out the window and try again, at most this many times per request. */
 const MAX_429_RETRIES = 2;
+/** On a 5xx, a timeout or a network error, try again after these waits (bounded: at most two more tries). */
+const TRANSIENT_BACKOFF_MS = [5_000, 15_000] as const;
+const MAX_TRANSIENT_RETRIES = TRANSIENT_BACKOFF_MS.length;
 
 export function createOpenFigi(o: { key?: string; fetchImpl?: typeof fetch; now?: () => number }): {
   map(jobs: { isin: string; exchCode: string }[]): Promise<FigiAnswer[]>;
@@ -60,17 +64,26 @@ export function createOpenFigi(o: { key?: string; fetchImpl?: typeof fetch; now?
     const headers: Record<string, string> = { 'Content-Type': 'application/json', 'User-Agent': EUROPE_UA };
     if (o.key) headers['X-OPENFIGI-APIKEY'] = o.key;
     const body = JSON.stringify(jobs.map((j) => ({ idType: 'ID_ISIN', idValue: j.isin, exchCode: j.exchCode })));
+    let transient = 0;
     for (let attempt = 0; ; attempt++) {
       await slot();
       let res: Response;
       try {
         res = await fetchImpl(UNIVERSE_URLS.openFigi, { method: 'POST', headers, body, signal: AbortSignal.timeout(30_000) });
       } catch (err) {
+        if (transient < MAX_TRANSIENT_RETRIES) {
+          next = Math.max(next, now() + TRANSIENT_BACKOFF_MS[transient++]!);
+          continue;
+        }
         // A network error message carries no header values; keep only its name and message.
         throw new Error(`OpenFIGI request failed: ${(err as Error)?.message ?? 'network error'}`);
       }
       if (res.status === 429 && attempt < MAX_429_RETRIES) {
         next = Math.max(next, now() + (o.key ? 6_000 : 60_000));
+        continue;
+      }
+      if (res.status >= 500 && transient < MAX_TRANSIENT_RETRIES) {
+        next = Math.max(next, now() + TRANSIENT_BACKOFF_MS[transient++]!);
         continue;
       }
       // The status only: the answer body is never echoed into the error.

@@ -2,10 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { openDb } from '../../src/db/repo.js';
+import { HttpError, SourceFormatError } from '../../src/sources/http.js';
 import {
-  EU_ID_BASE, UK_ID_BASE, confirmEuropePeriod, lastEsefAt, lastEsefDateAdded, markEsefSeen, setEuropePrevMove, europeStocks, figiCached, getEuropeReport, mergeEuropeActuals, recordEuropeRelease,
+  EU_ID_BASE, UK_ID_BASE, confirmEuropePeriod, isinSearchCached, lastEsefAt, lastEsefDateAdded, markEsefSeen, setEuropePrevMove, europeStocks, figiCached, getEuropeReport, mergeEuropeActuals, recordEuropeRelease,
   saveBankHolidays, saveFigi, setEuropeEstimates, setEuropeProfile, setEuropeTiming, storedBankHolidays, syncEuropeUniverse,
   upsertEuropeCalendarRow,
 } from '../../src/europe/db/europeRepo.js';
@@ -240,8 +241,8 @@ describe('europeRepo', () => {
       const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'europe_%' ORDER BY name").all() as { name: string }[])
         .map((t) => t.name);
       expect(tables).toEqual([
-        'europe_bank_holidays', 'europe_date_sweep', 'europe_esef_seen', 'europe_expected_moves', 'europe_figi', 'europe_live_moves',
-        'europe_past_dates', 'europe_reports', 'europe_sec_seen', 'europe_signal_seen', 'europe_stocks', 'europe_universe_runs',
+        'europe_bank_holidays', 'europe_date_sweep', 'europe_esef_seen', 'europe_expected_moves', 'europe_figi', 'europe_isin_search',
+        'europe_live_moves', 'europe_past_dates', 'europe_reports', 'europe_sec_seen', 'europe_signal_seen', 'europe_stocks', 'europe_universe_runs',
       ]);
       // The US and HK rows survived too (dump compared above), and the old europe_esef_seen gained date_added.
       expect((JSON.parse(dump(db)) as unknown[][]).map((t) => t.length)).toEqual([1, 1, 1, 1]);
@@ -258,12 +259,15 @@ describe('buildEuropeUniverseFor', () => {
     ({ isin, fullName, cfi: 'ESVUFR', lei: null, mic, issuerRequested, terminated: false });
   const sources = (
     figi: (jobs: { isin: string; exchCode: string }[]) => Promise<FigiAnswer[]>,
-    o: { firdsComplete?: boolean; sixThrows?: boolean; fca?: FirdsShare[]; esma?: FirdsShare[] } = {},
+    o: {
+      firdsComplete?: boolean; esmaComplete?: boolean; sixThrows?: boolean; fca?: FirdsShare[]; esma?: FirdsShare[];
+      search?: (isin: string) => Promise<string[]>;
+    } = {},
   ) => ({
     firds: async (source: 'esma' | 'fca', _mics: ReadonlySet<string>, onShare: (s: FirdsShare) => void) => {
       if (source === 'fca') [share('GB00BLGZ9862', 'XLON', 'TESCO PLC ORD 6 1/3P'), ...o.fca ?? []].forEach(onShare);
       else [share('FR0000120271', 'XPAR', 'TOTALENERGIES SE'), ...o.esma ?? []].forEach(onShare);
-      return { files: 1, complete: source === 'fca' ? o.firdsComplete ?? true : true };
+      return { files: 1, complete: source === 'fca' ? o.firdsComplete ?? true : o.esmaComplete ?? true };
     },
     sixList: async () => {
       if (o.sixThrows) throw new Error('six down');
@@ -271,7 +275,7 @@ describe('buildEuropeUniverseFor', () => {
         + 'NOVARTIS N;NOVN;1200526;CH0012005267;CHF;International Reporting Standard;Switzerland;Registered Shares\n';
     },
     figi,
-    search: async () => [],
+    search: o.search ?? (async () => []),
     names: async () => new Map<string, string>(),
   });
   const answer = (jobs: { isin: string; exchCode: string }[]): FigiAnswer[] =>
@@ -302,6 +306,101 @@ describe('buildEuropeUniverseFor', () => {
     expect(asked).toBe(0);
     saveFigi(db, { isin: 'X', exchCode: 'LN', tickers: [], outcome: 'no-ticker' }, NOW);
     expect(figiCached(db, 'X', 'LN')).toMatchObject({ tickers: [], outcome: 'no-ticker' });
+  });
+
+  // Ericsson B on Stockholm: an EU-only `search` exchange line (OpenFIGI 'ERICB' -> ERIC-B.ST or ERICB.ST, settled by Yahoo).
+  const ERIC = share('SE0000108656', 'XSTO', 'TELEFONAKTIEBOLAGET LM ERICSSON SER. B');
+  const answerEric = (jobs: { isin: string; exchCode: string }[]): FigiAnswer[] =>
+    jobs.map((j) => ({ ...j, tickers: j.isin === 'GB00BLGZ9862' ? ['TSCO'] : j.isin === 'SE0000108656' ? ['ERICB'] : ['TTE'] }));
+  const noSleep = { sleep: async () => {} };
+
+  it('completeness per market: a failed EU-only search blocks EU only; a failed UK OpenFIGI job blocks UK only', async () => {
+    const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const down = async (): Promise<string[]> => { throw new HttpError(503, 'search'); };
+    const o = { esma: [ERIC], search: down };
+    const db = openDb(':memory:');
+    expect((await buildEuropeUniverseFor(db, 'UK', sources(async (j) => answerEric(j), o), NOW, noSleep)).complete).toBe(true);
+    expect((await buildEuropeUniverseFor(db, 'EU', sources(async (j) => answerEric(j), o), NOW, noSleep)).complete).toBe(false);
+    const db2 = openDb(':memory:');
+    const ukFails = async (jobs: { isin: string; exchCode: string }[]): Promise<FigiAnswer[]> =>
+      answerEric(jobs).map((a) => (a.isin === 'GB00BLGZ9862' ? { ...a, tickers: [], failed: true as const } : a));
+    const o2 = { esma: [ERIC], search: async () => ['ERIC-B.ST'] };
+    expect((await buildEuropeUniverseFor(db2, 'UK', sources(ukFails, o2), NOW, noSleep)).complete).toBe(false);
+    expect((await buildEuropeUniverseFor(db2, 'EU', sources(ukFails, o2), NOW, noSleep)).complete).toBe(true);
+    // A FIRDS or SIX failure changes the tie-break of both markets: both incomplete.
+    const db3 = openDb(':memory:');
+    expect((await buildEuropeUniverseFor(db3, 'EU', sources(async (j) => answer(j), { firdsComplete: false }), NOW)).complete).toBe(false);
+    expect((await buildEuropeUniverseFor(db3, 'UK', sources(async (j) => answer(j), { esmaComplete: false }), NOW)).complete).toBe(false);
+    expect((await buildEuropeUniverseFor(db3, 'EU', sources(async (j) => answer(j), { sixThrows: true }), NOW)).complete).toBe(false);
+    quiet.mockRestore();
+  });
+
+  it('Yahoo ISIN search answers are stored (a confirmed no-match too) and reused; a failed search is never stored', async () => {
+    const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const db = openDb(':memory:');
+    const asked: string[] = [];
+    const NOKIA = share('FI0009000681', 'XSTO', 'NOKIA OYJ');
+    const answers = (jobs: { isin: string; exchCode: string }[]) =>
+      answerEric(jobs).map((a) => (a.isin === 'FI0009000681' ? { ...a, tickers: ['NOKIAS'] } : a));
+    const search = async (isin: string) => { asked.push(isin); return isin === 'SE0000108656' ? ['ERIC-B.ST'] : []; };
+    const first = await buildEuropeUniverseFor(db, 'EU', sources(async (j) => answers(j), { esma: [ERIC, NOKIA], search }), NOW, noSleep);
+    expect(first.complete).toBe(true);
+    expect(first.entries.map((e) => e.symbol)).toContain('ERIC-B.ST');
+    expect(asked.sort()).toEqual(['FI0009000681', 'SE0000108656']);
+    expect(isinSearchCached(db, 'SE0000108656')).toMatchObject({ symbols: ['ERIC-B.ST'] });
+    expect(isinSearchCached(db, 'FI0009000681')).toMatchObject({ symbols: [] });
+    // The weekly UK run, the EU run and warm-ups do not ask again.
+    asked.length = 0;
+    const again = await buildEuropeUniverseFor(db, 'EU', sources(async (j) => answers(j), { esma: [ERIC, NOKIA], search }), NOW, noSleep);
+    expect(asked).toEqual([]);
+    expect(again.entries.map((e) => e.symbol)).toEqual(first.entries.map((e) => e.symbol));
+    // Older than 90 days: asked again.
+    const later = new Date(Date.parse(NOW) + 91 * 86_400_000).toISOString();
+    await buildEuropeUniverseFor(db, 'EU', sources(async (j) => answers(j), { esma: [ERIC, NOKIA], search }), later, noSleep);
+    expect(asked.sort()).toEqual(['FI0009000681', 'SE0000108656']);
+    // A failed search is not stored.
+    const db2 = openDb(':memory:');
+    const failing = async (): Promise<string[]> => { throw new HttpError(500, 'x'); };
+    await buildEuropeUniverseFor(db2, 'EU', sources(async (j) => answers(j), { esma: [ERIC], search: failing }), NOW, noSleep);
+    expect(isinSearchCached(db2, 'SE0000108656')).toBeNull();
+    quiet.mockRestore();
+  });
+
+  it('a search that fails with 429, 5xx or a timeout is retried with back-off (at most 3 tries); a format error or 404 is not', async () => {
+    const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sleeps: number[] = [];
+    const sleep = async (ms: number) => { sleeps.push(ms); };
+    let n = 0;
+    const flaky = async () => {
+      n++;
+      if (n === 1) throw new HttpError(429, 'search');
+      if (n === 2) throw new Error('Yahoo request failed (TimeoutError) for https://query2.finance.yahoo.com/v1/finance/search');
+      return ['ERIC-B.ST'];
+    };
+    const db = openDb(':memory:');
+    const ok = await buildEuropeUniverseFor(db, 'EU', sources(async (j) => answerEric(j), { esma: [ERIC], search: flaky }), NOW, { sleep });
+    expect(ok.complete).toBe(true);
+    expect(n).toBe(3);
+    expect(sleeps).toEqual([2_000, 10_000]);
+    expect(ok.entries.map((e) => e.symbol)).toContain('ERIC-B.ST');
+
+    let m = 0;
+    const always = async (): Promise<string[]> => { m++; throw new HttpError(502, 'search'); };
+    const db2 = openDb(':memory:');
+    expect((await buildEuropeUniverseFor(db2, 'EU', sources(async (j) => answerEric(j), { esma: [ERIC], search: always }), NOW, { sleep })).complete).toBe(false);
+    expect(m).toBe(3);
+
+    let f = 0;
+    const malformed = async (): Promise<string[]> => { f++; throw new SourceFormatError('Yahoo ISIN search: no quotes array'); };
+    const db3 = openDb(':memory:');
+    expect((await buildEuropeUniverseFor(db3, 'EU', sources(async (j) => answerEric(j), { esma: [ERIC], search: malformed }), NOW, { sleep })).complete).toBe(false);
+    expect(f).toBe(1);
+    let g = 0;
+    const notFound = async (): Promise<string[]> => { g++; throw new HttpError(404, 'search'); };
+    const db4 = openDb(':memory:');
+    expect((await buildEuropeUniverseFor(db4, 'EU', sources(async (j) => answerEric(j), { esma: [ERIC], search: notFound }), NOW, { sleep })).complete).toBe(false);
+    expect(g).toBe(1);
+    quiet.mockRestore();
   });
 
   it('leftOut per market: an ISIN with live lines on both sides counts for UK only (UK first); a dead UK line does not pull an EU ISIN to UK', async () => {

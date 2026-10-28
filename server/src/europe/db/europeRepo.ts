@@ -967,6 +967,26 @@ export function saveFigi(
     .run(a.isin, a.exchCode, JSON.stringify(a.tickers), a.yahooSymbol ?? null, a.outcome, now);
 }
 
+/** A stored Yahoo ISIN search answer (`symbols` [] = confirmed no match), or null when none or unreadable. */
+export function isinSearchCached(db: DatabaseSync, isin: string): { symbols: string[]; checkedAt: string } | null {
+  const r = db.prepare('SELECT symbols_json, checked_at FROM europe_isin_search WHERE isin = ?').get(isin) as
+    { symbols_json: string; checked_at: string } | undefined;
+  if (!r) return null;
+  let symbols: unknown;
+  try {
+    symbols = JSON.parse(r.symbols_json);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(symbols) || !symbols.every((s) => typeof s === 'string')) return null;
+  return { symbols, checkedAt: r.checked_at };
+}
+
+/** Stores a Yahoo ISIN search answer. Callers never store a failed search (that is no answer, not "no match"). */
+export function saveIsinSearch(db: DatabaseSync, isin: string, symbols: string[], now: string): void {
+  db.prepare('INSERT OR REPLACE INTO europe_isin_search (isin, symbols_json, checked_at) VALUES (?, ?, ?)').run(isin, JSON.stringify(symbols), now);
+}
+
 // ---------- Bank holidays (gov.uk, England and Wales) ----------
 
 /** Replaces the stored set with a fresh, parsed gov.uk list. An empty list is refused: a failed fetch keeps the stored dates. */

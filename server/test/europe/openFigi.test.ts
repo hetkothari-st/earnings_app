@@ -84,13 +84,48 @@ describe('createOpenFigi', () => {
     // Eiffage: two tickers on one exchange are both returned (the build leaves it out).
     expect(a[5]!.tickers).toEqual(['FGR', 'FGRMC']);
   });
+  it('a 5xx or a timeout is retried with back-off (at most 2 retries), then answers', async () => {
+    const at: number[] = [];
+    let n = 0;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const jobs = JSON.parse(String(init.body)) as { idValue: string }[];
+      at.push(Date.now());
+      n++;
+      if (n === 1) return new Response('upstream down', { status: 502 });
+      if (n === 2) throw new DOMException('The operation timed out.', 'TimeoutError');
+      return json(jobs.map((j) => ({ data: [{ ticker: `T${j.idValue}`, exchCode: 'LN' }] })));
+    }) as unknown as typeof fetch;
+    const figi = createOpenFigi({ fetchImpl, now: () => Date.now() });
+    const p = figi.map([{ isin: 'I0', exchCode: 'LN' }]);
+    await vi.runAllTimersAsync();
+    const a = await p;
+    expect(n).toBe(3);
+    expect(a).toEqual([{ isin: 'I0', exchCode: 'LN', tickers: ['TI0'] }]);
+    expect(figiRunComplete(a)).toBe(true);
+    // Back-off grows: 5 s, then 15 s (never less than the request gap).
+    expect(at.map((t) => t - at[0]!)).toEqual([0, 5_000, 20_000]);
+  });
+
+  it('a 4xx other than 429 is not retried', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let n = 0;
+    const fetchImpl = (async () => { n++; return new Response('bad', { status: 400 }); }) as unknown as typeof fetch;
+    const figi = createOpenFigi({ fetchImpl, now: () => Date.now() });
+    const p = figi.map([{ isin: 'I0', exchCode: 'LN' }]);
+    await vi.runAllTimersAsync();
+    expect((await p)[0]!.failed).toBe(true);
+    expect(n).toBe(1);
+    warn.mockRestore();
+  });
+
   it('one failed request loses only its own jobs (failed, no tickers); the others are kept', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     let n = 0;
     const fetchImpl = (async (_url: string, init: RequestInit) => {
       const jobs = JSON.parse(String(init.body)) as { idValue: string }[];
       n++;
-      if (n === 2) return new Response('upstream down', { status: 503 });
+      // The second batch (I10..I19) stays down through its retries.
+      if (jobs[0]!.idValue === 'I10') return new Response('upstream down', { status: 503 });
       return json(jobs.map((j) => ({ data: [{ ticker: `T${j.idValue}`, exchCode: 'LN' }] })));
     }) as unknown as typeof fetch;
     const figi = createOpenFigi({ fetchImpl, now: () => Date.now() });
