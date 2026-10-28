@@ -7,6 +7,7 @@ import { reactionMovePct } from '../../india/domain/inMoves.js';
 import { fetchAcceptance, fetchEarningsFilings } from '../../sources/sec.js';
 import { parseFilingDocs } from '../../sources/secFeed.js';
 import { classifySixK, pickReleaseDoc } from '../../sources/sixKClassify.js';
+import { classifyEuropeDocs } from '../live/europeSixK.js';
 import type { Filing } from '../../types.js';
 import {
   type EuropeStock, europePastDates, europeReportsNeedingPrevMove, europeStocks, priorEuropeReleased, setEuropePrevMove,
@@ -57,6 +58,10 @@ async function secProvesBmo(
   const cik = stock.cik;
   const fy = stock.fyEndMonth;
   if (!http || stock.level !== 'full' || cik == null || fy == null) return false;
+  // A completed check that found no proof is final for that (symbol, date): filings are not re-dated.
+  const negatives = secNegativesOf(ctx);
+  const key = `${stock.symbol}|${date}`;
+  if (negatives.has(key)) return false;
   const periodEnd = europePeriodFor(date, fy).periodEnd;
   const dayBefore = DateTime.fromISO(date, { zone: 'utc' }).minus({ days: 1 }).toISODate()!;
   const profile = ctx.market === 'UK' ? 'uk' : 'eu';
@@ -69,18 +74,27 @@ async function secProvesBmo(
       const docs = parseFilingDocs(await http.text(f.indexUrl), f.indexUrl);
       const picked = pickReleaseDoc(docs);
       if (!picked) continue;
-      const classify = async (url: string) => classifySixK(await http.text(url), { profile, filedOn: date, fyEndMonth: fy, session });
-      let kind = await classify(picked);
-      const main = docs.find((d) => /^[68]-K(\/A)?$/i.test(d.type))?.url;
-      if (kind.kind === 'other' && main && main !== picked) kind = await classify(main);
+      const { ex: kind } = await classifyEuropeDocs(http, docs, picked,
+        (h) => classifySixK(h, { profile, filedOn: date, fyEndMonth: fy, session }));
       if (kind.kind !== 'results' || kind.periodEnd !== periodEnd) continue;
       const accepted = DateTime.fromISO(await fetchAcceptance(http, cik, f.accession), { zone: ET });
       if (beforeLocalOpen(stock, accepted, date)) return true;
     }
   } catch (err) {
+    // A failed request proves nothing and is not remembered: the next run asks again.
     console.warn(`[${profile}-prev-moves] ${stock.symbol}: SEC timing check failed: ${(err as Error).message}`);
+    return false;
   }
+  negatives.add(key);
   return false;
+}
+
+/** Completed SEC timing checks without proof (`symbol|date`), per database (process memory). */
+const secNegatives = new WeakMap<object, Set<string>>();
+function secNegativesOf(ctx: Pick<EuropeJobContext, 'db'>): Set<string> {
+  let s = secNegatives.get(ctx.db);
+  if (!s) secNegatives.set(ctx.db, (s = new Set()));
+  return s;
 }
 
 /**

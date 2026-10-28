@@ -89,6 +89,7 @@ function setup(opts: {
   const closeCalls: [string, string, string][] = [];
   const calendarCalls: [string, string, string][] = [];
   const quoteCalls: string[][] = [];
+  const secCalls: string[] = [];
   let holidayCalls = 0;
   const ctx: EuropeJobContext = {
     db,
@@ -129,10 +130,10 @@ function setup(opts: {
     prnFeed: async () => [],
     dila: null,
     optionChain: async () => null,
-    secHttp: opts.sec ? secStub(opts.sec) : null,
+    secHttp: opts.sec ? secStub(opts.sec, secCalls) : null,
     tierA: () => opts.tierA ?? [],
   };
-  return { db, ctx, summaryCalls, closeCalls, calendarCalls, quoteCalls, holidayCalls: () => holidayCalls };
+  return { db, ctx, summaryCalls, closeCalls, calendarCalls, quoteCalls, secCalls, holidayCalls: () => holidayCalls };
 }
 
 type Db = ReturnType<typeof openDb>;
@@ -468,9 +469,10 @@ describe('refreshEuropeYahooResults', () => {
 });
 
 /** A stub of the SEC client: a 404 for any URL not given. */
-function secStub(docs: Record<string, string>): NonNullable<EuropeJobContext['secHttp']> {
+function secStub(docs: Record<string, string>, calls: string[] = []): NonNullable<EuropeJobContext['secHttp']> {
   const http: NonNullable<EuropeJobContext['secHttp']> = {
     async text(url) {
+      calls.push(url);
       const body = docs[url];
       if (body === undefined) throw new HttpError(404, url);
       return body;
@@ -546,6 +548,21 @@ describe('computeEuropePrevMoves', () => {
     const id = ukRow(db, 'AZN.L', '2026-07-23', 12);
     await computeEuropePrevMoves(ctx);
     expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: null, prevMoveBasis: null, prevMoveCheckedAt: NOW });
+  });
+
+  it('a negative SEC timing check is remembered per (symbol, prior date): the next night asks SEC nothing', async () => {
+    const closes = new Map([['2026-04-28', 100], ['2026-04-29', 104]]);
+    const { db, ctx, secCalls } = setup({ closes, today: '2026-07-23', sec: aznSec('20260429070000') });
+    usRow(db, 'AZN', '2026-04-29', 'BMO');
+    const id = ukRow(db, 'AZN.L', '2026-07-23', 12);
+    await computeEuropePrevMoves(ctx);
+    expect(secCalls.length).toBeGreaterThan(0);
+    const first = secCalls.length;
+    // The next night: the row is due again (checked over 20 h ago), the answer is still blank, and SEC is not asked.
+    db.prepare('UPDATE europe_reports SET prev_move_checked_at = ? WHERE id = ?').run('2026-10-27T00:00:00.000Z', id);
+    await computeEuropePrevMoves(ctx);
+    expect(secCalls.length).toBe(first);
+    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: null, prevMoveCheckedAt: NOW });
   });
 
   it("the app's own release: SEC acceptance before the open on its date proves BMO; after the open → blank", async () => {
