@@ -117,7 +117,10 @@ describe('full level and names', () => {
       ...base, firdsUk: [share('GB0005405286', 'XLON', { fullName: 'HSBC HLDGS PLC ORD $0.50 (UK REG)' }), share('GB0009895292', 'XLON')],
       figi: [figi('GB0005405286', 'LN', 'HSBA'), figi('GB0009895292', 'LN', 'AZN')], full: UK_FULL,
     });
-    expect(bySymbol(u.uk, 'HSBA.L')).toMatchObject({ adr: 'HSBC', adrRatio: 5, adrRatioVerified: true, cik: 1089113, secForm: '6-K', name: 'HSBC HLDGS PLC' });
+    expect(bySymbol(u.uk, 'HSBA.L')).toMatchObject({ adr: 'HSBC', adrRatio: 5, adrRatioVerified: true, cik: 1089113, secForm: '6-K' });
+    // A full-level row shows the full list's curated name, not the FIRDS/GLEIF build name.
+    expect(bySymbol(u.uk, 'HSBA.L')?.name).toBe('HSBC Holdings plc');
+    expect(bySymbol(u.uk, 'AZN.L')?.name).toBe('AstraZeneca PLC');
     expect(bySymbol(u.uk, 'AZN.L')).toMatchObject({ adr: 'AZN', cik: 901832 });
     warn.mockRestore();
   });
@@ -185,7 +188,12 @@ describe('SIX list', () => {
     expect(rows.map((r) => r.symbol)).toContain('ALPN');
     const u = buildEuropeUniverse({ ...base, six: rows });
     expect(bySymbol(u.eu, 'NOVN.SW')).toMatchObject({ name: 'NOVARTIS N', currency: 'CHF', country: 'CH', exchange: 'SIX', lei: null });
-    expect(u.eu).toHaveLength(rows.length);
+    // US ISINs on SIX (Abbott, 3M) are left to the US tab; other ISINs stay.
+    expect(rows.map((r) => r.symbol)).toEqual(expect.arrayContaining(['ABT', 'MMM']));
+    expect(bySymbol(u.eu, 'ABT.SW')).toBeUndefined();
+    expect(bySymbol(u.eu, 'MMM.SW')).toBeUndefined();
+    expect(u.eu).toHaveLength(rows.filter((r) => !r.isin.startsWith('US')).length);
+    expect(figiJobsFor({ firdsUk: [], firdsEu: [], six: rows })).toEqual([]);
   });
 });
 

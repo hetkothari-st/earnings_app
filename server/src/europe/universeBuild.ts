@@ -15,8 +15,8 @@
  * none matching), the UK line if exactly one UK line remains; otherwise the ISIN is left out as ambiguous (counted,
  * never guessed). So TotalEnergies (FR, also on XLON) stays EU and Shell (GB, also on XAMS) is UK only.
  *
- * Full-level rows (`universe.ts`) always exist, whatever the tie-break gives: their symbol, ISIN, ADR, ratio, CIK and
- * form override the build's, and a full row the build did not produce (BHP.L's AU ISIN, a dual line left out as
+ * Full-level rows (`universe.ts`) always exist, whatever the tie-break gives: their symbol, ISIN, name (the curated
+ * English one), ADR, ratio, CIK and form override the build's, and a full row the build did not produce (BHP.L's AU ISIN, a dual line left out as
  * ambiguous, an ISIN the build put in the other market) is kept and logged.
  */
 
@@ -118,12 +118,15 @@ interface BuildSources {
   six: SixShare[];
 }
 
-/** Every candidate line: UK MICs from FCA, EU MICs from ESMA, SIX-list rows as issuer-requested XSWX lines. */
+/**
+ * Every candidate line: UK MICs from FCA, EU MICs from ESMA, SIX-list rows as issuer-requested XSWX lines. SIX lines
+ * with a US ISIN (Abbott, 3M) are left out (controller ruling): the US tab covers those companies.
+ */
 function candidateLines(o: BuildSources): FirdsShare[] {
   return [
     ...o.firdsUk.filter((s) => marketOfMic(s.mic) === 'UK'),
     ...o.firdsEu.filter((s) => marketOfMic(s.mic) === 'EU' && s.mic !== SIX_MIC),
-    ...o.six.map((r): FirdsShare => ({ isin: r.isin, fullName: r.name, cfi: 'ES', lei: null, mic: SIX_MIC, issuerRequested: true, terminated: false })),
+    ...o.six.filter((r) => !r.isin.startsWith('US')).map((r): FirdsShare => ({ isin: r.isin, fullName: r.name, cfi: 'ES', lei: null, mic: SIX_MIC, issuerRequested: true, terminated: false })),
   ];
 }
 
@@ -229,7 +232,8 @@ export function buildEuropeUniverse(o: BuildSources & {
     leftOut.delete(f.isin);
     const level = { adr: f.adr, adrRatio: f.adrRatio, adrRatioVerified: f.adrRatioVerified, cik: f.cik, secForm: f.secForm };
     if (own) {
-      Object.assign(own, { symbol: f.symbol }, level);
+      // The full list's curated English name is the display name (controller ruling), not the FIRDS/GLEIF one.
+      Object.assign(own, { symbol: f.symbol, name: f.names[0]! }, level);
       continue;
     }
     const anyLine = lines.find((l) => l.isin === f.isin && l.lei) ?? lines.find((l) => l.isin === f.isin);
@@ -239,7 +243,7 @@ export function buildEuropeUniverse(o: BuildSources & {
     const six = ex === 'SIX' ? sixBy.get(f.isin) : undefined;
     rows.push({
       market: f.market, symbol: f.symbol, isin: f.isin, lei,
-      name: six?.name ?? ((lei && o.names.get(lei)) || f.names[0]!),
+      name: f.names[0]!,
       exchange: ex, mic: exLine?.mic ?? info.mics[0] ?? SIX_MIC, country: info.country, currency: six?.currency ?? info.currency,
       ...level,
     });
