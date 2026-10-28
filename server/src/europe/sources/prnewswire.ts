@@ -95,7 +95,7 @@ const RESULTS = [
 /** Date notices, invitations, presentations, reminders, calls and meetings: never the release itself. */
 const NEVER = new RegExp([
   'notice of', '\\bdates? (for|of)\\b', 'to announce', 'will (announce|report|publish)',
-  '\\bto (publish|release|present|host|hold|announce)\\b', '\\b(to be|will be) (published|released|presented)\\b',
+  '\\bto (publish|release|present|host|hold|announce|report)\\b', '\\b(to be|will be) (published|released|presented|announced)\\b',
   '\\bpresentation\\b', '\\breminder\\b', 'invitation',
   'teleconference', 'telephone conference', 'conference call', 'webcast', 'audiocast',
   'general meeting', '\\bAGM\\b', '\\bEGM\\b',
