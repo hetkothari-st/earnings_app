@@ -29,6 +29,15 @@ export function tradegateInHours(ms: number): boolean {
 export function tradegatePriceTime(fetchedAt: string): string {
   const ms = Date.parse(fetchedAt);
   if (tradegateInHours(ms)) return fetchedAt;
+  return tradegateLastCloseTime(fetchedAt);
+}
+
+/**
+ * The close (22:00 Berlin) of the last session that ended at or before `fetchedAt`. An answer with no `last` (no
+ * trade yet today) carries only that session's close, so in hours too its price stands for this time.
+ */
+export function tradegateLastCloseTime(fetchedAt: string): string {
+  const ms = Date.parse(fetchedAt);
   let d = DateTime.fromMillis(ms, { zone: BERLIN });
   // Before 22:00 the day's session (if any) has not closed yet: the last close is an earlier day's.
   if (d.hour * 60 + d.minute < CLOSE_MIN) d = d.minus({ days: 1 });

@@ -142,6 +142,16 @@ describe('EuropePrices', () => {
     });
   });
 
+  it('in hours with no trade yet (last null): the previous close is served with that close time, so a newer Yahoo quote wins', async () => {
+    // 11:00 Berlin: Tradegate answers only close 11.04 (the previous session's), no last.
+    const s = setup({ tg: { 'BT-A.L': tq('GB0030913577', null, 11.04, NOW - 5_000) } });
+    expect(s.uk.snapshot()['BT-A.L']).toEqual({
+      price: 11.04, prevClose: 11.04, changePct: null, at: '2026-10-27T21:00:00.000Z', currency: 'EUR', venue: 'tradegate',
+    });
+    await s.uk.tick();
+    expect(s.uk.snapshot()['BT-A.L']).toMatchObject({ price: 1234.5, currency: 'GBp', venue: 'yahoo' });
+  });
+
   it('outside 08:00–22:00 Berlin the last Tradegate close is served with its time', async () => {
     // 22:30 Berlin (21:30Z): the answer carries the session's last trade; its time is the 22:00 close.
     const late = Date.parse('2026-10-28T21:30:00.000Z');
