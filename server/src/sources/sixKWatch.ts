@@ -12,9 +12,9 @@ export interface ForeignFiling {
   form: string;
 }
 
-/** One market the shared 6-K watcher serves (HK, Japan). */
+/** One market the shared 6-K watcher serves (HK, Japan, UK, Europe). */
 export interface SixKMarket {
-  name: 'hk' | 'jp';
+  name: 'hk' | 'jp' | 'uk' | 'eu';
   /** Full-level CIKs whose 6-Ks this market handles. */
   ciks(): Set<number>;
   /** Domestic filers whose 8-K Item 2.02 filings (from the US feed) this market handles. */
@@ -41,9 +41,10 @@ export function cikOf(item: SecFeedItem): number {
 
 /**
  * Watches the SEC "current 6-K" feed for every foreign market at once: one feed request per tick, each fresh item
- * routed to the market whose CIKs hold its index-URL CIK. Domestic filers arrive as 8-K 2.02 items from the US
- * SecWatch through `onUsFeed`. Filings of all markets go through one queue, one at a time; a filing that keeps
- * failing is left to the market's sweep after `MAX_TRIES`.
+ * routed to every market whose CIKs hold its index-URL CIK (HSBC is both HK and UK). Domestic filers arrive as 8-K
+ * 2.02 items from the US SecWatch through `onUsFeed`, fanned out the same way. Filings of all markets go through one
+ * queue, one (market, filing) job at a time; a job that keeps failing is left to that market's sweep after
+ * `MAX_TRIES`. Jobs are keyed `${market.name}:${accession}`, so one market's failure or "seen" never affects another.
  */
 export class SixKWatch {
   private timer: NodeJS.Timeout | null = null;
@@ -90,9 +91,13 @@ export class SixKWatch {
     this.timer.unref?.();
   }
 
-  /** The market whose CIK set holds `cik`. */
-  private static route(markets: { market: SixKMarket; ciks: Set<number> }[], cik: number): SixKMarket | undefined {
-    return markets.find((m) => m.ciks.has(cik))?.market;
+  /** Every market whose CIK set holds `cik`, in the watcher's market order. */
+  private static routeAll(markets: { market: SixKMarket; ciks: Set<number> }[], cik: number): SixKMarket[] {
+    return markets.filter((m) => m.ciks.has(cik)).map((m) => m.market);
+  }
+
+  private static key(market: SixKMarket, accession: string): string {
+    return `${market.name}:${accession}`;
   }
 
   /** One feed request; new filings of full-level CIKs are handled one at a time, oldest first. Returns changed ids. */
@@ -101,30 +106,29 @@ export class SixKWatch {
     if (!res) return [];
     const byMarket = this.markets.map((market) => ({ market, ciks: market.ciks() }));
     const items = res.value
-      .map((item) => ({ item, market: SixKWatch.route(byMarket, cikOf(item)) }))
-      .filter((x): x is { item: SecFeedItem; market: SixKMarket } =>
-        x.market != null && !this.gaveUp.has(x.item.accession) && !x.market.seen(x.item.accession))
+      .flatMap((item) => SixKWatch.routeAll(byMarket, cikOf(item)).map((market) => ({ item, market })))
+      .filter((x) => !this.gaveUp.has(SixKWatch.key(x.market, x.item.accession)) && !x.market.seen(x.item.accession))
       .sort((a, b) => a.item.acceptedAt.localeCompare(b.item.acceptedAt));
     const changed: number[] = [];
     for (const { item, market } of items) for (const id of await this.enqueue(item, market)) if (!changed.includes(id)) changed.push(id);
     return changed;
   }
 
-  /** 8-K items from the US feed (at-least-once delivery): Item 2.02 filings of a market's 8-K CIKs are handled once. */
+  /** 8-K items from the US feed (at-least-once delivery): Item 2.02 filings of a market's 8-K CIKs are handled once per market. */
   onUsFeed(items: SecFeedItem[]): void {
     const byMarket = this.markets.map((market) => ({ market, ciks: market.eightKCiks() }));
     for (const item of items) {
       if (!item.form.startsWith('8-K') || !item.items.includes('2.02')) continue;
-      const market = SixKWatch.route(byMarket, cikOf(item));
-      if (market) void this.enqueue(item, market);
+      for (const market of SixKWatch.routeAll(byMarket, cikOf(item))) void this.enqueue(item, market);
     }
   }
 
-  /** Filings go through one queue (never two at once); a filing already queued or seen is skipped. */
+  /** Jobs go through one queue (never two at once); a (market, filing) job already queued or seen is skipped. */
   private enqueue(item: SecFeedItem, market: SixKMarket): Promise<number[]> {
-    if (this.queued.has(item.accession)) return Promise.resolve([]);
-    this.queued.add(item.accession);
-    const run = this.queue.then(() => this.handle(item, market)).finally(() => this.queued.delete(item.accession));
+    const key = SixKWatch.key(market, item.accession);
+    if (this.queued.has(key)) return Promise.resolve([]);
+    this.queued.add(key);
+    const run = this.queue.then(() => this.handle(item, market)).finally(() => this.queued.delete(key));
     this.queue = run.catch(() => undefined);
     return run;
   }
@@ -132,21 +136,22 @@ export class SixKWatch {
   private async handle(item: SecFeedItem, market: SixKMarket): Promise<number[]> {
     if (market.seen(item.accession)) return [];
     const cik = cikOf(item);
+    const key = SixKWatch.key(market, item.accession);
     try {
       const ids = [...new Set(await market.handle({ cik, accession: item.accession, indexUrl: item.indexUrl, acceptedAt: item.acceptedAt, form: item.form }))];
-      this.tries.delete(item.accession);
+      this.tries.delete(key);
       if (ids.length > 0) market.onChanged(ids);
       return ids;
     } catch (err) {
-      const n = (this.tries.get(item.accession) ?? 0) + 1;
+      const n = (this.tries.get(key) ?? 0) + 1;
       const msg = err instanceof Error ? err.message : String(err);
       if (n >= MAX_TRIES) {
         // Not marked seen: the sweep (fetchEarningsFilings) still picks it up.
-        this.tries.delete(item.accession);
-        this.gaveUp.add(item.accession);
+        this.tries.delete(key);
+        this.gaveUp.add(key);
         console.error(`[${market.name}-sec] ${item.accession}: left to the sweep after ${n} tries: ${msg}`);
       } else {
-        this.tries.set(item.accession, n);
+        this.tries.set(key, n);
         console.error(`[${market.name}-sec] ${item.accession} (try ${n}): ${msg}`);
       }
       return [];
