@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { EuropeFigureDto, EuropeLivePriceDto, EuropeReportDto, ExchangeId } from '../../../server/src/europe/api/types';
 import type { Note } from '../api';
 import { changeClass, formatChange, formatDateHeading, formatEuropeEps, formatEuropeMoney, formatEuropePrice, jpSpanLabel } from '../lib/format';
@@ -61,6 +61,7 @@ function storedExchange(): string {
 
 export function EuropeStockList({ market, rows, zone, expanded, sort, onToggle, notes, onSaveNote, highlight, prices = {}, watched, onWatch }: Props) {
   const [chosen, setChosen] = useState<string>(storedExchange);
+  const now = useNow(15_000);
   if (rows.length === 0) return <p className="empty">No {market === 'UK' ? 'UK' : 'Europe'} results match this range and search.</p>;
 
   // EU only: the exchanges present in these rows, filtered client-side. A stored choice absent here shows everything.
@@ -94,7 +95,7 @@ export function EuropeStockList({ market, rows, zone, expanded, sort, onToggle, 
               {list.map((r) => (
                 <EuropeStock key={r.id} r={r} market={market} zone={zone} open={expanded.has(europeKey(market, r.symbol))}
                   isNew={highlight?.has(r.id) ?? false} onToggle={onToggle} note={notes.get(r.id)} onSaveNote={onSaveNote}
-                  price={prices[r.symbol]} watched={watched?.has(r.symbol) ?? false} onWatch={onWatch} />
+                  price={prices[r.symbol]} watched={watched?.has(r.symbol) ?? false} onWatch={onWatch} now={now} />
               ))}
             </ul>
           </section>
@@ -107,17 +108,41 @@ export function EuropeStockList({ market, rows, zone, expanded, sort, onToggle, 
 /** "Real-time · Tradegate · EUR": the currency is the one the server sent with the price; none sent, none shown. */
 export const realtimeLabel = (currency: string | null | undefined) => `Real-time · Tradegate${currency ? ` · ${currency}` : ''}`;
 
-/** The venue next to a price: Tradegate is real-time; anything else is Yahoo, delayed. */
-function Venue({ price }: { price: EuropeLivePriceDto }) {
-  return price.venue === 'tradegate'
-    ? <span className="realtime">{realtimeLabel(price.currency)}</span>
-    : <span className="delayed">Delayed ~15 min</span>;
+/** A Tradegate price older than this is labelled with its time, not as real-time. */
+export const TRADEGATE_REALTIME_MS = 60_000;
+
+/** True when a Tradegate price's time is more than 60 s before `now` (or unreadable). */
+export const tradegateStale = (at: string, now: number) => {
+  const t = Date.parse(at);
+  return !Number.isFinite(t) || now - t > TRADEGATE_REALTIME_MS;
+};
+
+/** The wall clock, re-read every `ms` (the real-time label turns into a time once a quote ages). */
+function useNow(ms: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
 }
 
-function EuropeStock({ r, market, zone, open, isNew, onToggle, note, onSaveNote, price, watched, onWatch }: {
+/**
+ * The venue next to a price: Tradegate is real-time while its time is within 60 s, else "Tradegate HH:MM" in the
+ * viewer's zone; anything else is Yahoo, delayed.
+ */
+function Venue({ price, zone, now }: { price: EuropeLivePriceDto; zone: string; now: number }) {
+  if (price.venue !== 'tradegate') return <span className="delayed">Delayed ~15 min</span>;
+  if (tradegateStale(price.at, now)) {
+    return <span className="delayed">{`Tradegate ${clock24(price.at, zone)}${price.currency ? ` · ${price.currency}` : ''}`}</span>;
+  }
+  return <span className="realtime">{realtimeLabel(price.currency)}</span>;
+}
+
+function EuropeStock({ r, market, zone, open, isNew, onToggle, note, onSaveNote, price, watched, onWatch, now }: {
   r: EuropeReportDto; market: 'UK' | 'EU'; zone: string; open: boolean; isNew: boolean; onToggle: (key: string) => void;
   note: Note | undefined; onSaveNote: (reportId: number, text: string) => Promise<void>; price: EuropeLivePriceDto | undefined;
-  watched: boolean; onWatch: ((symbol: string, on: boolean) => void) | undefined;
+  watched: boolean; onWatch: ((symbol: string, on: boolean) => void) | undefined; now: number;
 }) {
   return (
     <li className={`stock s-${r.timing.toLowerCase()}${onWatch ? ' has-star' : ''}${open ? ' open' : ''}${isNew ? ' just-updated' : ''}`}
@@ -134,7 +159,7 @@ function EuropeStock({ r, market, zone, open, isNew, onToggle, note, onSaveNote,
             <>
               <span>{formatEuropePrice(price.price, price.currency)}</span>
               {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}
-              <Venue price={price} />
+              <Venue price={price} zone={zone} now={now} />
             </>
           ) : null}
         </span>
@@ -142,14 +167,14 @@ function EuropeStock({ r, market, zone, open, isNew, onToggle, note, onSaveNote,
         <span className="chevron" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
       {onWatch && <Star symbol={r.symbol} on={watched} onToggle={onWatch} />}
-      {open && <EuropeDetails r={r} zone={zone} note={note} onSaveNote={onSaveNote} price={price} />}
+      {open && <EuropeDetails r={r} zone={zone} note={note} onSaveNote={onSaveNote} price={price} now={now} />}
     </li>
   );
 }
 
-function EuropeDetails({ r, zone, note, onSaveNote, price }: {
+function EuropeDetails({ r, zone, note, onSaveNote, price, now }: {
   r: EuropeReportDto; zone: string; note: Note | undefined;
-  onSaveNote: (reportId: number, text: string) => Promise<void>; price: EuropeLivePriceDto | undefined;
+  onSaveNote: (reportId: number, text: string) => Promise<void>; price: EuropeLivePriceDto | undefined; now: number;
 }) {
   const local = EXCHANGE[r.exchange]?.zone ?? 'Europe/London';
   const sourceOf = (f: EuropeFigureDto) => (f.actualSource === 'yahoo' ? 'Yahoo' : f.actualSource === 'esef' ? 'ESEF annual report' : null);
@@ -233,7 +258,9 @@ function EuropeDetails({ r, zone, note, onSaveNote, price }: {
               {formatEuropePrice(price.price, price.currency)}
               {price.changePct != null && <span className={changeClass(price.changePct)}> {formatChange(price.changePct)}</span>}
               <span className="muted">
-                {price.venue === 'tradegate' ? ` · real-time (Tradegate${price.currency ? `, ${price.currency}` : ''})` : ' · delayed ~15 min (Yahoo)'}, {clock(price.at, zone)}
+                {price.venue !== 'tradegate' ? ' · delayed ~15 min (Yahoo)'
+                  : tradegateStale(price.at, now) ? ` · Tradegate${price.currency ? `, ${price.currency}` : ''}`
+                    : ` · real-time (Tradegate${price.currency ? `, ${price.currency}` : ''})`}, {clock(price.at, zone)}
               </span>
             </>
           ) : '—'}

@@ -97,6 +97,8 @@ describe('EuropePrices', () => {
     // A change in what users see counts at once (visible codes are in memory).
     s.uk.setVisible('u1', ['AZN.L']);
     expect(s.uk.tradegateWanted().map((w) => w.symbol)).toEqual(['AZN.L']);
+    // Visible codes are marked: the poller serves them first.
+    expect(s.uk.tradegateWanted()).toEqual([expect.objectContaining({ symbol: 'AZN.L', visible: true })]);
   });
 
   it('Tradegate quote wins with venue tradegate and EUR; change from Tradegate close only', async () => {
@@ -117,7 +119,8 @@ describe('EuropePrices', () => {
     expect(s.published).toEqual([{ 'AZN.L': azn }]);
     expect(Object.keys(s.uk.snapshot()).sort()).toEqual(['AZN.L', 'BT-A.L']);
     // Wanted by the poller, by ISIN.
-    expect(s.uk.tradegateWanted()).toEqual([{ isin: 'GB0009895292', symbol: 'AZN.L' }, { isin: 'GB0030913577', symbol: 'BT-A.L' }]);
+    expect(s.uk.tradegateWanted().map(({ isin, symbol }) => ({ isin, symbol })))
+      .toEqual([{ isin: 'GB0009895292', symbol: 'AZN.L' }, { isin: 'GB0030913577', symbol: 'BT-A.L' }]);
   });
 
   it('state backoff/off-env/off-robots → Yahoo price with Yahoo currency', async () => {

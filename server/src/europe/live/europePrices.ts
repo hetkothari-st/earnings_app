@@ -198,10 +198,10 @@ export class EuropePrices {
 
   /**
    * The symbols the Tradegate poller should cover for this market (visible ∪ watched ∪ reporting today/tomorrow), with
-   * their ISIN. The poller asks every second: the watched and reporting symbols and the ISIN map are read from the
+   * their ISIN; a code some user has on screen is marked `visible` (the poller serves those first). The poller asks every second: the watched and reporting symbols and the ISIN map are read from the
    * database at most once a minute (or after `universeChanged`); the visible codes are in memory and always current.
    */
-  tradegateWanted(): { isin: string; symbol: string }[] {
+  tradegateWanted(): { isin: string; symbol: string; visible?: true }[] {
     const now = this.now();
     if (!this.wantedCache || now - this.wantedCache.at >= WANTED_REFRESH_MS) {
       const symbols = new Set<string>(allWatched(this.db, this.market));
@@ -212,9 +212,11 @@ export class EuropePrices {
       this.wantedCache = { at: now, symbols: [...symbols], isins };
     }
     const { symbols, isins } = this.wantedCache;
-    return [...new Set([...this.visibleCodes(), ...symbols])].sort().flatMap((symbol) => {
+    const visible = new Set(this.visibleCodes());
+    return [...new Set([...visible, ...symbols])].sort().flatMap((symbol) => {
       const isin = isins.get(symbol);
-      return isin ? [{ isin, symbol }] : [];
+      if (!isin) return [];
+      return visible.has(symbol) ? [{ isin, symbol, visible: true as const }] : [{ isin, symbol }];
     });
   }
 }

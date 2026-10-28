@@ -35,7 +35,7 @@ describe('EuropeStockList', () => {
     const bt = dto({ id: 4_000_000_002, symbol: 'BT-A.L', name: 'BT Group', level: 'basic', adrTicker: null, adrRatio: null });
     mount([dto({}), bt], [], {
       prices: {
-        'AZN.L': { price: 145.3, prevClose: 144, changePct: 0.9, at: '2026-11-05T10:00:00.000Z', currency: 'EUR', venue: 'tradegate' },
+        'AZN.L': { price: 145.3, prevClose: 144, changePct: 0.9, at: new Date().toISOString(), currency: 'EUR', venue: 'tradegate' },
         'BT-A.L': { price: 1234.5, prevClose: 1240, changePct: -0.44, at: '2026-11-05T10:00:00.000Z', currency: 'GBp', venue: 'yahoo' },
       },
     });
@@ -102,8 +102,8 @@ describe('EuropeStockList', () => {
     const b = dto({ id: 4_000_000_006, symbol: 'X2.L', name: 'Two' });
     mount([a, b], ['UK:X2.L'], {
       prices: {
-        'X1.L': { price: 10, prevClose: null, changePct: null, at: '2026-11-05T10:00:00.000Z', currency: 'USD', venue: 'tradegate' },
-        'X2.L': { price: 11, prevClose: null, changePct: null, at: '2026-11-05T10:00:00.000Z', currency: null, venue: 'tradegate' },
+        'X1.L': { price: 10, prevClose: null, changePct: null, at: new Date().toISOString(), currency: 'USD', venue: 'tradegate' },
+        'X2.L': { price: 11, prevClose: null, changePct: null, at: new Date().toISOString(), currency: null, venue: 'tradegate' },
       },
     });
     const one = document.querySelector<HTMLElement>('[data-symbol="X1.L"]')!;
@@ -111,6 +111,25 @@ describe('EuropeStockList', () => {
     const two = document.querySelector<HTMLElement>('[data-symbol="X2.L"]')!;
     expect(within(two).getByText('Real-time · Tradegate')).toBeTruthy();
     expect(two.textContent).not.toContain('EUR');
+  });
+
+  test('a Tradegate quote older than 60 s reads "Tradegate HH:MM", never real-time', () => {
+    const old = new Date(Date.now() - 5 * 60_000).toISOString();
+    const fresh = new Date(Date.now() - 10_000).toISOString();
+    const a = dto({ id: 4_000_000_007, symbol: 'X3.L', name: 'Three' });
+    const b = dto({ id: 4_000_000_008, symbol: 'X4.L', name: 'Four' });
+    mount([a, b], ['UK:X3.L'], {
+      prices: {
+        'X3.L': { price: 10, prevClose: null, changePct: null, at: old, currency: 'EUR', venue: 'tradegate' },
+        'X4.L': { price: 11, prevClose: null, changePct: null, at: fresh, currency: 'EUR', venue: 'tradegate' },
+      },
+    });
+    const hhmm = new Date(old).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
+    const three = document.querySelector<HTMLElement>('[data-symbol="X3.L"]')!;
+    expect(within(three).getByText(`Tradegate ${hhmm} · EUR`)).toBeTruthy();
+    expect(three.textContent).not.toMatch(/real-time/i);
+    const four = document.querySelector<HTMLElement>('[data-symbol="X4.L"]')!;
+    expect(within(four).getByText('Real-time · Tradegate · EUR')).toBeTruthy();
   });
 
   test('UNKNOWN timing tooltip text', () => {
