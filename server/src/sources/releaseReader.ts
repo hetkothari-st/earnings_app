@@ -1956,8 +1956,10 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
     const adjustedCaption = adjusted(caption);
     if (adjustedCaption && (span !== 'quarter' || eu)) continue;
     // Period words in the caption ("Nine months to 30 September", "Six months ended", "Year to date", "H1"): no column
-    // of the table is the quarter.
-    if (span === 'quarter' && euNotQuarter(caption)) continue;
+    // of the table is read as the quarter. Profile 'uk': its rows still count for `quarterStated` ("results for the
+    // second quarter and first half" over a "Second Quarter Results" section).
+    const notQuarterCaption = span === 'quarter' && euNotQuarter(caption);
+    if (notQuarterCaption && opts.profile !== 'uk') continue;
     // Revenue only from a table with a per-share line (the income statement or the results summary); a release with
     // no per-share line anywhere (a trading update) may give it from a table that is not a segment breakdown.
     const revenueOk = epsRow(table) || (!docHasEps && !EU_SEGMENT.test(caption));
@@ -2033,7 +2035,7 @@ function readEu(html: string, opts: ReaderOptions): ReaderResult {
       sectionRaw = '';
     }
     if (span === 'quarter' && !quarterStated) quarterStated = euStatesQuarter(dataRows, pe, fiscal);
-    if (adjustedCaption || !rowsOut.length) continue;
+    if (adjustedCaption || notQuarterCaption || !rowsOut.length) continue;
 
     const figureCols = new Set(rowsOut.flatMap((r) => r.nums.map((n) => n.start)));
     const firstFigure = Math.min(...figureCols);

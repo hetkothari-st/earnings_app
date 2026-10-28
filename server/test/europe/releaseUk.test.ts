@@ -191,3 +191,21 @@ describe('readEuropeRelease (uk) — EPS stated in two currencies (a convenience
     expect(readEuropeRelease(doc(usd), FYx).eps).toBe(1.25);
   });
 });
+
+describe('readEuropeRelease (uk) — a "Second Quarter Results" section over dated columns states the quarter', () => {
+  const H1y = { periodEnd: '2025-06-30', fiscalQuarter: 2 as const, profile: 'uk' as const };
+  const summary = table('Smith+Nephew reports results for the second quarter and first half ended 28 June 2025:', [['', '28 June', '29 June', 'Reported'], ['', '2025', '2024', 'growth'], ['', '$m', '$m', '%']], [
+    ['Second Quarter Results 1,2'], ['Revenue', '1,553', '1,441', '7.8'],
+    ['Half Year Results'], ['Operating profit', '429', '328', '30.6'],
+  ]);
+  const h1 = table('', [['', 'Half year', 'Half year'], ['', '2025', '2024'], ['', '$m', '$m']], [['Revenue', '2,961', '2,827'], ['Basic earnings per share ($)', '0.335', '0.245']]);
+
+  it('the half-year column is not read in place of the quarter', () => {
+    expect(pick(readEuropeRelease(doc(summary, h1), H1y))).toEqual(BLANK);
+  });
+
+  it('a half-year section only: the half year is read', () => {
+    const halfOnly = summary.replace('Second Quarter Results 1,2', 'Half Year Results');
+    expect(readEuropeRelease(doc(halfOnly, h1), H1y).revenue).toBe(2_961_000_000);
+  });
+});
