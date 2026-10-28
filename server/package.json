@@ -15,6 +15,7 @@
     "verify-europe-universe": "tsx src/cli/verifyEuropeUniverse.ts",
     "collect-hk-corpus": "tsx src/cli/collectHkCorpus.ts",
     "collect-jp-corpus": "tsx src/cli/collectJpCorpus.ts",
+    "collect-europe-corpus": "tsx src/cli/collectEuropeCorpus.ts",
     "hk-spot-check": "tsx src/cli/hkSpotCheck.ts",
     "jp-spot-check": "tsx src/cli/jpSpotCheck.ts",
     "test": "vitest run",
