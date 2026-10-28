@@ -88,6 +88,15 @@ describe('EuropeStockList', () => {
     expect(screen.getByText('Stock').nextElementSibling!.textContent).toContain('SAP.DE SAP · Xetra');
   });
 
+  test('Yahoo results out shows no clock: the time is when the app saw it, not the release', () => {
+    const r = sapRow({ releasedAt: '2026-11-05T12:35:00.000Z', releasedSource: 'yahoo' });
+    mount([r], ['EU:SAP.DE'], { market: 'EU', zone: 'America/New_York' });
+    const dd = screen.getByText('Release').nextElementSibling as HTMLElement;
+    expect(dd.textContent!.startsWith('Results out · Yahoo')).toBe(true);
+    expect(dd.textContent).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(dd.textContent).not.toContain('your time');
+  });
+
   test('Real-time label carries the price own currency; none when the server sends none', () => {
     const a = dto({ id: 4_000_000_005, symbol: 'X1.L', name: 'One' });
     const b = dto({ id: 4_000_000_006, symbol: 'X2.L', name: 'Two' });
@@ -166,7 +175,8 @@ describe('EuropeStockList', () => {
     });
     mount([r], ['UK:AZN.L']);
     expect(screen.getByText('Stock').nextElementSibling!.textContent).toContain('· ADR AZN (1 ADS = 1 share)');
-    expect(screen.getByText(/SEC 6-K usually arrives within hours of the 07:00 release/)).toBeTruthy();
+    expect(screen.getByText(/SEC 6-K usually arrives within hours of the company's release/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('07:00 release');
     const rev = screen.getByText('Revenue estimate / actual').nextElementSibling!.textContent;
     expect(rev).toContain('€54B');
     expect(rev).toContain('from ESEF annual report');

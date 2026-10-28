@@ -180,14 +180,15 @@ function EuropeDetails({ r, zone, note, onSaveNote, price }: {
           {r.releasedAt ? (
             <>
               Results out
-              {r.releasedSource && ` · ${RELEASED_BY[r.releasedSource]} ${clock24(r.releasedAt, local)}`}
-              {zone !== local && <span className="muted"> ({clock(r.releasedAt, zone)} your time)</span>}
+              {/* A Yahoo time is when the app saw Yahoo's actual, not the company's release: no clock. */}
+              {r.releasedSource === 'yahoo' ? ` · ${RELEASED_BY.yahoo}` : r.releasedSource && ` · ${RELEASED_BY[r.releasedSource]} ${clock24(r.releasedAt, local)}`}
+              {r.releasedSource !== 'yahoo' && zone !== local && <span className="muted"> ({clock(r.releasedAt, zone)} your time)</span>}
               {r.signal && <> · <a href={r.signal.url} target="_blank" rel="noreferrer">{r.signal.title}</a></>}
             </>
           ) : (
             <>
               <span title={r.timing === 'UNKNOWN' ? UNKNOWN_TITLE : undefined}>{TIMING_SHORT[r.timing]}</span>
-              {r.level === 'full' && <span className="muted"> · SEC 6-K usually arrives within hours of the 07:00 release</span>}
+              {r.level === 'full' && <span className="muted"> · SEC 6-K usually arrives within hours of the company's release</span>}
             </>
           )}
           {r.secDocUrl && <span className="muted"> · <a href={r.secDocUrl} target="_blank" rel="noreferrer">SEC 6-K</a></span>}

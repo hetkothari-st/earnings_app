@@ -52,6 +52,10 @@ export interface EuropeReportDto {
   fyEnd: string;
   timing: LocalTiming;
   timingSource: 'sec-notice' | 'prn' | 'yahoo' | null;
+  /**
+   * Set once results are out: the earliest signal's time. For `releasedSource` 'yahoo' it is only when the app saw
+   * Yahoo's actual (the release was at or before it), never the release time: show no clock for it.
+   */
   releasedAt: string | null;
   releasedSource: 'sec' | 'prn' | 'dila' | 'yahoo' | null;
   /** The results-out signal's title and link (PR Newswire item, DILA document, SEC filing). */

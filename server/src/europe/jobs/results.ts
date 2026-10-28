@@ -14,7 +14,9 @@ const LOOKBACK_DAYS = 20;
  * reporter's FY-Dec actual never lands on a 2026-03-31 row, Review Focus 1). Its EPS, with the currency Yahoo states
  * (an entry without one is skipped), is merged as source `yahoo`, span `quarter`, into Q1 and Q3 rows only (controller
  * ruling, fix round 1: never into an H1 or FY row, whose Yahoo figure may span 6 or 12 months); the release still flips: `mergeEuropeActuals` keeps SEC and
- * ESEF values (a lower source never replaces a higher one). Then the release is recorded at the job's run time
+ * ESEF values (a lower source never replaces a higher one). Then the release is recorded at the job's run time (a
+ * detection time, an upper bound only: the web shows no clock for it, note deadlines ignore it, and an earlier signal
+ * still replaces it)
  * (Ruling 10: Yahoo counts only for basic rows; an earlier PR Newswire / DILA / SEC time is kept). Full-level rows are
  * left to SEC. Returns the changed ids.
  */
