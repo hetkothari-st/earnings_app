@@ -44,7 +44,27 @@ import { refreshWatchedEstimates } from './jobs/refreshCalendar.js';
 import { allWatched } from './watchlist/store.js';
 import { fetchResultsPdf, readInResultsPdf } from './india/sources/resultsPdf.js';
 import { IN_INDICES, InPrices } from './india/live/inPrices.js';
-import { SymbolIndex, hkEntries, jpEntries, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
+import { SymbolIndex, europeEntries, hkEntries, jpEntries, loadInEntries, startSymbolRefresh, usEntries } from './watchlist/search.js';
+import { cachedChains } from './sources/cboeCache.js';
+import { EU_ID_BASE } from './europe/db/europeRepo.js';
+import { marketToday } from './europe/domain/calendars.js';
+import { UNIVERSE_URLS, type EuropeMarket } from './europe/exchanges.js';
+import { buildEuropeUniverseFor, type EuropeJobContext, type EuropeUniverseSources } from './europe/jobs/context.js';
+import { startEuropeScheduler, warmUpEurope, warmUpEuropeAfter, type EuropeSchedulerHooks } from './europe/jobs/scheduler.js';
+import { EuropePrices, type TradegateSide } from './europe/live/europePrices.js';
+import { europeSixKMarket } from './europe/live/europeSixK.js';
+import { TradegatePoller } from './europe/live/tradegatePoller.js';
+import { listDilaFiles } from './europe/sources/dila.js';
+import { createEsefClient } from './europe/sources/esef.js';
+import { fetchFirdsShares, makeFirdsHttp, type FirdsShare } from './europe/sources/firds.js';
+import { fetchLegalNames } from './europe/sources/gleif.js';
+import { createOpenFigi } from './europe/sources/openFigi.js';
+import { parsePrnRss, type PrnItem } from './europe/sources/prnewswire.js';
+import { DILA_BASE, EUROPE_UA, GOVUK_BANK_HOLIDAYS_URL, PRN_FEEDS } from './europe/sources/sourceUrls.js';
+import { createTradegate } from './europe/sources/tradegate.js';
+import {
+  createYahooEuropeSummary, defaultZoneOf, fetchEuropeEarningsCalendar, fetchEuropeQuotes, yahooIsinSearch,
+} from './europe/sources/yahooEurope.js';
 import { createKiteApi } from './india/sources/kiteApi.js';
 import { completeBrowserLogin, ensureSession, getKiteCredentials, getSession, kiteStatus, startBrowserLogin } from './india/sources/kiteLogin.js';
 import { createYahooInFetcher, fetchYahooIndex } from './india/sources/yahooIn.js';
@@ -130,6 +150,126 @@ const jpPrices = new JpPrices(db, {
   index: (s) => fetchIndexQuote(jpYahoo, s),
 }, (p) => live.publish('jp-prices', { prices: p }), (m) => live.publish('jp-indices', { indices: m }));
 
+// UK and Europe: every Yahoo call of both markets goes through this one client on the cross-market Yahoo budget
+// (<= 1 request/s with HK, Japan and India). Cboe chains through a 15-minute cache over the shared Cboe client (the
+// app shares one IP; Cboe answers 429 above ~35 requests a minute). SEC through the one shared client.
+const euYahoo = createYahooClient({ limiter: yahooLimiter });
+const chains = cachedChains((a) => sources.optionChain(a));
+const tradegate = createTradegate({ enabled: config.tradegatePrices });
+/** Non-SEC, non-Yahoo Europe sources (gov.uk, PR Newswire, DILA listing, GLEIF, SIX): EUROPE_UA, one request a second. */
+const europeHttp = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': EUROPE_UA } });
+const firdsHttp = makeFirdsHttp();
+const openFigi = createOpenFigi({ key: config.openFigiApiKey || undefined });
+const esef = createEsefClient();
+/** The last complete universe build per market, for the admin page (null there until one has run). */
+const europeUniverseState: Partial<Record<EuropeMarket, { leftOut: number; at: string }>> = {};
+/**
+ * Both markets' builds read the same FIRDS sets and SIX list (the UK-first tie-break needs every line): a complete
+ * read is reused for 6 h, so the UK and EU weekly runs download them once.
+ */
+const UNIVERSE_REUSE_MS = 6 * 3_600_000;
+const firdsCache = new Map<string, { at: number; shares: FirdsShare[]; files: number }>();
+let sixCache: { at: number; text: string } | null = null;
+const universeSources: EuropeUniverseSources = {
+  async firds(source, mics, onShare) {
+    const key = `${source}:${[...mics].sort().join(',')}`;
+    const hit = firdsCache.get(key);
+    if (hit && Date.now() - hit.at < UNIVERSE_REUSE_MS) {
+      for (const s of hit.shares) onShare(s);
+      return { files: hit.files, complete: true };
+    }
+    const shares: FirdsShare[] = [];
+    const r = await fetchFirdsShares(firdsHttp, source, mics, (s) => { shares.push(s); onShare(s); });
+    if (r.complete) firdsCache.set(key, { at: Date.now(), shares, files: r.files });
+    return r;
+  },
+  async sixList() {
+    if (sixCache && Date.now() - sixCache.at < UNIVERSE_REUSE_MS) return sixCache.text;
+    const text = await europeHttp.text(UNIVERSE_URLS.sixList);
+    sixCache = { at: Date.now(), text };
+    return text;
+  },
+  figi: (jobs) => openFigi.map(jobs),
+  search: (isin) => yahooIsinSearch(euYahoo, isin),
+  names: (leis) => fetchLegalNames(europeHttp, leis),
+};
+/** One PR Newswire feed set for both markets (items are de-duplicated across markets by the job); reused for 60 s. */
+const PRN_ALL = [...new Set([...PRN_FEEDS.UK, ...PRN_FEEDS.EU])];
+let prnCache: { at: number; items: Promise<PrnItem[]> } | null = null;
+const prnFeed = (): Promise<PrnItem[]> => {
+  if (prnCache && Date.now() - prnCache.at < 60_000) return prnCache.items;
+  const items = (async () => {
+    const byLink = new Map<string, PrnItem>();
+    let failed = 0;
+    for (const url of PRN_ALL) {
+      try {
+        for (const it of parsePrnRss(await europeHttp.text(url))) if (!byLink.has(it.link)) byLink.set(it.link, it);
+      } catch (err) {
+        failed++;
+        console.warn(`prn feed ${url}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    if (failed === PRN_ALL.length) throw new Error('every PR Newswire feed failed');
+    return [...byLink.values()];
+  })();
+  prnCache = { at: Date.now(), items };
+  items.catch(() => { prnCache = null; });
+  return items;
+};
+/** DILA AMF (EU only): the day's batch names from the listing, and one batch as the fetch body stream (never buffered). */
+const dila: EuropeJobContext['dila'] = {
+  list: async (day) => listDilaFiles(await europeHttp.text(DILA_BASE), day),
+  archive: async (name) => {
+    if (!/^amf-gz_\d{8}_\d{4}\.tar\.gz$/.test(name)) throw new Error(`unexpected DILA batch name ${name}`);
+    const res = await fetch(`${DILA_BASE}${name}`, { headers: { 'User-Agent': EUROPE_UA }, signal: AbortSignal.timeout(30 * 60_000) });
+    if (!res.ok || !res.body) throw new Error(`DILA ${name}: HTTP ${res.status}`);
+    return res.body as unknown as AsyncIterable<Uint8Array>;
+  },
+};
+const europeSummary = createYahooEuropeSummary(euYahoo);
+const europeCtx = (market: EuropeMarket, tierA: () => string[]): EuropeJobContext => ({
+  db,
+  market,
+  now: () => new Date().toISOString(),
+  today: () => marketToday(market),
+  yahooCalendar: (region, f, t) => fetchEuropeEarningsCalendar(euYahoo, region, f, t, defaultZoneOf),
+  yahooSummary: europeSummary,
+  yahooQuotes: (s) => fetchEuropeQuotes(euYahoo, s),
+  yahooCloses: (s, f, t) => fetchYahooDailyCloses(euYahoo, s, f, t, defaultZoneOf(s) ?? (market === 'UK' ? 'Europe/London' : 'Europe/Paris')),
+  buildUniverse: async () => {
+    const at = new Date().toISOString();
+    const r = await buildEuropeUniverseFor(db, market, universeSources, at);
+    // Only a complete build's count is meaningful (an incomplete one is not synced either).
+    if (r.complete) europeUniverseState[market] = { leftOut: r.leftOut, at };
+    return r;
+  },
+  bankHolidaysJson: () => europeHttp.json(GOVUK_BANK_HOLIDAYS_URL),
+  esef,
+  prnFeed,
+  dila: market === 'EU' ? dila : null,
+  optionChain: chains,
+  secHttp: sources.secHttp ?? null,
+  tierA,
+});
+const ukCtx = europeCtx('UK', () => [...new Set([...ukPrices.visibleCodes(), ...allWatched(db, 'UK')])]);
+const euCtx = europeCtx('EU', () => [...new Set([...euPrices.visibleCodes(), ...allWatched(db, 'EU')])]);
+const europePriceDeps = { quotes: (s: string[]) => fetchEuropeQuotes(euYahoo, s), index: (s: string) => fetchIndexQuote(euYahoo, s) };
+const tradegateSide: TradegateSide = { snapshot: () => tradegatePoller.snapshot(), state: () => tradegate.state() };
+const ukPrices = new EuropePrices('UK', db, europePriceDeps, tradegateSide,
+  (p) => live.publish('uk-prices', { prices: p }), (m) => live.publish('uk-indices', { indices: m }));
+const euPrices = new EuropePrices('EU', db, europePriceDeps, tradegateSide,
+  (p) => live.publish('eu-prices', { prices: p }), (m) => live.publish('eu-indices', { indices: m }));
+// One Tradegate poller for both markets (one request per second process-wide), by ISIN.
+const tradegatePoller = new TradegatePoller(tradegate, () => [...ukPrices.tradegateWanted(), ...euPrices.tradegateWanted()],
+  (changed) => { ukPrices.onTradegate(changed); euPrices.onTradegate(changed); });
+/** Report ids to their market's stream (PR Newswire runs over both markets, so a UK run can change an EU row). */
+const publishEuropeResults = (ids: number[]): void => {
+  const uk = ids.filter((id) => id < EU_ID_BASE);
+  const eu = ids.filter((id) => id >= EU_ID_BASE);
+  if (uk.length) live.publish('uk-results', { ids: uk });
+  if (eu.length) live.publish('eu-results', { ids: eu });
+};
+
 // Search and validation lists for watchlists: built in memory, refreshed daily (started below).
 const symbolIndex = new SymbolIndex();
 // Watched stocks flow through the data jobs: US gets its past results once; India stocks join the matching cache.
@@ -155,6 +295,8 @@ const app = buildServer(db, {
       else if (market === 'IN') syncInWatched();
       else if (market === 'HK') hkPrices.refresh();
       else if (market === 'JP') jpPrices.refresh();
+      else if (market === 'UK') ukPrices.refresh();
+      else if (market === 'EU') euPrices.refresh();
     },
   },
   indexQuote: (s) => fetchIndexQuote(yahoo, s), requireAuth: true, webRoot: config.webRoot, trustProxy: config.trustProxy,
@@ -190,6 +332,15 @@ const app = buildServer(db, {
     indexQuote: (s) => fetchIndexQuote(jpYahoo, s),
     setVisible: (u, c) => jpPrices.setVisible(u, c),
   },
+  europe: {
+    UK: { prices: () => ukPrices.snapshot(), indices: () => ukPrices.indices(), indexQuote: (s) => fetchIndexQuote(euYahoo, s), setVisible: (u, c) => ukPrices.setVisible(u, c) },
+    EU: { prices: () => euPrices.snapshot(), indices: () => euPrices.indices(), indexQuote: (s) => fetchIndexQuote(euYahoo, s), setVisible: (u, c) => euPrices.setVisible(u, c) },
+    // The admin page: the live Tradegate client's state and the last complete universe build per market.
+    admin: () => ({
+      tradegate: { state: tradegate.state(), backoffUntil: tradegate.backoffUntil(), lastPollAt: tradegate.lastPollAt() },
+      universe: europeUniverseState,
+    }),
+  },
 });
 // Live stream: signed-in users only (the HTTP routes check the same session cookie).
 registerStream(app, live, (cookie) => {
@@ -200,6 +351,8 @@ startSymbolRefresh(symbolIndex, {
   ...(config.secUserAgent ? { US: async () => usEntries(await ctx.sources.secTickers(), db) } : {}),
   HK: async () => hkEntries(db),
   JP: async () => jpEntries(db),
+  UK: async () => europeEntries(db, 'UK'),
+  EU: async () => europeEntries(db, 'EU'),
   IN: async () => {
     const list = await loadInEntries(inCtx.http, db, inTokens);
     // Names for watched stocks outside F&O come from this list.
@@ -223,6 +376,9 @@ if (secHttp) {
   const sixK = new SixKWatch([
     hkSixKMarket(hkCtx, (ids) => live.publish('hk-results', { ids })),
     jpSixKMarket(jpCtx, (ids) => live.publish('jp-results', { ids })),
+    // UK / Europe: HSBC's one CIK is HK and UK; each market handles it on its own key and session.
+    europeSixKMarket(ukCtx, (ids) => live.publish('uk-results', { ids })),
+    europeSixKMarket(euCtx, (ids) => live.publish('eu-results', { ids })),
   ], secHttp, { db, now: () => new Date().toISOString() });
   // Quick read of the press release: preliminary values until an official source confirms them.
   const reader = async (exhibitUrl: string, reportId: number): Promise<void> => {
@@ -256,8 +412,27 @@ startJpScheduler(jpCtx, job, jpHooks);
 // Japan warms up after Hong Kong: both wait on the one Yahoo budget, and Japan's thousands of codes would otherwise
 // slow HK's warm-up. Neither blocks US or India startup.
 // A failed HK warm-up never skips Japan's.
-void warmUpJpAfter(hkWarm, () => warmUpJp(jpCtx, job, jpHooks)).catch((e) => console.error('[job jp-warm-up]', e));
+const jpWarm = warmUpJpAfter(hkWarm, () => warmUpJp(jpCtx, job, jpHooks));
+void jpWarm.catch((e) => console.error('[job jp-warm-up]', e));
 jpPrices.start();
+
+// UK and Europe: their warm-ups queue behind Japan's on the one Yahoo budget (UK after Japan settles, EU after UK);
+// neither blocks any other market's startup, and a failed one never skips the next.
+const europeHooks = (market: EuropeMarket): EuropeSchedulerHooks => ({
+  onResults: publishEuropeResults,
+  onMoves: (ids) => live.publish(market === 'UK' ? 'uk-moves' : 'eu-moves', { ids }),
+  // The watchlist index takes the universe as soon as europe_stocks fills.
+  onStocks: () => { const list = europeEntries(db, market); if (list.length > 0) symbolIndex.set(market, list); },
+});
+startEuropeScheduler(ukCtx, job, europeHooks('UK'));
+startEuropeScheduler(euCtx, job, europeHooks('EU'));
+const ukWarm = warmUpEuropeAfter(jpWarm, () => warmUpEurope(ukCtx, job, europeHooks('UK')));
+void ukWarm.catch((e) => console.error('[job uk-warm-up]', e));
+void warmUpEuropeAfter(ukWarm, () => warmUpEurope(euCtx, job, europeHooks('EU'))).catch((e) => console.error('[job eu-warm-up]', e));
+ukPrices.start();
+euPrices.start();
+// Fail-closed: no Tradegate quote is fetched until robots.txt (checked at start, then weekly) allows /refresh.php.
+tradegatePoller.start();
 
 startInScheduler(inCtx, job, {
   onResults: (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); },
