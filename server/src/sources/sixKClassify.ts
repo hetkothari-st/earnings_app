@@ -527,8 +527,9 @@ const EU_RESULTS_PHRASES = [
   String.raw`\b(?:1st|2nd|3rd|4th) quarter results\b`,
   String.raw`\b\d{4} (?:first|second|third|fourth)-quarter results\b`,
   String.raw`\bfinancial report for the period\b`,
-  // Santander "January - September 2026 Financial Report" / "… 2026 Results" (a month-range title).
-  String.raw`\b${MONTH_RE}\s*[-–]\s*${MONTH_RE}\s+\d{4}\s+(?:financial\s+)?(?:results|report)\b`,
+  // Santander "January - September 2026 Financial Report" / "… 2026 Results" (a month-range title; hyphen, en or em
+  // dash, "to", "through"). Only "results" or "financial report": "January - September 2026 Report on traffic" is not.
+  String.raw`\b${MONTH_RE}(?:\s*[-–—]\s*|\s+(?:to|through)\s+)${MONTH_RE}\s+\d{4}\s+(?:(?:financial\s+)?results|financial\s+report)\b`,
 ];
 const EU_RESULTS_RE = new RegExp(EU_RESULTS_PHRASES.join('|'), 'i');
 
@@ -653,10 +654,13 @@ function hasResultsTable(html: string, profile: SixKProfile): boolean {
  * (the stock's exchange session) times `'uk'` / `'eu'` clock statements; without it their timing is UNKNOWN.
  */
 export function classifySixK(
-  html: string,
+  source: string,
   opts: { filedOn?: string; profile: SixKProfile; fyEndMonth?: number; session?: SixKSession },
 ): SixKExhibit {
   const { profile } = opts;
+  // 'uk' / 'eu': an inline-XBRL document's hidden <ix:header> (contexts, members, dates) is not text: in AZN's H1 2026
+  // 6-K it filled the first 5,000 characters, hiding the title. hk / jp read the document as built.
+  const html = isEurope(profile) ? source.replace(/<ix:header\b[\s\S]*?<\/ix:header>/gi, '') : source;
   const text = htmlToText(html);
   if (profile === 'jp' && isJpEdinetReport(text.slice(0, 5000))) return { kind: 'other' };
   if (isEurope(profile) && isEuropeNotice(text.slice(0, 5000), profile)) return { kind: 'other' };

@@ -199,6 +199,43 @@ describe("classifySixK 'uk' / 'eu': N-month period ended, and a recency window (
       .toEqual({ kind: 'results', periodEnd: '2026-09-30', span: 'quarter' });
   });
 
+  it('month-range titles: hyphen, en dash, em dash, "to" and "through" read as results', () => {
+    const doc = (title: string) => `<p>${title}</p><p>Nine months ended 30 September 2026</p>${RESULTS_TABLE}`;
+    for (const t of ['January - September 2026 Results', 'January–September 2026 Financial Report', 'January—September 2026 results',
+      'January to September 2026 Results', 'January through September 2026 financial results']) {
+      expect(classifySixK(doc(t), { filedOn: '2026-10-28', profile: 'eu', fyEndMonth: 12 }), t).toEqual({ kind: 'results', periodEnd: '2026-09-30', span: 'nine' });
+    }
+  });
+
+  it('month-range wording that is not a results release stays other (fail-closed)', () => {
+    const traffic = '<table><tr><td>Revenue passengers (000)</td><td>12,345</td></tr><tr><td>Load factor</td><td>84%</td></tr></table>';
+    const cases = [
+      // Traffic statistics with a "Revenue passengers" row and a stated nine-month period.
+      `<p>January - September 2026 Report on traffic</p><p>Nine months ended 30 September 2026</p>${traffic}`,
+      `<p>January–September 2026 traffic statistics</p><p>Nine months ended 30 September 2026</p>${traffic}`,
+      // A trading update with a month-range title.
+      `<p>January–September 2026 trading update</p><p>Nine months ended 30 September 2026</p>${traffic}`,
+      // An AGM notice and a buyback notice naming past results.
+      '<p>Notice of Annual General Meeting. The January–June 2026 results were published on 22 July 2026.</p>',
+      `<p>Transaction in own shares. Following the January–June 2026 results, the company bought back shares.</p>
+<table><tr><td>Volume weighted average price per share</td><td>12.34</td></tr></table>`,
+    ];
+    for (const html of cases) expect(classifySixK(html, { filedOn: '2026-10-28', profile: 'eu', fyEndMonth: 12 }), html).toEqual({ kind: 'other' });
+  });
+
+  it('AZN H1 2026 inline-XBRL 6-K (0001104659-26-086846, 2026-07-27) is results, not a notice for its next results date', () => {
+    // Before: the ix:header facts filled the first 5,000 characters, so the title was missed and "publish its 9M and Q3
+    // 2026 results on 30 October 2026" made it a date notice.
+    expect(classifySixK(fx('europe/sec/azn_h1_2026_results_6k_ixbrl.htm'), { filedOn: '2026-07-27', profile: 'uk', fyEndMonth: 12 }))
+      .toEqual({ kind: 'results', periodEnd: '2026-06-30', span: 'quarter' });
+  });
+
+  it('Shell Q2 2026 EX-99.2 interim report (inline XBRL) is results for 2026-06-30; its cover EX-99.1 stays other', () => {
+    expect(classifySixK(fx('europe/sec/shel_q2_2026_interim_report_ex992.htm'), { filedOn: '2026-07-30', profile: 'uk', fyEndMonth: 12 }))
+      .toMatchObject({ kind: 'results', periodEnd: '2026-06-30' });
+    expect(classifySixK(fx('europe/sec/shel_q2_2026_cover_ex991.htm'), { filedOn: '2026-07-30', profile: 'uk', fyEndMonth: 12 })).toEqual({ kind: 'other' });
+  });
+
   it('a passing mention of the previous annual report never dates a release (no period within 100 days → other)', () => {
     const html = `<p>Interim results. See our annual report for the year ended 31 December 2025.</p>${RESULTS_TABLE}`;
     expect(classifySixK(html, { filedOn: '2026-08-19', profile: 'eu' })).toEqual({ kind: 'other' });
