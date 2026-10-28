@@ -38,6 +38,8 @@ function setup(o: { uk?: PrnItem[]; eu?: PrnItem[]; dila?: EuropeJobContext['dil
     entry('ALHYP.PA', 'FR0012821916', 'HiPay Group'),
     entry('SGO.PA', 'FR0000125007', 'Compagnie de Saint-Gobain'),
     entry('EXA.PA', 'FR0000062671', 'Exail Technologies'),
+    entry('ALCJ.PA', 'FR0011716265', 'Crossject'),
+    entry('VK.PA', 'FR0013506730', 'Vallourec'),
   ], NOW);
   const row = (symbol: string, reportDate: string) => {
     const exchange = EXCH[symbol.split('.').pop()!]!;
@@ -162,78 +164,86 @@ describe('refreshPrnSignals', () => {
 
 describe('refreshDilaSignals', () => {
   it('DILA results doc flips the French row; non-results doc does not; DILA never sets timing', async () => {
-    const tar = new Uint8Array(fx('dila_sample.tar.gz'));
+    const press = new Uint8Array(fx('dila_sample_press.tar.gz'));
+    const annual = new Uint8Array(fx('dila_sample.tar.gz'));
     const opened: string[] = [];
     const dila = {
-      list: async (day: string) => (day === '2026-03-31' ? ['amf-gz_31032026_1905.tar.gz', 'amf-gz_31032026_2200.tar.gz'] : []),
-      // The same records in two batches: each document counts once (by id).
-      archive: async (name: string) => { opened.push(name); return chunks(tar, 64 * 1024); },
+      list: async (day: string) => (day === '2026-03-25'
+        ? ['amf-gz_25032026_0800.tar.gz', 'amf-gz_25032026_1000.tar.gz', 'amf-gz_25032026_2200.tar.gz'] : []),
+      // The first two batches hold the same records: each document counts once (by id). The third holds Nanobiotix's
+      // 003000 (annual financial report type) record, which is not a results type (controller ruling).
+      archive: async (name: string) => { opened.push(name); return chunks(name.endsWith('2200.tar.gz') ? annual : press, 64 * 1024); },
     };
-    const { db, row, ctx, outcome } = setup({ dila, today: '2026-03-31' });
-    const nano = upsertEuropeCalendarRow(db, 'EU', {
-      symbol: 'NANO.PA', name: 'Nanobiotix', exchange: 'PAR', period: { periodEnd: '2025-12-31', fiscalQuarter: 4, fyEnd: '2025-12-31' },
-      periodLabel: 'FY25', periodConfirmed: false, reportDate: '2026-04-01', dateStatus: 'estimated',
+    const { db, ctx, outcome } = setup({ dila, today: '2026-03-25' });
+    const fy = (symbol: string, reportDate: string) => upsertEuropeCalendarRow(db, 'EU', {
+      symbol, name: symbol, exchange: 'PAR', period: { periodEnd: '2025-12-31', fiscalQuarter: 4, fyEnd: '2025-12-31' },
+      periodLabel: 'FY25', periodConfirmed: false, reportDate, dateStatus: 'estimated',
     }, NOW);
-    const hipay = upsertEuropeCalendarRow(db, 'EU', {
-      symbol: 'ALHYP.PA', name: 'HiPay', exchange: 'PAR', period: { periodEnd: '2025-12-31', fiscalQuarter: 4, fyEnd: '2025-12-31' },
-      periodLabel: 'FY25', periodConfirmed: false, reportDate: '2026-03-31', dateStatus: 'estimated',
-    }, NOW);
-    void row;
-    expect(await refreshDilaSignals(ctx('EU'))).toEqual([nano]);
-    expect(getEuropeReport(db, nano)).toMatchObject({
-      releasedAt: '2026-03-31T20:15:00.000Z', releasedSource: 'dila', timing: 'UNKNOWN', timingSource: null,
+    const crossject = fy('ALCJ.PA', '2026-03-25');
+    const vallourec = fy('VK.PA', '2026-03-25');
+    const nano = fy('NANO.PA', '2026-03-27');
+    // Crossject's 001007 results release, filed 07:20 Paris (before the open): released, timing still unknown.
+    expect(await refreshDilaSignals(ctx('EU'))).toEqual([crossject]);
+    expect(getEuropeReport(db, crossject)).toMatchObject({
+      releasedAt: '2026-03-25T06:20:00.000Z', releasedSource: 'dila', timing: 'UNKNOWN', timingSource: null,
     });
-    expect(getEuropeReport(db, hipay)!.releasedAt).toBeNull();
-    expect(outcome('dila', 'MDMKW111969_20260331')).toBe('flipped');
-    expect(outcome('dila-file', 'amf-gz_31032026_1905.tar.gz')).toBe('done');
-    expect(outcome('dila-file', 'amf-gz_31032026_2200.tar.gz')).toBe('done');
+    // Vallourec's 001006 press releases and Nanobiotix's 003000 record flip nothing.
+    expect(getEuropeReport(db, vallourec)!.releasedAt).toBeNull();
+    expect(getEuropeReport(db, nano)!.releasedAt).toBeNull();
+    expect(outcome('dila', 'MDMKW111969_20260331')).toBe('not-results');
+    for (const f of ['amf-gz_25032026_0800.tar.gz', 'amf-gz_25032026_1000.tar.gz', 'amf-gz_25032026_2200.tar.gz']) {
+      expect(outcome('dila-file', f)).toBe('done');
+    }
     // A file already read is not downloaded again.
     expect(await refreshDilaSignals(ctx('EU'))).toEqual([]);
-    expect(opened).toHaveLength(2);
+    expect(opened).toHaveLength(3);
     // UK has no DILA.
     expect(await refreshDilaSignals(ctx('UK'))).toEqual([]);
   });
 
   it('a failed archive is not marked, so the next run reads it again', async () => {
     let fail = true;
-    const tar = new Uint8Array(fx('dila_sample.tar.gz'));
+    const tar = new Uint8Array(fx('dila_sample_press.tar.gz'));
     const dila = {
-      list: async () => ['amf-gz_31032026_2200.tar.gz'],
+      list: async () => ['amf-gz_25032026_0800.tar.gz'],
       archive: async () => {
         if (fail) return (async function* () { yield tar.subarray(0, 1000); throw new Error('reset'); })();
         return chunks(tar, 64 * 1024);
       },
     };
-    const { db, ctx, outcome } = setup({ dila, today: '2026-03-31' });
-    const nano = upsertEuropeCalendarRow(db, 'EU', {
-      symbol: 'NANO.PA', name: 'Nanobiotix', exchange: 'PAR', period: { periodEnd: '2025-12-31', fiscalQuarter: 4, fyEnd: '2025-12-31' },
-      periodLabel: 'FY25', periodConfirmed: false, reportDate: '2026-03-31', dateStatus: 'estimated',
+    const { db, ctx, outcome } = setup({ dila, today: '2026-03-25' });
+    const crossject = upsertEuropeCalendarRow(db, 'EU', {
+      symbol: 'ALCJ.PA', name: 'Crossject', exchange: 'PAR', period: { periodEnd: '2025-12-31', fiscalQuarter: 4, fyEnd: '2025-12-31' },
+      periodLabel: 'FY25', periodConfirmed: false, reportDate: '2026-03-25', dateStatus: 'estimated',
     }, NOW);
     expect(await refreshDilaSignals(ctx('EU'))).toEqual([]);
-    expect(outcome('dila-file', 'amf-gz_31032026_2200.tar.gz')).toBeUndefined();
+    expect(outcome('dila-file', 'amf-gz_25032026_0800.tar.gz')).toBeUndefined();
     fail = false;
-    expect(await refreshDilaSignals(ctx('EU'))).toEqual([nano]);
+    expect(await refreshDilaSignals(ctx('EU'))).toEqual([crossject]);
   });
 
-  it('live 005002 (quarterly sales) and 004000 (half-year report) records are results types', async () => {
+  it('live 005002 (quarterly sales) flips its row; live 004000 (half-year financial report) flips nothing', async () => {
     // Saved as-is from the 27 and 26 Oct 2026 DILA batches (Task 16).
     const tar = tarOf({
       'xml/ECO/2026/10/MDECO083570_20261027.xml': fx('dila_005002_MDECO083570_20261027.xml').toString('utf8'),
       'xml/ACT/2026/10/MDACT081985_20261026.xml': fx('dila_004000_MDACT081985_20261026.xml').toString('utf8'),
     });
     const dila = { list: async () => ['amf-gz_27102026_1800.tar.gz'], archive: async () => chunks(tar, 4096) };
-    const { db, ctx } = setup({ dila, today: '2026-10-27' });
+    const { db, ctx, outcome } = setup({ dila, today: '2026-10-27' });
     const q3 = (symbol: string, reportDate: string) => upsertEuropeCalendarRow(db, 'EU', {
       symbol, name: symbol, exchange: 'PAR', period: { periodEnd: '2026-09-30', fiscalQuarter: 3, fyEnd: '2026-12-31' }, periodLabel: 'Q3 FY26',
       periodConfirmed: false, reportDate, dateStatus: 'estimated',
     }, NOW);
     const sgo = q3('SGO.PA', '2026-10-27');
-    const exa = q3('EXA.PA', '2026-11-20'); // no row within ±3 days of the 26 Oct filing
+    // Exail's row is within ±3 days of its 26 Oct filing: only the document type keeps it unflipped.
+    const exa = q3('EXA.PA', '2026-10-28');
     expect(await refreshDilaSignals(ctx('EU'))).toEqual([sgo]);
     expect(getEuropeReport(db, sgo)).toMatchObject({
       releasedAt: '2026-10-27T16:01:21.000Z', releasedSource: 'dila', signalTitle: 'Chiffre d’affaires du 3e trimestre 2026', timing: 'UNKNOWN',
     });
     expect(getEuropeReport(db, exa)!.releasedAt).toBeNull();
+    expect(outcome('dila', 'MDACT081985_20261026')).toBe('not-results');
+    expect(outcome('dila', 'MDECO083570_20261027')).toBe('flipped');
   });
 });
 

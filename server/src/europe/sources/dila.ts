@@ -15,7 +15,7 @@ export interface DilaDoc {
   id: string;             // the record file name, e.g. MDMKW111969_20260331
   isin: string | null;
   issuer: string;         // ISO_NOM_SOC as filed
-  type: string;           // INF_STP_PRI, e.g. 003000
+  type: string;           // INF_STP_PRI, e.g. 001007
   subtype: string | null; // the first INF_STP_INF that differs from `type`
   filedAt: string;        // ISO UTC
   title: string;
