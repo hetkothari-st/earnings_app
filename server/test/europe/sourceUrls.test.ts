@@ -68,7 +68,7 @@ describe('europe source facts', () => {
     expect(eu).toMatch(/<dc:subject><!\[CDATA\[ERN\]\]><\/dc:subject>/);
   });
 
-  it('DILA sample contains ISIN-tagged records with a results type from DILA_RESULTS_TYPES', () => {
+  it('DILA samples contain ISIN-tagged records; the press sample has a results type from DILA_RESULTS_TYPES', () => {
     const files = tarFiles(bytes('dila_sample.tar.gz'));
     const xml = files.filter((f) => /^xml\/.+\.xml$/.test(f.name));
     expect(xml.length).toBeGreaterThan(0);
@@ -82,8 +82,11 @@ describe('europe source facts', () => {
       expect(s).toMatch(/INF_DAT_EMT="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}"/);
       if (DILA_RESULTS_TYPES.includes(t!)) results++;
     }
-    expect(results).toBeGreaterThan(0);
-    expect(DILA_RESULTS_TYPES).toEqual(['001007', '003000', '004000', '005002']);
+    // The annual sample holds only 003000 (annual financial report) and 013001 records: no results type (ruling).
+    expect(results).toBe(0);
+    // Report documents (003000 annual, 004000 half-year financial report) are often filed weeks after the results
+    // (Exail's 004000 on 2026-10-26): controller ruling, they never flip a row.
+    expect(DILA_RESULTS_TYPES).toEqual(['001007', '005002']);
     // the press-release sample carries the 001007 "results/accounts release" type
     const press = tarFiles(bytes('dila_sample_press.tar.gz')).filter((f) => f.name.startsWith('xml/'));
     expect(press.some((f) => /INF_STP_PRI="001007"/.test(f.data.toString('utf8')))).toBe(true);

@@ -26,7 +26,7 @@ describe('DILA AMF flow', () => {
     expect(listDilaFiles(html, '2026-10-28')).toEqual([]);
   });
 
-  it('archive → ISIN-tagged docs; results type recognised; AGM notice not', async () => {
+  it('archive → ISIN-tagged docs; results type recognised; report documents and AGM notice not', async () => {
     const docs = parseDilaArchive(fx('dila_sample.tar.gz'));
     // NANOBIOTIX filed EN and FR at one timestamp: one doc, the English one. HIPAY's two filings differ in time.
     expect(docs).toHaveLength(3);
@@ -41,7 +41,10 @@ describe('DILA AMF flow', () => {
       title: 'NANOBIOTIX Provides Business Update and Reports Full Year 2025 Financial Results',
       url: null,
     });
-    expect(isDilaResults(nano)).toBe(true);
+    // 003000 (annual financial report) is a report document type: never a results-out signal (controller ruling).
+    expect(isDilaResults(nano)).toBe(false);
+    expect(isDilaResults({ ...nano, type: '004000' })).toBe(false);
+    expect(isDilaResults({ ...nano, type: '005002' })).toBe(true);
     const hipay = docs.filter((d) => d.issuer === 'HIPAY GROUP');
     expect(hipay.map((d) => d.type)).toEqual(['013001', '013001']);
     expect(hipay.some(isDilaResults)).toBe(false);

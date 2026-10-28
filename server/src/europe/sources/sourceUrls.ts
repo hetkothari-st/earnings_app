@@ -42,7 +42,13 @@
  *     001007 communique sur comptes, resultats (news release on accounts, results; Orange Q3 revenue, Crossject FY)
  *     003000 annual results / annual financial report release (Nanobiotix full-year 2025)
  *     004000 rapport financier semestriel (half-year financial report)
- *     005002 information financiere trimestrielle (quarterly financial information)
+ *     005002 information financiere trimestrielle (quarterly financial information; Saint-Gobain "Chiffre d'affaires
+ *            du 3e trimestre 2026", filed 2026-10-27 18:01 Paris, fixture dila_005002_MDECO083570_20261027.xml)
+ *   Results types (DILA_RESULTS_TYPES) are 001007 and 005002 only. 003000 and 004000 are the annual / half-year
+ *   financial report DOCUMENTS, often filed weeks after the results: Exail Technologies filed its "RAPPORT FINANCIER
+ *   SEMESTRIEL 2026" (004000) on 2026-10-26 (fixture dila_004000_MDACT081985_20261026.xml), well after its H1 results,
+ *   so within ±3 days of a Q3 date it would flip the wrong row. Controller ruling (Task 16): they never flip a row,
+ *   at the cost of the occasional 003000 that is the results release itself (Nanobiotix FY2025).
  *   Not results: 001002/001006 other press releases, 001008 audit and trading notices, 002001..002009 meeting and
  *   availability notices, 006000 voting rights, 009xxx offers, 013xxx buy-backs, 015000 governance. The LOV
  *   document is an image PDF, so the list is empirical; 005001/005003 (other quarters) were not observed and are
@@ -100,7 +106,7 @@ export const PRN_FEEDS: { UK: readonly string[]; EU: readonly string[] } = {
 export const DILA_BASE = 'https://echanges.dila.gouv.fr/OPENDATA/AMF/';
 
 /** INF_STP_PRI values that mean a results publication (see the header for the evidence). */
-export const DILA_RESULTS_TYPES: readonly string[] = ['001007', '003000', '004000', '005002'];
+export const DILA_RESULTS_TYPES: readonly string[] = ['001007', '005002'];
 
 export const XBRL_FILINGS_URL = 'https://filings.xbrl.org/api/filings';
 
