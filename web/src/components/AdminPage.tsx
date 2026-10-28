@@ -369,7 +369,7 @@ function EuropePanel() {
           <p>OpenFIGI key: {eu.openFigiConfigured ? 'configured' : 'not configured (optional, OPENFIGI_API_KEY)'}</p>
           <p>
             Tradegate real-time prices:{' '}
-            {tg.state == null ? 'unknown' : tg.state === 'on' ? 'on' : tg.state === 'off-env' ? 'off (TRADEGATE_PRICES=0)' : tg.state === 'off-robots' ? 'blocked by robots.txt' : <>paused after 429 until {when(tg.backoffUntil)}</>}
+            {tg.state == null ? 'unknown' : tg.state === 'on' ? 'on' : tg.state === 'off-env' ? 'off (TRADEGATE_PRICES=0)' : tg.state === 'off-robots' ? 'blocked by robots.txt' : tg.backoffUntil ? <>paused after 429 until {when(tg.backoffUntil)}</> : 'paused after 429/403 (end time unknown)'}
             {' · '}Last Tradegate poll: {when(tg.lastPollAt)}
           </p>
           <p>Universe refreshed: UK {when(eu.UK.lastUniverseAt)} · Europe {when(eu.EU.lastUniverseAt)}</p>

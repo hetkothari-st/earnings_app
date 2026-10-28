@@ -138,6 +138,17 @@ describe('admin page', () => {
     expect(panel.textContent).toContain('6-K reader UK: on');
   });
 
+  test('Europe panel: backoff with no end time never reads until Never', async () => {
+    const m = { full: 1, basic: 2, inactive: 3, leftOut: 4, lastUniverseAt: null, lastSixKAt: null, lastPrnAt: null, lastDilaAt: null, lastEsefAt: null, readerOn: false };
+    reply = (url) => (url === '/api/admin/europe'
+      ? json(200, { UK: m, EU: m, tradegate: { state: 'backoff', backoffUntil: null, lastPollAt: null }, secConfigured: true, openFigiConfigured: true })
+      : undefined);
+    renderPage();
+    const panel = await screen.findByRole('region', { name: 'UK and Europe' });
+    await waitFor(() => expect(panel.textContent).toContain('Tradegate real-time prices: paused after 429/403 (end time unknown)'));
+    expect(panel.textContent).not.toContain('until Never');
+  });
+
   test('Japan panel shows EDINET key not configured and reader off', async () => {
     reply = (url) => (url === '/api/admin/jp'
       ? json(200, { full: 9, basic: 30, secConfigured: true, edinetConfigured: false, readerOn: false, lastSixKAt: null, lastEdinetAt: null })

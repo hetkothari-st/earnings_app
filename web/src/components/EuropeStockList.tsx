@@ -104,10 +104,13 @@ export function EuropeStockList({ market, rows, zone, expanded, sort, onToggle, 
   );
 }
 
-/** The venue next to a price: Tradegate is real-time in EUR; anything else is Yahoo, delayed. */
+/** "Real-time · Tradegate · EUR": the currency is the one the server sent with the price; none sent, none shown. */
+export const realtimeLabel = (currency: string | null | undefined) => `Real-time · Tradegate${currency ? ` · ${currency}` : ''}`;
+
+/** The venue next to a price: Tradegate is real-time; anything else is Yahoo, delayed. */
 function Venue({ price }: { price: EuropeLivePriceDto }) {
   return price.venue === 'tradegate'
-    ? <span className="realtime">Real-time · Tradegate · EUR</span>
+    ? <span className="realtime">{realtimeLabel(price.currency)}</span>
     : <span className="delayed">Delayed ~15 min</span>;
 }
 
@@ -176,7 +179,7 @@ function EuropeDetails({ r, zone, note, onSaveNote, price }: {
         <dd>
           {r.releasedAt ? (
             <>
-              {r.timing !== 'UNKNOWN' && `${TIMING_SHORT[r.timing]}, `}Results out
+              Results out
               {r.releasedSource && ` · ${RELEASED_BY[r.releasedSource]} ${clock24(r.releasedAt, local)}`}
               {zone !== local && <span className="muted"> ({clock(r.releasedAt, zone)} your time)</span>}
               {r.signal && <> · <a href={r.signal.url} target="_blank" rel="noreferrer">{r.signal.title}</a></>}
@@ -213,7 +216,7 @@ function EuropeDetails({ r, zone, note, onSaveNote, price }: {
         <dd>
           <ExpectedMoveLine em={r.expectedMove} level={r.level} />
           {/* `underlying` is the US-listed ADR's close in US$, never the local line's price. */}
-          {r.expectedMove && <span className="muted"> · ADR {formatEuropePrice(r.expectedMove.underlying, 'USD')}</span>}
+          {r.expectedMove && <span className="muted"> · ADR US${r.expectedMove.underlying.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
         </dd>
 
         <dt>Live expected move</dt>
@@ -229,7 +232,7 @@ function EuropeDetails({ r, zone, note, onSaveNote, price }: {
               {formatEuropePrice(price.price, price.currency)}
               {price.changePct != null && <span className={changeClass(price.changePct)}> {formatChange(price.changePct)}</span>}
               <span className="muted">
-                {price.venue === 'tradegate' ? ' · real-time (Tradegate, EUR)' : ' · delayed ~15 min (Yahoo)'}, {clock(price.at, zone)}
+                {price.venue === 'tradegate' ? ` · real-time (Tradegate${price.currency ? `, ${price.currency}` : ''})` : ' · delayed ~15 min (Yahoo)'}, {clock(price.at, zone)}
               </span>
             </>
           ) : '—'}

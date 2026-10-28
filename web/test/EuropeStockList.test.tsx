@@ -82,10 +82,26 @@ describe('EuropeStockList', () => {
     mount([r], ['EU:SAP.DE'], { market: 'EU' });
     const dd = screen.getByText('Release').nextElementSibling as HTMLElement;
     // 06:02 UTC is 07:02 in Berlin (CET), the exchange's zone.
-    expect(dd.textContent).toContain('Results out · PR Newswire 07:02');
+    expect(dd.textContent!.startsWith('Results out · PR Newswire 07:02')).toBe(true);
     const link = within(dd).getByRole('link', { name: 'SAP Announces Q3 2026 Results' });
     expect(link.getAttribute('href')).toBe('https://www.prnewswire.com/news-releases/sap-q3.html');
     expect(screen.getByText('Stock').nextElementSibling!.textContent).toContain('SAP.DE SAP · Xetra');
+  });
+
+  test('Real-time label carries the price own currency; none when the server sends none', () => {
+    const a = dto({ id: 4_000_000_005, symbol: 'X1.L', name: 'One' });
+    const b = dto({ id: 4_000_000_006, symbol: 'X2.L', name: 'Two' });
+    mount([a, b], ['UK:X2.L'], {
+      prices: {
+        'X1.L': { price: 10, prevClose: null, changePct: null, at: '2026-11-05T10:00:00.000Z', currency: 'USD', venue: 'tradegate' },
+        'X2.L': { price: 11, prevClose: null, changePct: null, at: '2026-11-05T10:00:00.000Z', currency: null, venue: 'tradegate' },
+      },
+    });
+    const one = document.querySelector<HTMLElement>('[data-symbol="X1.L"]')!;
+    expect(within(one).getByText('Real-time · Tradegate · USD')).toBeTruthy();
+    const two = document.querySelector<HTMLElement>('[data-symbol="X2.L"]')!;
+    expect(within(two).getByText('Real-time · Tradegate')).toBeTruthy();
+    expect(two.textContent).not.toContain('EUR');
   });
 
   test('UNKNOWN timing tooltip text', () => {
@@ -140,7 +156,7 @@ describe('EuropeStockList', () => {
     mount([r], ['UK:AZN.L']);
     const em = screen.getByText('Expected move').nextElementSibling!.textContent!;
     expect(em).toContain('±5.3%');
-    expect(em).toContain('ADR $75.42');
+    expect(em).toContain('ADR US$75.42');
     expect(em).not.toMatch(/75\.42p|£75/);
   });
 

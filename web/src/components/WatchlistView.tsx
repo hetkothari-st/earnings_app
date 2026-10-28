@@ -12,11 +12,12 @@ import type { Market } from '../lib/market';
 import { todayHkt, todayJst, todayLondon, todayParis } from '../lib/liveCap';
 import { todayEt } from '../lib/time';
 import { priceKey } from '../lib/ticker';
+import { realtimeLabel } from './EuropeStockList';
 import { SymbolSearch } from './SymbolSearch';
 import { Star } from './Star';
 import { Tags } from './Tags';
 
-/** `currency` and `venue` come with UK and Europe prices (Tradegate real-time in EUR, or Yahoo delayed). */
+/** `currency` and `venue` come with UK and Europe prices (Tradegate real-time, or Yahoo delayed). */
 type Price = { price: number; changePct: number | null; source?: string; currency?: string | null; venue?: 'tradegate' | 'yahoo' };
 type Report = ReportDto | InReportDto | HkReportDto | JpReportDto | EuropeReportDto;
 
@@ -158,7 +159,7 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
                     <>
                       <span>{money(price)}</span>
                       {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}{price.source === 'backup' && <span className="muted backup-mark">backup</span>}
-                      {price.venue === 'tradegate' && <span className="realtime">Real-time · Tradegate · EUR</span>}
+                      {price.venue === 'tradegate' && <span className="realtime">{realtimeLabel(price.currency)}</span>}
                       {price.venue === 'yahoo' && <span className="delayed">Delayed ~15 min</span>}
                     </>
                   )}
