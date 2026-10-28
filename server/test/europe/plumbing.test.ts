@@ -244,8 +244,14 @@ describe('markets UK and EU plumbing', () => {
     expect((await put('UK', ['AZN.L', 'bt-a.l', 'AZN.L'])).statusCode).toBe(204);
     expect((await put('EU', ['SAP.DE', 'ERIC-B.ST'])).statusCode).toBe(204);
     expect(seen).toEqual([['UK', '1A', ['AZN.L', 'BT-A.L']], ['EU', '1A', ['SAP.DE', 'ERIC-B.ST']]]);
-    expect((await put('UK', ['SAP.DE'])).statusCode).toBe(400);
-    expect((await put('EU', ['AZN.L'])).statusCode).toBe(400);
-    expect((await put('EU', ['AAPL'])).statusCode).toBe(400);
+    // An invalid code is dropped, not the batch: one odd symbol never removes prices for the whole page.
+    seen.length = 0;
+    expect((await put('UK', ['SAP.DE', 'AZN.L', 'M&S.L'])).statusCode).toBe(204);
+    expect((await put('EU', ['AZN.L', 'AAPL', 'SAP.DE'])).statusCode).toBe(204);
+    expect((await put('EU', ['AAPL'])).statusCode).toBe(204);
+    expect(seen).toEqual([['UK', '1A', ['AZN.L']], ['EU', '1A', ['SAP.DE']], ['EU', '1A', []]]);
+    // The batch shape is still checked.
+    expect((await put('UK', 'AZN.L')).statusCode).toBe(400);
+    expect((await put('UK', [1])).statusCode).toBe(400);
   });
 });

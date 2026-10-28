@@ -321,6 +321,26 @@ describe('buildEuropeUniverseFor', () => {
     expect(figiCached(db, 'X', 'LN')).toMatchObject({ tickers: [], outcome: 'no-ticker' });
   });
 
+  it('a built symbol off the UK_SYMBOL / EU_SYMBOL format is left out and counted', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const db = openDb(':memory:');
+    const o = { fca: [share('GB0031274896', 'XLON', 'MARKS AND SPENCER')], esma: [share('DE0000000001', 'XETA', 'LONG NAME AG')] };
+    const odd = async (jobs: { isin: string; exchCode: string }[]): Promise<FigiAnswer[]> => jobs.map((j) => ({
+      ...j, tickers: j.isin === 'GB0031274896' ? ['M&S'] : j.isin === 'DE0000000001' ? ['ABCDEFGHIJKLMNOPQ'] : answer([j])[0]!.tickers,
+    }));
+    const uk = await buildEuropeUniverseFor(db, 'UK', sources(odd, o), NOW);
+    const ukClean = await buildEuropeUniverseFor(openDb(':memory:'), 'UK', sources(async (j) => answer(j)), NOW);
+    expect(uk.complete).toBe(true);
+    expect(uk.entries.map((e) => e.symbol)).not.toContain('M&S.L');
+    expect(uk.entries.map((e) => e.symbol)).toContain('TSCO.L');
+    expect(uk.leftOut).toBe(ukClean.leftOut + 1);
+    const eu = await buildEuropeUniverseFor(db, 'EU', sources(odd, o), NOW);
+    expect(eu.entries.some((e) => e.symbol.startsWith('ABCDEFGHIJKLMNOPQ'))).toBe(false);
+    expect(eu.entries.map((e) => e.symbol)).toContain('TTE.PA');
+    expect(warn.mock.calls.some((c) => /1 UK symbol.*format/.test(String(c[0])))).toBe(true);
+    warn.mockRestore();
+  });
+
   // Ericsson B on Stockholm: an EU-only `search` exchange line (OpenFIGI 'ERICB' -> ERIC-B.ST or ERICB.ST, settled by Yahoo).
   const ERIC = share('SE0000108656', 'XSTO', 'TELEFONAKTIEBOLAGET LM ERICSSON SER. B');
   const answerEric = (jobs: { isin: string; exchCode: string }[]): FigiAnswer[] =>

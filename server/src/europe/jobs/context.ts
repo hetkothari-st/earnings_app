@@ -11,6 +11,7 @@ import type { PrnItem } from '../sources/prnewswire.js';
 import { parseSixList, type SixShare } from '../sources/sixList.js';
 import type { EuropeCalRow, EuropeQuote } from '../sources/yahooEurope.js';
 import { EU_FULL, UK_FULL } from '../universe.js';
+import { EU_SYMBOL, UK_SYMBOL } from '../../watchlist/routes.js';
 import { buildEuropeUniverse, figiJobsFor, leisFor, searchIsinsFor, type EuropeUniverseEntry } from '../universeBuild.js';
 
 export { guardedIn, trackIn } from '../../india/jobs/context.js';
@@ -208,5 +209,12 @@ export async function buildEuropeUniverseFor(
   // the UK-first tie-break would place it, else EU. A dead UK line never pulls an EU ISIN to UK.
   const ukIsins = new Set(firdsUk.filter((s) => s.issuerRequested && !s.terminated).map((s) => s.isin));
   const leftOut = built.leftOut.filter((l) => (ukIsins.has(l.isin) ? 'UK' : 'EU') === market).length;
-  return { entries: market === 'UK' ? built.uk : built.eu, leftOut, complete: complete[market] };
+  // Every stored symbol must pass the format the API and watchlists accept (a ticker with '&' or over 15 characters
+  // would otherwise be unwatchable and could not be sent as visible): one that fails is left out and counted.
+  const format = market === 'UK' ? UK_SYMBOL : EU_SYMBOL;
+  const all = market === 'UK' ? built.uk : built.eu;
+  const entries = all.filter((e) => format.test(e.symbol));
+  const badFormat = all.length - entries.length;
+  if (badFormat > 0) console.warn(`europe universe: ${badFormat} ${market} symbol(s) off the symbol format left out`);
+  return { entries, leftOut: leftOut + badFormat, complete: complete[market] };
 }
