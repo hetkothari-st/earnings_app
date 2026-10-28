@@ -7,6 +7,7 @@ import { buildServer } from '../../src/api/server.js';
 import { listRange, openDb, saveExpectedMove, upsertCalendarRow } from '../../src/db/repo.js';
 import { saveHkExpectedMove, syncHkUniverse, upsertHkCalendarRow } from '../../src/hk/db/hkRepo.js';
 import { saveJpExpectedMove, syncJpUniverse, upsertJpCalendarRow } from '../../src/jp/db/jpRepo.js';
+import { saveEuropeExpectedMove, syncEuropeUniverse, upsertEuropeCalendarRow } from '../../src/europe/db/europeRepo.js';
 import { computeCoverage, coverageOk, runCoverageCheck } from '../../src/jobs/coverage.js';
 import { saveFoList, saveInExpectedMove, upsertInCalendarRow } from '../../src/india/db/inRepo.js';
 import type { CalendarRow } from '../../src/types.js';
@@ -77,7 +78,7 @@ describe('coverage', () => {
       const db = openDb(path);
       seedUs(db);
       const lines: string[] = [];
-      expect(runCoverageCheck(db, TODAY, TODAY, TODAY, TODAY, (l) => lines.push(l))).toBe(1);
+      expect(runCoverageCheck(db, TODAY, TODAY, TODAY, TODAY, TODAY, TODAY, (l) => lines.push(l))).toBe(1);
       expect(lines.join('\n')).toContain('BELOW MINIMUM');
       db.close();
       const cli = join(import.meta.dirname, '../../src/cli/coverageCheck.ts');
@@ -109,7 +110,16 @@ describe('coverage', () => {
     const j = upsertJpCalendarRow(db, { code: '7203', name: 'TOYOTA', period: { periodEnd: '2026-09-30', fiscalQuarter: 2, fyEnd: '2027-03-31' }, periodLabel: '2Q FY27', reportDate: '2026-10-25', dateStatus: 'confirmed' }, NOW);
     db.prepare('UPDATE jp_reports SET eps_estimate = 1, prev_move_pct = 1 WHERE id = ?').run(j);
     saveJpExpectedMove(db, j, { adr: 'TM', expiry: '2026-10-29', strike: 1, callMid: 1, putMid: 1, underlying: 1, movePct: 3, illiquid: false, quoteDate: '2026-10-23' }, false, NOW);
-    expect(runCoverageCheck(db, TODAY, TODAY, TODAY, TODAY, () => {})).toBe(0);
+    for (const [market, symbol, isin, exchange] of [['UK', 'AZN.L', 'GB0009895292', 'LSE'], ['EU', 'SAP.DE', 'DE0007164600', 'XET']] as const) {
+      syncEuropeUniverse(db, market, [{ market, symbol, isin, lei: null, name: symbol, exchange, mic: 'XLON', country: isin.slice(0, 2), currency: 'EUR',
+        adr: 'X', adrRatio: 1, adrRatioVerified: true, cik: 1, secForm: '6-K' }], NOW);
+      db.prepare('UPDATE europe_stocks SET market_cap = 1e11 WHERE symbol = ?').run(symbol);
+      const e = upsertEuropeCalendarRow(db, market, { symbol, name: symbol, exchange, period: { periodEnd: '2026-09-30', fiscalQuarter: 2, fyEnd: '2026-12-31' },
+        periodLabel: 'Q3 FY26', periodConfirmed: true, reportDate: '2026-10-25', dateStatus: 'confirmed' }, NOW);
+      db.prepare('UPDATE europe_reports SET eps_estimate = 1, prev_move_pct = 1 WHERE id = ?').run(e);
+      saveEuropeExpectedMove(db, e, { adr: 'X', expiry: '2026-10-29', strike: 1, callMid: 1, putMid: 1, underlying: 1, movePct: 3, illiquid: false, quoteDate: '2026-10-23' }, false, NOW);
+    }
+    expect(runCoverageCheck(db, TODAY, TODAY, TODAY, TODAY, TODAY, TODAY, () => {})).toBe(0);
   });
 
   test('GET /api/status carries coverage for all markets', async () => {

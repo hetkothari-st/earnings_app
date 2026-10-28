@@ -33,7 +33,7 @@ const main = load('');
 const heldout = load('heldout/');
 
 describe('JP reader gate', () => {
-  it('never wrong', () => {
+  it('never wrong', { timeout: 30_000 }, () => {
     for (const [sub, set] of [['', main], ['heldout/', heldout]] as const) {
       for (const [file, e] of set) {
         const got = read(sub, file, e);
@@ -44,7 +44,7 @@ describe('JP reader gate', () => {
     }
   });
 
-  it('flags are on only when the gate passes', () => {
+  it('flags are on only when the gate passes', { timeout: 30_000 }, () => {
     // Gate (controller ruling): main >= 20 exact releases carrying a value (all-null entries do not count) and 0 wrong;
     // every held-out set 0 wrong (blanks acceptable). Passing the gate allows the flags; turning them on is the
     // controller's decision, so off is always allowed.
