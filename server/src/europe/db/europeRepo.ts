@@ -3,6 +3,7 @@ import type { LocalTiming } from '../../domain/exchangeCalendar.js';
 import type { ExpectedMove } from '../../types.js';
 import type { EuropePeriod } from '../domain/period.js';
 import type { EuropeMarket, ExchangeId } from '../exchanges.js';
+import { httpUrlOrNull } from '../sources/sourceUrls.js';
 import { europeLevel } from '../universe.js';
 import type { EuropeUniverseEntry } from '../universeBuild.js';
 import { EUROPE_ADDED_COLUMNS, EUROPE_SCHEMA } from './schema.js';
@@ -482,7 +483,7 @@ export function recordEuropeRelease(
     if (stored <= at) return false;
   }
   db.prepare('UPDATE europe_reports SET released_at = ?, released_source = ?, signal_title = ?, signal_url = ? WHERE id = ?')
-    .run(r.at, r.source, r.title?.trim() || null, r.url?.trim() || null, id);
+    .run(r.at, r.source, r.title?.trim() || null, httpUrlOrNull(r.url), id);
   if (r.source === 'prn' && r.timing && r.timing !== 'UNKNOWN') setEuropeTiming(db, id, r.timing, 'prn');
   return true;
 }

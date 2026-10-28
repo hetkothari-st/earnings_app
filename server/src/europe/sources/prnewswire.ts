@@ -1,4 +1,5 @@
 import { SourceFormatError } from '../../sources/http.js';
+import { httpUrlOrNull } from './sourceUrls.js';
 
 // Named prnewswire.ts, not prn.ts: PRN is a reserved device name on Windows and git there refuses "prn.*" paths.
 
@@ -44,7 +45,7 @@ function tagText(block: string, tag: string): string {
 
 const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
-/** Parse a PR Newswire RSS feed. Items without a link or a valid pubDate are skipped. Throws if it is not RSS. */
+/** Parse a PR Newswire RSS feed. Items without an http(s) link or a valid pubDate are skipped. Throws if it is not RSS. */
 export function parsePrnRss(xml: string): PrnItem[] {
   if (!/<rss[\s>]/i.test(xml) || !/<channel[\s>]/i.test(xml)) {
     throw new SourceFormatError('PRN: response is not RSS (HTML error page?)');
@@ -52,7 +53,8 @@ export function parsePrnRss(xml: string): PrnItem[] {
   const out: PrnItem[] = [];
   for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
     const block = m[1]!;
-    const link = squash(decodeEntities(tagText(block, 'link')));
+    // Only an http(s) link is kept (it becomes the signal link shown to users); any other scheme skips the item.
+    const link = httpUrlOrNull(squash(decodeEntities(tagText(block, 'link'))));
     const ms = Date.parse(tagText(block, 'pubDate'));
     if (!link || Number.isNaN(ms)) continue;
     const title = squash(decodeEntities(tagText(block, 'title')));

@@ -86,6 +86,19 @@ describe('europeRepo', () => {
     expect(getEuropeReport(db, id)).toMatchObject({ epsEstimate: 0.118, epsEstimateCurrency: 'GBP', revenueEstimate: 32e9 });
   });
 
+  it('only an http(s) signal URL is stored; any other becomes null', () => {
+    const { db, row } = setup();
+    const a = row('AZN.L');
+    expect(recordEuropeRelease(db, a, { at: '2026-11-05T07:02:00.000Z', source: 'prn', timing: null, title: 'T', url: 'javascript:alert(1)' })).toBe(true);
+    expect(getEuropeReport(db, a)).toMatchObject({ releasedAt: '2026-11-05T07:02:00.000Z', signalTitle: 'T', signalUrl: null });
+    const b = row('TSCO.L');
+    recordEuropeRelease(db, b, { at: '2026-11-05T07:02:00.000Z', source: 'dila', timing: null, title: 'T', url: ' ftp://x/y ' });
+    expect(getEuropeReport(db, b)!.signalUrl).toBeNull();
+    const c = row('SAP.DE');
+    recordEuropeRelease(db, c, { at: '2026-11-05T07:02:00.000Z', source: 'prn', timing: null, title: 'T', url: ' https://www.prnewswire.co.uk/x ' });
+    expect(getEuropeReport(db, c)!.signalUrl).toBe('https://www.prnewswire.co.uk/x');
+  });
+
   it('earliest release signal wins; later sec does not move releasedAt', () => {
     const { db, row } = setup();
     const id = row('AZN.L');

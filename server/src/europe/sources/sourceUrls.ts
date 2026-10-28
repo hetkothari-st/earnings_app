@@ -114,3 +114,15 @@ export const GOVUK_BANK_HOLIDAYS_URL = 'https://www.gov.uk/bank-holidays.json';
 
 export const TRADEGATE_REFRESH = 'https://www.tradegatebsx.com/refresh.php';
 export const TRADEGATE_ROBOTS = 'https://www.tradegatebsx.com/robots.txt';
+
+/** `s` trimmed when it is an absolute http(s) URL, else null (a signal link is only ever stored or shown as http(s)). */
+export function httpUrlOrNull(s: string | null | undefined): string | null {
+  const t = s?.trim();
+  if (!t || !/^https?:\/\//i.test(t)) return null;
+  try {
+    const u = new URL(t);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? t : null;
+  } catch {
+    return null;
+  }
+}
