@@ -12,7 +12,7 @@ const body = {
     { source: 'finnhub', lastSuccessAt: null, lastError: 'boom', lastErrorAt: '2026-10-21T09:00:00.000Z', state: 'backup', blockedUntil: null },
   ],
   counts: { reports: 10, withExpectedMove: 4, secVerified: 2 },
-  coverage: { US: [cov('epsEstimate', 9, 10, 85), cov('timing', 3, 10, 70)], IN: [cov('marketCap', 10, 10, 95)], HK: [cov('adrTicker', 3, 4, 70)], JP: [cov('edinetCode', 5, 8, 50)] },
+  coverage: { US: [cov('epsEstimate', 9, 10, 85), cov('timing', 3, 10, 70)], IN: [cov('marketCap', 10, 10, 95)], HK: [cov('adrTicker', 3, 4, 70)], JP: [cov('edinetCode', 5, 8, 50)], UK: [cov('ukEpsField', 6, 10, 30)], EU: [cov('euCapField', 7, 10, 90)] },
 };
 
 test('Hong Kong coverage table renders', async () => {
@@ -64,4 +64,15 @@ test('a disabled source shows "not configured" (EDINET without a key)', async ()
   const row = screen.getByText('edinet').closest('tr')!;
   expect(row.textContent).toContain('not configured');
   expect(row.textContent).not.toContain('disabled');
+});
+
+test('UK and Europe coverage tables', async () => {
+  mount();
+  const uk = (await screen.findByText('ukEpsField')).closest('tr')!;
+  expect(uk.textContent).toContain('6/10');
+  expect(uk.closest('table')!.querySelector('caption')!.textContent).toMatch(/^UK:/);
+  const eu = screen.getByText('euCapField').closest('tr')!;
+  expect(eu.textContent).toContain('7/10');
+  expect(eu.className).toContain('below');
+  expect(eu.closest('table')!.querySelector('caption')!.textContent).toMatch(/^Europe:/);
 });

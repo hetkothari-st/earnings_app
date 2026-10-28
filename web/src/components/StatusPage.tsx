@@ -58,6 +58,8 @@ export function StatusPage() {
       <CoverageTable market="India" rows={data.coverage.IN} />
       <CoverageTable market="Hong Kong" rows={data.coverage.HK} />
       <CoverageTable market="Japan" rows={data.coverage.JP} />
+      <CoverageTable market="UK" rows={data.coverage.UK} />
+      <CoverageTable market="Europe" rows={data.coverage.EU} />
       <p><a href="/">← Back to calendar</a></p>
     </main>
   );

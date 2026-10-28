@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { HongKongMarketBar, IndiaMarketBar, JapanMarketBar, MarketBar } from '../src/components/MarketBar';
+import { EuropeMarketBar, HongKongMarketBar, IndiaMarketBar, JapanMarketBar, MarketBar } from '../src/components/MarketBar';
 
 test('HK strip shows Hang Seng, HS China Enterprises, HS Tech with delayed label', async () => {
   const polled = [
@@ -65,5 +65,31 @@ test('JP strip shows Nikkei 225 and TOPIX (ETF 1306) with delayed label', async 
   rerender(<JapanMarketBar live={[{ index: 'Nikkei 225', price: 64500, changePct: 0.5, asOf: 'y' }]} />);
   expect(screen.getByText('64,500.00')).toBeTruthy();
   expect(screen.getByText('3,650.50')).toBeTruthy();
+  vi.unstubAllGlobals();
+});
+
+test('UK strip shows FTSE 100, FTSE 250, FTSE AIM All-Share; EU strip shows 8 indices, delayed', async () => {
+  const uk = [
+    { index: 'FTSE 100', price: 9512.3, changePct: 0.2, asOf: 'x' },
+    { index: 'FTSE 250', price: 21950.1, changePct: -0.1, asOf: 'x' },
+    { index: 'FTSE AIM All-Share', price: 745.12, changePct: null, asOf: null },
+  ];
+  const eu = ['Euro Stoxx 50', 'DAX', 'CAC 40', 'AEX', 'IBEX 35', 'FTSE MIB', 'SMI', 'OMXS30']
+    .map((index, i) => ({ index, price: 1000 + i, changePct: 0.1, asOf: 'x' }));
+  const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify({ indices: url === '/api/uk/markets' ? uk : eu }), { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  const { rerender, unmount } = render(<EuropeMarketBar market="UK" />);
+  expect(await screen.findByText('FTSE 100 · delayed')).toBeTruthy();
+  expect(screen.getByText('FTSE 250 · delayed')).toBeTruthy();
+  expect(screen.getByText('FTSE AIM All-Share · delayed')).toBeTruthy();
+  expect(screen.getByText('9,512.30')).toBeTruthy();
+  rerender(<EuropeMarketBar market="UK" live={[{ index: 'FTSE 100', price: 9520, changePct: 0.28, asOf: 'y' }]} />);
+  expect(screen.getByText('9,520.00')).toBeTruthy();
+  expect(screen.getByText('21,950.10')).toBeTruthy();
+  unmount();
+  render(<EuropeMarketBar market="EU" />);
+  expect(await screen.findByText('Euro Stoxx 50 · delayed')).toBeTruthy();
+  expect(screen.getAllByText(/ · delayed$/)).toHaveLength(8);
+  expect(fetchMock.mock.calls.some(([u]) => u === '/api/eu/markets')).toBe(true);
   vi.unstubAllGlobals();
 });

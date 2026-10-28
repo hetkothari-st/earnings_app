@@ -1,9 +1,9 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useState } from 'react';
 import {
   type AdminUser, bulkIds, bulkPreview, createUser, createUsersBulk, deleteUser, fetchKiteStatus, kiteBrowserLoginUrl, kiteLoginNow, listUsers,
-  fetchHkAdmin, fetchJpAdmin, MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
+  fetchEuropeAdmin, fetchHkAdmin, fetchJpAdmin, MAX_BULK, normalizeId, passwordProblem, updateUser, validId,
 } from '../adminApi';
-import type { HkAdminDto, JpAdminDto, KiteStatusDto } from '../api';
+import type { EuropeAdminDto, HkAdminDto, JpAdminDto, KiteStatusDto } from '../api';
 import { useAccount } from '../lib/account';
 import '../admin.css';
 
@@ -345,6 +345,49 @@ function JapanPanel() {
   );
 }
 
+/** UK and Europe coverage, keys, Tradegate and feed freshness. Read-only. */
+function EuropePanel() {
+  const [eu, setEu] = useState<EuropeAdminDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void fetchEuropeAdmin().then((r) => (r.ok ? setEu(r.data) : setError(r.error)));
+  }, []);
+  const tg = eu?.tradegate;
+  return (
+    <section className="admin-card" aria-label="UK and Europe">
+      <h2>UK and Europe</h2>
+      {error && <p role="alert" className="admin-msg admin-msg-error">Could not load UK and Europe status: {error}</p>}
+      {!eu && !error && <p className="admin-muted">Loading…</p>}
+      {eu && tg && (
+        <>
+          {(['UK', 'EU'] as const).map((m) => (
+            <p key={m}>
+              {m === 'UK' ? 'UK' : 'Europe'}: Full level {eu[m].full} · Basic level {eu[m].basic} · Inactive {eu[m].inactive} · Left out {eu[m].leftOut ?? '—'}
+            </p>
+          ))}
+          <p>SEC access: {eu.secConfigured ? 'configured' : 'not configured (set SEC_USER_AGENT)'}</p>
+          <p>OpenFIGI key: {eu.openFigiConfigured ? 'configured' : 'not configured (optional, OPENFIGI_API_KEY)'}</p>
+          <p>
+            Tradegate real-time prices:{' '}
+            {tg.state == null ? 'unknown' : tg.state === 'on' ? 'on' : tg.state === 'off-env' ? 'off (TRADEGATE_PRICES=0)' : tg.state === 'off-robots' ? 'blocked by robots.txt' : <>paused after 429 until {when(tg.backoffUntil)}</>}
+            {' · '}Last Tradegate poll: {when(tg.lastPollAt)}
+          </p>
+          <p>Universe refreshed: UK {when(eu.UK.lastUniverseAt)} · Europe {when(eu.EU.lastUniverseAt)}</p>
+          <p>Last PR Newswire item: UK {when(eu.UK.lastPrnAt)} · Europe {when(eu.EU.lastPrnAt)}</p>
+          <p>Last DILA document: {when(eu.EU.lastDilaAt)}</p>
+          <p>Last ESEF filing: UK {when(eu.UK.lastEsefAt)} · Europe {when(eu.EU.lastEsefAt)}</p>
+          <p>Last 6-K seen: UK {when(eu.UK.lastSixKAt)} · Europe {when(eu.EU.lastSixKAt)}</p>
+          {(['UK', 'EU'] as const).map((m) => (
+            <p key={`reader-${m}`}>
+              6-K reader {m === 'UK' ? 'UK' : 'Europe'}: {eu[m].readerOn ? 'on' : 'off until 20 releases and the held-out set are read exactly right'}
+            </p>
+          ))}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Hong Kong coverage and SEC settings. Read-only. */
 function HongKongPanel() {
   const [hk, setHk] = useState<HkAdminDto | null>(null);
@@ -460,6 +503,7 @@ export function AdminPage() {
             <ZerodhaPanel />
             <HongKongPanel />
             <JapanPanel />
+            <EuropePanel />
           </aside>
         </div>
       </main>

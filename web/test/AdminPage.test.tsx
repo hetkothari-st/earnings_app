@@ -96,6 +96,48 @@ describe('admin page', () => {
     expect(panel.textContent).not.toContain('Never');
   });
 
+  test('Europe panel: Tradegate paused until, OpenFIGI not configured, readers off', async () => {
+    const m = (full: number, basic: number, inactive: number, leftOut: number) => ({
+      full, basic, inactive, leftOut, lastUniverseAt: '2026-10-27T03:00:00.000Z', lastSixKAt: null,
+      lastPrnAt: '2026-10-28T06:02:00.000Z', lastDilaAt: '2026-10-28T05:45:00.000Z', lastEsefAt: null, readerOn: false,
+    });
+    reply = (url) => (url === '/api/admin/europe'
+      ? json(200, {
+        UK: m(12, 1400, 30, 13), EU: m(33, 3000, 41, 12),
+        tradegate: { state: 'backoff', backoffUntil: '2026-10-28T11:30:00.000Z', lastPollAt: '2026-10-28T10:29:00.000Z' },
+        secConfigured: true, openFigiConfigured: false,
+      })
+      : undefined);
+    renderPage();
+    const panel = await screen.findByRole('region', { name: 'UK and Europe' });
+    await waitFor(() => expect(panel.textContent).toContain('UK: Full level 12 · Basic level 1400 · Inactive 30 · Left out 13'));
+    expect(panel.textContent).toContain('Europe: Full level 33 · Basic level 3000 · Inactive 41 · Left out 12');
+    expect(panel.textContent).toContain('SEC access: configured');
+    expect(panel.textContent).toContain('OpenFIGI key: not configured (optional, OPENFIGI_API_KEY)');
+    expect(panel.textContent).toContain('Tradegate real-time prices: paused after 429 until Oct 28, 2026');
+    expect(panel.textContent).toContain('Last Tradegate poll: Oct 28, 2026');
+    expect(panel.textContent).toContain('Universe refreshed:');
+    expect(panel.textContent).toContain('Last PR Newswire item:');
+    expect(panel.textContent).toContain('Last DILA document:');
+    expect(panel.textContent).toContain('Last ESEF filing:');
+    expect(panel.textContent).toContain('6-K reader UK: off until 20 releases and the held-out set are read exactly right');
+    expect(panel.textContent).toContain('6-K reader Europe: off until 20 releases and the held-out set are read exactly right');
+  });
+
+  test('Europe panel: unknown Tradegate state is never shown as on; unknown left-out is a dash', async () => {
+    const m = { full: 1, basic: 2, inactive: 3, leftOut: null, lastUniverseAt: null, lastSixKAt: null, lastPrnAt: null, lastDilaAt: null, lastEsefAt: null, readerOn: true };
+    reply = (url) => (url === '/api/admin/europe'
+      ? json(200, { UK: m, EU: m, tradegate: { state: null, backoffUntil: null, lastPollAt: null }, secConfigured: false, openFigiConfigured: true })
+      : undefined);
+    renderPage();
+    const panel = await screen.findByRole('region', { name: 'UK and Europe' });
+    await waitFor(() => expect(panel.textContent).toContain('UK: Full level 1 · Basic level 2 · Inactive 3 · Left out —'));
+    expect(panel.textContent).toContain('Tradegate real-time prices: unknown');
+    expect(panel.textContent).toContain('SEC access: not configured (set SEC_USER_AGENT)');
+    expect(panel.textContent).toContain('OpenFIGI key: configured');
+    expect(panel.textContent).toContain('6-K reader UK: on');
+  });
+
   test('Japan panel shows EDINET key not configured and reader off', async () => {
     reply = (url) => (url === '/api/admin/jp'
       ? json(200, { full: 9, basic: 30, secConfigured: true, edinetConfigured: false, readerOn: false, lastSixKAt: null, lastEdinetAt: null })

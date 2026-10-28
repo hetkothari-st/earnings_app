@@ -5,6 +5,10 @@ export const todayHkt = (): string => DateTime.now().setZone('Asia/Hong_Kong').t
 
 export const todayJst = (): string => DateTime.now().setZone('Asia/Tokyo').toISODate()!;
 
+export const todayLondon = (): string => DateTime.now().setZone('Europe/London').toISODate()!;
+
+export const todayParis = (): string => DateTime.now().setZone('Europe/Paris').toISODate()!;
+
 export const todayIst = (): string => DateTime.now().setZone('Asia/Kolkata').toISODate()!;
 
 /**
