@@ -13,7 +13,7 @@
  * Both: dates before today never create a row, nor do dates more than 120 days ahead; a stock without a fiscal-year
  * end gets no row (Ruling 6). The period is `europePeriodFor` and is confirmed only by a trend `0q` end equal to it
  * (Ruling 7): a late reporter's row (AIM FY-Dec results on 2026-05-20 → 2026-03-31) stays unconfirmed. Full level
- * merges the ADR's US row (Ruling 11, `europeDateFromUs`: US AMC → the next local day): used when Yahoo agrees, has no
+ * merges the ADR's US row (Ruling 11, `europeLocalDateFromUs`: US AMC → the next local trading day): used when Yahoo agrees, has no
  * date for that period or has only its own projection; a date Yahoo marks announced wins a disagreement; with no flag
  * (bulk rows) a disagreement writes nothing. Everything is written `estimated`; the repo never lets an estimated date
  * move a confirmed one or a released row.
@@ -25,12 +25,12 @@ import { recordSourceError } from '../../db/repo.js';
 import { type SweepTurns, sweepTurns } from '../../sources/sweepTurns.js';
 import type { YahooForeignSummary } from '../../sources/yahooForeignSummary.js';
 import {
-  type EuropeStock, europeReportsBetween, europeStocks, findEuropeReportId, getEuropeReport, setEuropeTiming, upsertEuropeCalendarRow,
-  upsertEuropePastDates,
+  type EuropeStock, europeReportsBetween, europeStocks, findEuropeReportId, getEuropeReport, setEuropeTiming, storedBankHolidays,
+  upsertEuropeCalendarRow, upsertEuropePastDates,
 } from '../db/europeRepo.js';
-import { europeDateFromUs } from '../domain/calendars.js';
+import { calendarFor } from '../domain/calendars.js';
 import { type EuropePeriod, europePeriodFor, europePeriodLabel } from '../domain/period.js';
-import { exchangesOf, type EuropeMarket } from '../exchanges.js';
+import { exchangesOf, type EuropeMarket, type ExchangeId } from '../exchanges.js';
 import { type EuropeCalRow, YAHOO_REGIONS } from '../sources/yahooEurope.js';
 import { trackIn, type EuropeJobContext } from './context.js';
 import { addDaysEurope, applyEuropeSummary, europeEstimateRows, trendQuarterEnd } from './estimates.js';
@@ -51,6 +51,16 @@ export const EUROPE_SWEEP = {
 const AHEAD_DAYS = 120;
 /** A stale calendar date this recent can be a past date (previous moves need 45–140 days). */
 const PAST_DAYS = 140;
+
+/**
+ * An ADR's US report row as a local date of the stock's exchange (Ruling 11): US AMC → the next local TRADING day
+ * (weekends and that exchange's holidays skipped; LSE with the stored gov.uk dates), anything else the same day.
+ */
+export function europeLocalDateFromUs(db: DatabaseSync, ex: ExchangeId, usDate: string, usTiming: LocalTiming): string {
+  if (usTiming !== 'AMC') return usDate;
+  const cal = calendarFor(ex, ex === 'LSE' ? storedBankHolidays(db) : undefined);
+  return cal.tradingDayOnOrAfter(cal.addDays(usDate, 1));
+}
 
 const turnOf = (market: EuropeMarket): 'uk' | 'eu' => (market === 'UK' ? 'uk' : 'eu');
 
@@ -108,7 +118,7 @@ function planDates(ctx: EuropeJobContext, stock: EuropeStock, yahoo: Candidate[]
   const us = new Map<string, Planned>();
   if (stock.level === 'full' && stock.adr) {
     for (const u of usAdrRows(ctx.db, stock.adr, addDaysEurope(ctx, today, -1), end)) {
-      const date = europeDateFromUs(stock.exchange, u.reportDate, u.timing);
+      const date = europeLocalDateFromUs(ctx.db, stock.exchange, u.reportDate, u.timing);
       if (!inRange(date)) continue;
       const period = europePeriodFor(date, fy);
       const have = us.get(period.periodEnd);

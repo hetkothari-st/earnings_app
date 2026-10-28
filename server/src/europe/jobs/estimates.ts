@@ -22,16 +22,19 @@ export const addDaysEurope = (ctx: Pick<EuropeJobContext, 'market'>, d: string, 
   calendarFor(ctx.market === 'UK' ? 'LSE' : 'PAR').addDays(d, n);
 
 /**
- * The trend item for a report (JP Ruling 5): a fourth-quarter (full-year) row prefers the year item (`0y` / `+1y`)
- * whose end equals the period end, else the quarter item; Q1–Q3 rows take quarter items (`0q` / `+1q`) only.
+ * The trend item for a report: a fourth-quarter (FY) row takes only the year item (`0y` / `+1y`) whose end equals the
+ * period end; Q1 and Q3 rows take only quarter items (`0q` / `+1q`); an H1 (second-quarter) row takes none. Yahoo's
+ * quarter item at a half-year or year end may not match a 6- or 12-month figure, so a half / year row gets no estimate
+ * rather than a quarter-span one (fix round 1).
  */
 export function europeTrendFor(trend: Trend[], periodEnd: string, fiscalQuarter: 1 | 2 | 3 | 4): { item: Trend; span: 'quarter' | 'year' } | null {
   const isYear = (t: Trend) => t.period === '0y' || t.period === '+1y';
   const isQuarter = (t: Trend) => t.period === '0q' || t.period === '+1q';
   if (fiscalQuarter === 4) {
     const year = trend.find((t) => isYear(t) && t.periodEnd === periodEnd);
-    if (year) return { item: year, span: 'year' };
+    return year ? { item: year, span: 'year' } : null;
   }
+  if (fiscalQuarter === 2) return null;
   const quarter = trend.find((t) => isQuarter(t) && t.periodEnd === periodEnd);
   return quarter ? { item: quarter, span: 'quarter' } : null;
 }

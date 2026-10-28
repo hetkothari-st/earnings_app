@@ -196,12 +196,26 @@ describe('refreshEuropeStocks', () => {
     expect(s.get('FEVR.L')).toMatchObject({ marketCap: null, marketCapCurrency: null }); // not in the batch
   });
 
+  it('a quote without a cap keeps the stored cap, currency and date', async () => {
+    const { db } = setup();
+    setEuropeProfile(db, 'BT-A.L', { name: null, sector: null, industry: null, marketCap: 2.1e10, marketCapCurrency: 'GBP', asOf: '2026-10-20' }, NOW);
+    const noCap: EuropeQuote = { symbol: 'BT-A.L', price: 195.5, prevClose: 194, time: Date.parse(NOW), currency: 'GBp', marketCap: null,
+      marketCapCurrency: null, name: 'BT Group plc' };
+    const quoted = setup({ db, quotes: new Map([['BT-A.L', noCap]]) });
+    await refreshEuropeStocks(quoted.ctx);
+    expect(europeStocks(db, 'UK').find((x) => x.symbol === 'BT-A.L')).toMatchObject({
+      marketCap: 2.1e10, marketCapCurrency: 'GBP', marketCapAsOf: '2026-10-20', name: 'BT Group plc',
+    });
+  });
+
   it('gov.uk holidays stored; fetch failure keeps stored', async () => {
     const { db, ctx } = setup();
     await refreshEuropeStocks(ctx);
     const stored = storedBankHolidays(db);
     expect(stored.has('2026-12-28')).toBe(true);
     expect(stored.has('2027-08-30')).toBe(true);
+    expect((db.prepare("SELECT title FROM europe_bank_holidays WHERE date = '2026-12-25'").get() as { title: string | null }).title)
+      .toBe('Christmas Day');
     const n = stored.size;
 
     const failed = setup({ db, holidays: new Error('HTTP 503') });
@@ -226,6 +240,10 @@ describe('refreshEuropeStocks', () => {
     const late = setup({ db, today: '2027-11-15' });
     await refreshEuropeStocks(late.ctx);
     expect(status(db, 'europe-holidays')?.error).toMatch(/2028.*LSE/);
+    // The year comes from the data: no hardcoded year in the message.
+    const later = setup({ db, today: '2028-11-15' });
+    await refreshEuropeStocks(later.ctx);
+    expect(status(db, 'europe-holidays')?.error).toMatch(/2029.*LSE/);
   });
 });
 
@@ -264,9 +282,11 @@ describe('refreshEuropeCalendar', () => {
     expect(rows(db, 'BT-A.L')).toMatchObject([{ report_date: '2026-11-05', period_end: '2026-09-30', period_label: 'H1 FY27', period_confirmed: 1 }]);
     // No 0q item: AZN.L's row stays unconfirmed.
     expect(rows(db, 'AZN.L')).toMatchObject([{ report_date: '2026-10-30', period_end: '2026-09-30', period_confirmed: 0 }]);
-    // The same summary feeds estimates, in the currency Yahoo states (GBP, not the GBp of the quote).
+    // An H1 row never takes a quarter trend item: no estimate rather than a quarter-span one on a half-year row.
     const bt = getEuropeReport(db, rows(db, 'BT-A.L')[0]!.id);
-    expect(bt).toMatchObject({ epsEstimate: 0.0469, epsEstimateCurrency: 'GBP', revenueEstimateCurrency: 'GBP', estimateSpan: 'quarter' });
+    expect(bt).toMatchObject({ epsEstimate: null, estimateSpan: null });
+    // AZN.L's Q3 row: its 0q item was removed and +1q ends 2026-12-31, so no estimate either.
+    expect(getEuropeReport(db, rows(db, 'AZN.L')[0]!.id)).toMatchObject({ epsEstimate: null });
   });
 
   it('full level: US AMC 2026-11-05 + Yahoo AZN.L 2026-11-06 → row 2026-11-06; disagreement without flag → nothing', async () => {
@@ -290,6 +310,27 @@ describe('refreshEuropeCalendar', () => {
     usRow(projected.db, 'AZN', '2026-11-05', 'AMC');
     await refreshEuropeCalendar(projected.ctx, { perRun: 10, turns: passTurns() });
     expect(rows(projected.db, 'AZN.L')).toMatchObject([{ report_date: '2026-11-06' }]);
+  });
+
+  it('full level: US AMC on a Friday → the next LSE trading day (Monday); Yahoo on that Monday agrees', async () => {
+    const agree = setup({ summaries: { 'AZN.L': { ...AZN, nextDate: '2026-11-09', nextDateEstimated: null } } });
+    usRow(agree.db, 'AZN', '2026-11-06', 'AMC');
+    await refreshEuropeCalendar(agree.ctx, { perRun: 10, turns: passTurns() });
+    expect(rows(agree.db, 'AZN.L')).toMatchObject([{ report_date: '2026-11-09' }]);
+
+    const usOnly = setup({ summaries: { 'AZN.L': null } });
+    usRow(usOnly.db, 'AZN', '2026-11-06', 'AMC');
+    await refreshEuropeCalendar(usOnly.ctx, { perRun: 10, turns: passTurns() });
+    expect(rows(usOnly.db, 'AZN.L')).toMatchObject([{ report_date: '2026-11-09' }]);
+  });
+
+  it('full level: US AMC before a bank holiday → the next LSE trading day after it', async () => {
+    // Thu 2026-12-24 AMC: Fri 12-25 holiday, weekend, Mon 12-28 holiday (stored gov.uk date) → Tue 12-29.
+    const { db, ctx } = setup({ today: '2026-12-20', summaries: { 'AZN.L': null } });
+    saveBankHolidays(db, [{ date: '2026-12-25', title: 'Christmas Day' }, { date: '2026-12-28', title: 'Boxing Day' }], NOW);
+    usRow(db, 'AZN', '2026-12-24', 'AMC');
+    await refreshEuropeCalendar(ctx, { perRun: 10, turns: passTurns() });
+    expect(rows(db, 'AZN.L')).toMatchObject([{ report_date: '2026-12-29' }]);
   });
 
   it('no fyEndMonth → no row', async () => {
@@ -371,7 +412,8 @@ describe('refreshEuropeEstimates', () => {
       epsEstimate: 28.5, epsEstimateCurrency: 'GBp', epsAnalysts: 12, revenueEstimate: 4e8, revenueEstimateCurrency: 'GBP', estimateSpan: 'year',
       sector: 'Consumer Defensive',
     });
-    expect(getEuropeReport(db, h1)).toMatchObject({ epsEstimate: 0.0469, epsEstimateCurrency: 'GBP', estimateSpan: 'quarter', periodConfirmed: true });
+    // H1 row: no quarter item taken (no estimate), but the 0q end still confirms its period.
+    expect(getEuropeReport(db, h1)).toMatchObject({ epsEstimate: null, estimateSpan: null, periodConfirmed: true });
     expect(summaryCalls.map((c) => c.symbol)).toEqual(['BT-A.L', 'FEVR.L']); // nearest first
 
     const budgeted = setup({ db, tierA: ['FEVR.L'], summaries: { 'FEVR.L': fevr, 'BT-A.L': BT } });
@@ -391,34 +433,40 @@ describe('refreshEuropeYahooResults', () => {
     const { db, ctx, summaryCalls } = setup({
       today: '2026-11-06',
       summaries: {
+        'IHG.L': { ...AZN, epsHistory: hist('2026-09-30', 1.2, 'USD') },
         'BT-A.L': { ...BT, epsHistory: hist('2026-09-30', 2.1) },
         'FEVR.L': { ...FEVR, epsHistory: hist('2026-09-30', 99) },
         'AZN.L': { ...AZN, epsHistory: hist('2026-09-30', 2.7, 'USD') },
       },
     });
-    const bt = ukRow(db, 'BT-A.L', '2026-11-05', 3);
-    const fevr = ukRow(db, 'FEVR.L', '2026-10-20', 12);
-    mergeEuropeActuals(db, fevr, { eps: { basic: 10, diluted: null, currency: 'GBp', span: 'quarter', ytdMonths: null }, source: 'esef' }, NOW);
+    const ihg = ukRow(db, 'IHG.L', '2026-10-22', 12); // Q3 FY26: a true quarter row
+    mergeEuropeActuals(db, ihg, { revenue: { value: 1.3e9, currency: 'USD', span: 'quarter', ytdMonths: null }, source: 'esef' }, NOW);
+    const bt = ukRow(db, 'BT-A.L', '2026-11-05', 3); // H1 FY27
+    const fevr = ukRow(db, 'FEVR.L', '2026-10-20', 9); // FY26 (a September year end): a fourth-quarter row
     const azn = ukRow(db, 'AZN.L', '2026-10-30', 12);
 
-    expect(await refreshEuropeYahooResults(ctx)).toEqual([bt]);
-    expect(getEuropeReport(db, bt)).toMatchObject({
-      epsActual: 2.1, epsCurrency: 'GBp', epsSource: 'yahoo', epsSpan: 'quarter', releasedAt: NOW, releasedSource: 'yahoo', periodConfirmed: true,
+    expect(await refreshEuropeYahooResults(ctx)).toEqual([fevr, ihg, bt]);
+    expect(getEuropeReport(db, ihg)).toMatchObject({
+      epsActual: 1.2, epsCurrency: 'USD', epsSource: 'yahoo', epsSpan: 'quarter', releasedAt: NOW, releasedSource: 'yahoo', periodConfirmed: true,
+      revenueActual: 1.3e9, revenueSource: 'esef',
     });
-    expect(getEuropeReport(db, fevr)).toMatchObject({ epsActual: 10, epsSource: 'esef', releasedAt: null });
+    // H1 and FY rows: Yahoo's figure may be a 6- or 12-month one, so no EPS; the release still flips.
+    expect(getEuropeReport(db, bt)).toMatchObject({ epsActual: null, epsSource: null, releasedAt: NOW, releasedSource: 'yahoo' });
+    expect(getEuropeReport(db, fevr)).toMatchObject({ periodLabel: 'FY26', epsActual: null, releasedAt: NOW, releasedSource: 'yahoo' });
     expect(getEuropeReport(db, azn)).toMatchObject({ epsActual: null, releasedAt: null }); // full level: SEC's job
-    expect(summaryCalls.map((c) => c.symbol)).toEqual(['BT-A.L']);
+    expect(summaryCalls.map((c) => c.symbol)).toEqual(['FEVR.L', 'IHG.L', 'BT-A.L']);
 
-    // An ESEF EPS already there and no EPS: the Yahoo value never replaces a higher source.
-    expect(mergeEuropeActuals(db, bt, { eps: { basic: 2.2, diluted: null, currency: 'GBp', span: 'quarter', ytdMonths: null }, source: 'esef' }, NOW)).toBe(true);
-    expect(await refreshEuropeYahooResults(setup({ db, today: '2026-11-06', summaries: { 'BT-A.L': BT } }).ctx)).toEqual([]);
-    expect(getEuropeReport(db, bt)).toMatchObject({ epsActual: 2.2, epsSource: 'esef' });
+    // An ESEF EPS replaces Yahoo's; a later Yahoo run never puts its own back.
+    expect(mergeEuropeActuals(db, ihg, { eps: { basic: 1.25, diluted: null, currency: 'USD', span: 'quarter', ytdMonths: null }, source: 'esef' }, NOW)).toBe(true);
+    const again = setup({ db, today: '2026-11-06', summaries: { 'IHG.L': { ...AZN, epsHistory: hist('2026-09-30', 1.2, 'USD') } } });
+    expect(await refreshEuropeYahooResults(again.ctx)).toEqual([]);
+    expect(getEuropeReport(db, ihg)).toMatchObject({ epsActual: 1.25, epsSource: 'esef' });
   });
 });
 
 describe('computeEuropePrevMoves', () => {
   it('previous move from the ADR US row maps to the LSE window', async () => {
-    // US AMC Fri 2026-08-28 → London Sat 08-29 (BMO): reacts Tue 09-01 (Mon 08-31 is a UK bank holiday) against Fri 08-28.
+    // US AMC Fri 2026-08-28 → the next LSE trading day, Tue 09-01 (Mon 08-31 is a UK bank holiday), BMO: Fri 08-28 → Tue 09-01.
     const closes = new Map([['2026-08-28', 100], ['2026-08-31', 999], ['2026-09-01', 105]]);
     const { db, ctx, closeCalls } = setup({ closes });
     saveBankHolidays(db, [{ date: '2026-08-31', title: 'Summer bank holiday' }], NOW);
@@ -426,7 +474,7 @@ describe('computeEuropePrevMoves', () => {
     const id = ukRow(db, 'AZN.L', '2026-11-05', 12);
     await computeEuropePrevMoves(ctx);
     expect(closeCalls).toEqual([['AZN.L', '2026-08-23', '2026-09-02']]);
-    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-08-29', prevMoveBasis: 'assumed' });
+    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-09-01', prevMoveBasis: 'assumed' });
   });
 
   it('past date with unknown timing → AMC, assumed; nothing in 45–140 days → checked, blank', async () => {

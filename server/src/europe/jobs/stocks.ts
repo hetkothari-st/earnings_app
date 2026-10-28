@@ -13,12 +13,24 @@ export const europeSource = (ctx: Pick<EuropeJobContext, 'market'>, what: string
 /** `yahoo-uk-…` / `yahoo-eu-…`. */
 export const yahooSource = (ctx: Pick<EuropeJobContext, 'market'>, what: string): string => `yahoo-${ctx.market.toLowerCase()}-${what}`;
 
+/** The England and Wales event titles by date (the parser validates dates only; a missing title stays blank). */
+function govUkTitles(json: unknown): Map<string, string> {
+  const events = (json as { 'england-and-wales'?: { events?: unknown } } | null)?.['england-and-wales']?.events;
+  const out = new Map<string, string>();
+  if (!Array.isArray(events)) return out;
+  for (const e of events as { date?: unknown; title?: unknown }[]) {
+    if (typeof e?.date === 'string' && typeof e.title === 'string' && e.title.trim() && !out.has(e.date)) out.set(e.date, e.title.trim());
+  }
+  return out;
+}
+
 /** A `europe-holidays` status warning while any exchange of the market has no holiday list 60 days ahead (Ruling 16). */
 export function checkEuropeHolidayCoverage(ctx: EuropeJobContext): void {
-  const unknown = exchangesOf(ctx.market).filter((ex) => holidaysUnknown(ex, calendarFor(ex).addDays(ctx.today(), 60)));
+  const horizon = calendarFor(ctx.market === 'UK' ? 'LSE' : 'PAR').addDays(ctx.today(), 60);
+  const unknown = exchangesOf(ctx.market).filter((ex) => holidaysUnknown(ex, horizon));
   if (unknown.length > 0) {
     recordSourceError(ctx.db, 'europe-holidays',
-      `${ctx.market}: holiday lists for 2028 not added yet (${unknown.join(', ')}): weekends only`, ctx.now());
+      `${ctx.market}: holiday lists for ${horizon.slice(0, 4)} not added yet (${unknown.join(', ')}): weekends only`, ctx.now());
   } else {
     recordSourceSuccess(ctx.db, 'europe-holidays', ctx.now());
   }
@@ -78,8 +90,9 @@ export async function refreshEuropeStocks(ctx: EuropeJobContext): Promise<void> 
 
   if (ctx.market === 'UK') {
     await trackIn(ctx, 'govuk-holidays', async () => {
-      const dates = parseGovUkBankHolidays(await ctx.bankHolidaysJson());
-      saveBankHolidays(ctx.db, dates.map((date) => ({ date, title: '' })), ctx.now());
+      const json = await ctx.bankHolidaysJson();
+      const titles = govUkTitles(json);
+      saveBankHolidays(ctx.db, parseGovUkBankHolidays(json).map((date) => ({ date, title: titles.get(date) ?? '' })), ctx.now());
     });
   }
   checkEuropeHolidayCoverage(ctx);

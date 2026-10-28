@@ -5,8 +5,9 @@ import { reactionMovePct } from '../../india/domain/inMoves.js';
 import {
   europePastDates, europeReportsNeedingPrevMove, europeStocks, priorEuropeReleased, setEuropePrevMove, storedBankHolidays,
 } from '../db/europeRepo.js';
-import { calendarFor, europeDateFromUs } from '../domain/calendars.js';
+import { calendarFor } from '../domain/calendars.js';
 import type { ExchangeId } from '../exchanges.js';
+import { europeLocalDateFromUs } from './calendar.js';
 import { trackIn, type EuropeJobContext } from './context.js';
 import { addDaysEurope } from './estimates.js';
 import { yahooSource } from './stocks.js';
@@ -21,7 +22,7 @@ const daysBetween = (later: string, earlier: string) => (Date.parse(later) - Dat
 
 /**
  * The local timing an ADR's US row proves (every European close is after 09:30 ET, every European open before 16:00 ET
- * of the previous day): US AMC → the next local day, before the open (`BMO`); US BMO → the same local day, before the
+ * of the previous day): US AMC → the next local trading day, before the open (`BMO`); US BMO → the same local day, before the
  * close (its reaction window is the `BMO` one); US DMH / UNKNOWN → the same day, unknown (treated as AMC, assumed).
  */
 function localTimingFromUs(us: LocalTiming): LocalTiming {
@@ -33,7 +34,7 @@ function localTimingFromUs(us: LocalTiming): LocalTiming {
  * gov.uk dates), for rows dated `[today−1, today+14]` plus tier A (visible ∪ watched) rows to +180 days, without a
  * previous move and not checked in the last 20 h; at most `budget` (600) close fetches, nearest report first. The prior
  * date is the latest released report this app has; else, at full level, the ADR's US row as a local date
- * (`europeDateFromUs`); else a stored Yahoo past date. Every prior date must lie 45–140 days back. Known timing gives
+ * (`europeLocalDateFromUs`: US AMC → the next local trading day); else a stored Yahoo past date. Every prior date must lie 45–140 days back. Known timing gives
  * basis 'known'; unknown timing is treated as AMC, basis 'assumed'. A prior from the ADR's US row is always 'assumed'.
  * A failed close fetch leaves the row to be retried; a miss never blanks an earlier value.
  */
@@ -62,7 +63,7 @@ export async function computeEuropePrevMoves(ctx: EuropeJobContext, opts: { budg
     if (own && inWindow(own.reportDate)) prior = { date: own.reportDate, timing: own.timing, known: own.known };
     if (!prior && stock.level === 'full' && stock.adr) {
       const us = usAdrRows(ctx.db, stock.adr, addDaysEurope(ctx, r.reportDate, -MAX_DAYS - 1), r.reportDate)
-        .map((u) => ({ date: europeDateFromUs(stock.exchange, u.reportDate, u.timing), timing: localTimingFromUs(u.timing) }))
+        .map((u) => ({ date: europeLocalDateFromUs(ctx.db, stock.exchange, u.reportDate, u.timing), timing: localTimingFromUs(u.timing) }))
         .filter((u) => inWindow(u.date))
         .sort((a, b) => b.date.localeCompare(a.date))[0];
       if (us) prior = { date: us.date, timing: us.timing, known: false };
