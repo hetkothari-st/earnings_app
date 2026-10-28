@@ -193,6 +193,12 @@ describe("classifySixK 'uk' / 'eu': N-month period ended, and a recency window (
     expect(classifySixK(doc('nine-month period ended'), { filedOn: '2026-10-28', profile: 'uk' })).toEqual({ kind: 'results', periodEnd: '2026-09-30', span: 'nine' });
   });
 
+  it('SAN "January - September 2026 Financial Report" (0000891478-26-000093, 2026-10-28) is results for Q3 2026', () => {
+    // Before: no results phrase matched, and "Form 6-K furnished to the SEC on 1 April 2026" read as a past date notice.
+    expect(classifySixK(fx('europe/sec/san_9m_2026_financial_report_6k.htm'), { filedOn: '2026-10-28', profile: 'eu', fyEndMonth: 12 }))
+      .toEqual({ kind: 'results', periodEnd: '2026-09-30', span: 'quarter' });
+  });
+
   it('a passing mention of the previous annual report never dates a release (no period within 100 days → other)', () => {
     const html = `<p>Interim results. See our annual report for the year ended 31 December 2025.</p>${RESULTS_TABLE}`;
     expect(classifySixK(html, { filedOn: '2026-08-19', profile: 'eu' })).toEqual({ kind: 'other' });
