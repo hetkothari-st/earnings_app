@@ -16,3 +16,8 @@ server/debug_*.mjs
 .superpowers/
 server/test/fixtures/us/releases/report.json
 server/test/fixtures/india/pdf/report.json
+
+# local databases
+*.db
+*.db-wal
+*.db-shm

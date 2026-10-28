@@ -181,7 +181,7 @@ PORT=3001
 }
 ```
 
-Run: `git config user.name ainaman2512 && git config user.email your-email@example.com` (repo-local identity), then `npm install -w server` from the repo root (creates root `node_modules` and lockfile). Expected: installs without errors.
+Run: `git config user.name ainaman2512 && git config user.email <your-email>` (repo-local identity), then `npm install -w server` from the repo root (creates root `node_modules` and lockfile). Expected: installs without errors.
 
 - [ ] **Step 2: Write the failing tests**
 
