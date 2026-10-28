@@ -1,0 +1,45 @@
+{
+  "_note": "Typed by hand from each filing's report_url xHTML (income statement / results table), never from the parser. Revenue is the headline turnover in the reporting currency; EPS is in the reporting currency's major unit (pence / 100). null = the parser's concept list has no headline fact for it (see per-file why).",
+  "hays_gb.json.gz": {
+    "periodEnd": "2026-06-30",
+    "revenue": 6421200000, "revenueCurrency": "GBP",
+    "epsBasic": -0.0364, "epsDiluted": -0.0364, "epsCurrency": "GBP",
+    "why": "Hays plc FY26: turnover GBP 6,421.2m; statutory basic and diluted EPS (3.64p). Reports in pence."
+  },
+  "kainos_gb.json.gz": {
+    "periodEnd": "2026-03-31",
+    "revenue": 431098000, "revenueCurrency": "GBP",
+    "epsBasic": 0.355, "epsDiluted": 0.351, "epsCurrency": "GBP",
+    "why": "Kainos FY26: revenue GBP 431,098k; basic EPS 35.5p, diluted 35.1p. Reports in pence."
+  },
+  "alten_fr.json.gz": {
+    "periodEnd": "2025-12-31",
+    "revenue": 4098971000, "revenueCurrency": "EUR",
+    "epsBasic": 3.07, "epsDiluted": 3.04, "epsCurrency": "EUR",
+    "why": "Alten 2025: revenue EUR 4,098,971k; resultat net par action 3,07, dilue 3,04."
+  },
+  "soitec_fr.json.gz": {
+    "periodEnd": "2026-03-31",
+    "revenue": 592319000, "revenueCurrency": "EUR",
+    "epsBasic": -6.17, "epsDiluted": -6.17, "epsCurrency": "EUR",
+    "why": "Soitec FY25-26: revenue EUR 592,319k; basic and diluted loss per share (6,17)."
+  },
+  "norion_se_bank.json.gz": {
+    "periodEnd": "2025-12-31",
+    "revenue": null, "revenueCurrency": null,
+    "epsBasic": 7.12, "epsDiluted": 7.12, "epsCurrency": "SEK",
+    "why": "Norion Bank 2025: a bank, no Revenue fact (interest income / operating income are other concepts); EPS 7,12 before and after dilution."
+  },
+  "thule_se.json.gz": {
+    "periodEnd": "2025-12-31",
+    "revenue": null, "revenueCurrency": null,
+    "epsBasic": 10.33, "epsDiluted": 10.33, "epsCurrency": "SEK",
+    "why": "Thule 2025: net sales SEK 10,429m but tagged ifrs-full:RevenueFromSaleOfGoods, which is not a listed revenue concept, so revenue stays blank; EPS 10,33."
+  },
+  "coloplast_dk_9m.json.gz": {
+    "periodEnd": "2026-06-30",
+    "revenue": null, "revenueCurrency": null,
+    "epsBasic": null, "epsDiluted": null, "epsCurrency": null,
+    "why": "Coloplast 9M 2025/26 interim: the only durations are 9 months and 3 months, so no 12-month figure exists (revenue DKK 21,482m, EPS 8.38 are nine-month)."
+  }
+}
