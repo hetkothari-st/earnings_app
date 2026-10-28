@@ -12,10 +12,13 @@
     "collect-in-corpus": "tsx src/cli/collectInCorpus.ts",
     "verify-hk-universe": "tsx src/cli/verifyHkUniverse.ts",
     "verify-jp-universe": "tsx src/cli/verifyJpUniverse.ts",
+    "verify-europe-universe": "tsx src/cli/verifyEuropeUniverse.ts",
     "collect-hk-corpus": "tsx src/cli/collectHkCorpus.ts",
     "collect-jp-corpus": "tsx src/cli/collectJpCorpus.ts",
+    "collect-europe-corpus": "tsx src/cli/collectEuropeCorpus.ts",
     "hk-spot-check": "tsx src/cli/hkSpotCheck.ts",
     "jp-spot-check": "tsx src/cli/jpSpotCheck.ts",
+    "europe-spot-check": "tsx src/cli/europeSpotCheck.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

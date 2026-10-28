@@ -37,6 +37,8 @@ export function parseSecTickers(json: unknown): Map<string, SecTicker> {
 }
 
 const SubmissionsSchema = z.object({
+  /** Fiscal year end, "MMDD" (optional and unchecked here: its absence or shape never fails the filings parse). */
+  fiscalYearEnd: z.unknown().optional(),
   filings: z.object({
     recent: z.object({
       accessionNumber: z.array(z.string()),
@@ -69,6 +71,13 @@ export function parseEarningsFilings(json: unknown, cik: number): Filing[] {
     });
   });
   return out;
+}
+
+/** The submissions JSON's `fiscalYearEnd` ("MMDD", e.g. "1231"), or null when absent or not a valid month-day. */
+export function parseFiscalYearEnd(json: unknown): string | null {
+  const parsed = SubmissionsSchema.pick({ fiscalYearEnd: true }).safeParse(json);
+  const v = parsed.success ? parsed.data.fiscalYearEnd : undefined;
+  return typeof v === 'string' && /^(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])$/.test(v) ? v : null;
 }
 
 /** <ACCEPTANCE-DATETIME>yyyyMMddHHmmss is ET wall clock (verified against EDGAR index pages). */

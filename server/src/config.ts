@@ -18,6 +18,10 @@ export const config = {
   secUserAgent: process.env.SEC_USER_AGENT ?? '',
   /** EDINET API v2 subscription key (Japan). Never logged, stored or sent anywhere but EDINET. Empty: EDINET off. */
   edinetApiKey: process.env.EDINET_API_KEY ?? '',
+  /** OpenFIGI API key (UK/EU universe build). Optional: keyless limits without it. Sent only in the X-OPENFIGI-APIKEY header; never logged or stored. */
+  openFigiApiKey: process.env.OPENFIGI_API_KEY ?? '',
+  /** Tradegate real-time prices (UK/EU): on unless TRADEGATE_PRICES=0. */
+  tradegatePrices: process.env.TRADEGATE_PRICES !== '0',
   /** Investing.com scraper (needs Chrome; ToS forbids scraping): off unless INVESTING_SCRAPER=1. */
   investingScraper: process.env.INVESTING_SCRAPER === '1',
   // Kite credentials (India). All optional — India features degrade gracefully without them.
@@ -41,13 +45,15 @@ export const config = {
    * held-out 6, 4 exact, 0 wrong; second held-out set of 9 unseen releases, 0 wrong => gate open, jpEps / jpRevenue
    * on. The gate is: main >= 20 exact releases carrying a value and 0 wrong, every held-out set 0 wrong (blanks
    * allowed).
+   * UK reader gate (same rule as JP; reader-corpus --uk / --uk-heldout): main 58 hand-checked 6-K/8-K releases (18 issuers), 14 exact, 11 carrying values, 0 wrong; held-out 6 (6 issuers), 1 exact, 0 wrong (two earlier held-out sets had 1 wrong each and moved to main, except two never-wrong set-2 releases, AZN_2024-09-30 and PUK_2024-12-31, kept in held-out) => fails (11 < 20): ukEps / ukRevenue off.
+   * EU reader gate (same rule as JP; reader-corpus --eu / --eu-heldout): main 49 hand-checked 6-K/8-K releases (18 issuers), 19 exact, 12 carrying values, 0 wrong; held-out 6, 2 exact, 0 wrong => fails (12 < 20): euEps / euRevenue off.
    */
   fastFields: {
     usEpsAdjusted: false, usEpsGaap: true, usRevenue: true, inEps: false, inRevenue: false, inProfit: false, hkEps: true, hkRevenue: true,
-    jpEps: true, jpRevenue: true,
+    jpEps: true, jpRevenue: true, ukEps: false, ukRevenue: false, euEps: false, euRevenue: false,
   } as {
     usEpsAdjusted: boolean; usEpsGaap: boolean; usRevenue: boolean; inEps: boolean; inRevenue: boolean; inProfit: boolean; hkEps?: boolean; hkRevenue?: boolean;
-    jpEps?: boolean; jpRevenue?: boolean;
+    jpEps?: boolean; jpRevenue?: boolean; ukEps?: boolean; ukRevenue?: boolean; euEps?: boolean; euRevenue?: boolean;
   },
 };
 

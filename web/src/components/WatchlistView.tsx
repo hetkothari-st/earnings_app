@@ -3,20 +3,23 @@ import { DateTime } from 'luxon';
 import type { InReportDto } from '../../../server/src/india/api/types';
 import type { HkReportDto } from '../../../server/src/hk/api/types';
 import type { JpReportDto } from '../../../server/src/jp/api/types';
+import type { EuropeReportDto } from '../../../server/src/europe/api/types';
 import type { ReportDto } from '../../../server/src/api/types';
 import { fetchWatchRows, type WatchRow } from '../api';
 import type { Watchlist } from '../hooks/useWatchlist';
-import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatHkEps, formatHkMoney, formatHkPrice, formatInrCr, formatJpEps, formatJpMoney, formatJpPrice, formatMoney, jpSpanLabel } from '../lib/format';
+import { changeClass, formatChange, formatDateHeading, formatEps, formatEpsInr, formatEuropeEps, formatEuropeMoney, formatEuropePrice, formatHkEps, formatHkMoney, formatHkPrice, formatInrCr, formatJpEps, formatJpMoney, formatJpPrice, formatMoney, jpSpanLabel } from '../lib/format';
 import type { Market } from '../lib/market';
-import { todayHkt, todayJst } from '../lib/liveCap';
+import { todayHkt, todayJst, todayLondon, todayParis } from '../lib/liveCap';
 import { todayEt } from '../lib/time';
 import { priceKey } from '../lib/ticker';
+import { realtimeLabel } from './EuropeStockList';
 import { SymbolSearch } from './SymbolSearch';
 import { Star } from './Star';
 import { Tags } from './Tags';
 
-type Price = { price: number; changePct: number | null; source?: string };
-type Report = ReportDto | InReportDto | HkReportDto | JpReportDto;
+/** `currency` and `venue` come with UK and Europe prices (Tradegate real-time, or Yahoo delayed). */
+type Price = { price: number; changePct: number | null; source?: string; currency?: string | null; venue?: 'tradegate' | 'yahoo' };
+type Report = ReportDto | InReportDto | HkReportDto | JpReportDto | EuropeReportDto;
 
 interface Props {
   market: Market;
@@ -32,6 +35,8 @@ const pct1 = (n: number) => (Math.round(n * 10 + 1e-9) / 10).toFixed(1);
 function today(market: Market): string {
   if (market === 'HK') return todayHkt();
   if (market === 'JP') return todayJst();
+  if (market === 'UK') return todayLondon();
+  if (market === 'EU') return todayParis();
   return market === 'IN' ? DateTime.now().setZone('Asia/Kolkata').toISODate()! : todayEt();
 }
 
@@ -84,6 +89,22 @@ function Latest({ latest, market }: { latest: WatchRow['latest']; market: Market
       </>
     );
   }
+  if (market === 'UK' || market === 'EU') {
+    const e = r as EuropeReportDto;
+    if (e.eps.actual == null && e.revenue.actual == null) return <span className="muted">—</span>;
+    const span = (f: EuropeReportDto['eps']) => jpSpanLabel(e.fiscalQuarter, f);
+    const from = (f: EuropeReportDto['eps']) => (f.actual == null ? null : f.actualSource === 'esef' ? 'ESEF annual report' : f.actualSource === 'yahoo' ? 'Yahoo' : null);
+    return (
+      <>
+        <Figure label="EPS" actual={e.eps.actual} result={e.eps.result} format={(n) => formatEuropeEps(n, e.eps.actualCurrency)} preliminary={false} corrected={false} />
+        {span(e.eps) && <span className="muted"> {span(e.eps)}</span>}
+        {from(e.eps) && <span className="muted"> from {from(e.eps)}</span>}
+        <Figure label="Revenue" actual={e.revenue.actual} result={e.revenue.result} format={(n) => formatEuropeMoney(n, e.revenue.actualCurrency)} preliminary={false} corrected={false} />
+        {span(e.revenue) && <span className="muted"> {span(e.revenue)}</span>}
+        {from(e.revenue) && <span className="muted"> from {from(e.revenue)}</span>}
+      </>
+    );
+  }
   const r2 = r as ReportDto | InReportDto;
   const eps = market === 'IN' ? formatEpsInr : formatEps;
   const money = market === 'IN' ? formatInrCr : (n: number | null) => formatMoney(n, (r2 as ReportDto).revenue.currency);
@@ -113,7 +134,8 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
 
   const t = today(market);
   const shown = (rows ?? []).filter((r) => watch.symbols.has(r.symbol));
-  const money = (n: number) => (market === 'IN' ? rupees(n) : market === 'HK' ? formatHkPrice(n) : market === 'JP' ? formatJpPrice(n) : `$${n.toFixed(2)}`);
+  const money = (p: Price) => (market === 'IN' ? rupees(p.price) : market === 'HK' ? formatHkPrice(p.price) : market === 'JP' ? formatJpPrice(p.price)
+    : market === 'UK' || market === 'EU' ? formatEuropePrice(p.price, p.currency) : `$${p.price.toFixed(2)}`);
 
   return (
     <section className="watchlist" aria-label="Watchlist">
@@ -135,8 +157,10 @@ export function WatchlistView({ market, prices, watch, reloadKey = 0 }: Props) {
                 <span className="stock-price">
                   {price && (
                     <>
-                      <span>{money(price.price)}</span>
+                      <span>{money(price)}</span>
                       {price.changePct != null && <span className={`price-change ${changeClass(price.changePct)}`}>{formatChange(price.changePct)}</span>}{price.source === 'backup' && <span className="muted backup-mark">backup</span>}
+                      {price.venue === 'tradegate' && <span className="realtime">{realtimeLabel(price.currency)}</span>}
+                      {price.venue === 'yahoo' && <span className="delayed">Delayed ~15 min</span>}
                     </>
                   )}
                 </span>

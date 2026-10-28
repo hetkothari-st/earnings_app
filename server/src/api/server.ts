@@ -8,6 +8,10 @@ import { registerWatchlist, type WatchlistOptions } from '../watchlist/routes.js
 import { type InServerOptions, registerInRoutes } from '../india/api/routes.js';
 import { type HkServerOptions, registerHkRoutes } from '../hk/api/routes.js';
 import { type JpServerOptions, registerJpRoutes } from '../jp/api/routes.js';
+import { type EuropeAdminSource, type EuropeServerOptions, registerEuropeAdmin, registerEuropeRoutes } from '../europe/api/routes.js';
+import { marketToday } from '../europe/domain/calendars.js';
+import { config } from '../config.js';
+import { EU_SYMBOL, UK_SYMBOL } from '../watchlist/routes.js';
 import { todayET } from '../domain/marketCalendar.js';
 import { todayHKT } from '../hk/domain/hkCalendar.js';
 import { todayJST } from '../jp/domain/jpCalendar.js';
@@ -52,11 +56,20 @@ export interface ServerOptions {
   hk?: HkServerOptions;
   /** Japan live data. */
   jp?: JpServerOptions;
+  /** UK and Europe live data, per market. */
+  europe?: { UK?: EuropeServerOptions; EU?: EuropeServerOptions; admin?: EuropeAdminSource };
   /** Symbol index for the watchlist (search and validation). */
   watchlist?: WatchlistOptions;
 }
 
 const MAX_RANGE_DAYS = 400;
+/**
+ * Admin source while no live Tradegate client is supplied: its state is unknown (null). Only 'off-env' is certain from
+ * configuration alone (TRADEGATE_PRICES=0).
+ */
+const NO_EUROPE_LIVE: EuropeAdminSource = () => ({
+  tradegate: { state: config.tradegatePrices ? null : 'off-env', backoffUntil: null, lastPollAt: null },
+});
 
 function validDate(s: string | undefined): s is string {
   return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && DateTime.fromISO(s).isValid;
@@ -73,6 +86,9 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   registerInRoutes(app, db, currentUser, opts.now ?? Date.now, opts.india);
   registerHkRoutes(app, db, currentUser, opts.now ?? Date.now, opts.hk);
   registerJpRoutes(app, db, currentUser, opts.now ?? Date.now, opts.jp);
+  registerEuropeRoutes(app, db, 'UK', currentUser, opts.now ?? Date.now, opts.europe?.UK);
+  registerEuropeRoutes(app, db, 'EU', currentUser, opts.now ?? Date.now, opts.europe?.EU);
+  registerEuropeAdmin(app, db, opts.europe?.admin ?? NO_EUROPE_LIVE, currentUser);
   let marketsCache: { at: number; body: MarketsResponse } | null = null;
 
   app.get('/api/markets', async () => {
@@ -97,7 +113,9 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
     const user = currentUser(req);
     if (!user) return reply.code(401).send({ error: 'Not signed in' });
     const body = (req.body ?? {}) as { market?: unknown; symbols?: unknown };
-    if (body.market !== 'US' && body.market !== 'HK' && body.market !== 'JP') return reply.code(400).send({ error: 'market must be US, HK or JP' });
+    if (body.market !== 'US' && body.market !== 'HK' && body.market !== 'JP' && body.market !== 'UK' && body.market !== 'EU') {
+      return reply.code(400).send({ error: 'market must be US, HK, JP, UK or EU' });
+    }
     if (!Array.isArray(body.symbols) || body.symbols.length > 100 || !body.symbols.every((s) => typeof s === 'string')) {
       return reply.code(400).send({ error: 'symbols must be an array of at most 100 strings' });
     }
@@ -111,6 +129,14 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
       const codes = body.symbols as string[];
       if (!codes.every((c) => /^[0-9][0-9A-Z]{3}$/.test(c))) return reply.code(400).send({ error: 'invalid symbol' });
       opts.jp?.setVisible?.(user, [...new Set(codes)]);
+      return reply.code(204).send();
+    }
+    if (body.market === 'UK' || body.market === 'EU') {
+      // Ruling 2: Yahoo symbols upper-cased; UK takes `.L` only, EU the continental suffixes. A code off the format is
+      // dropped, not the batch: one odd symbol must not remove prices for the user's whole page.
+      const format = body.market === 'UK' ? UK_SYMBOL : EU_SYMBOL;
+      const codes = (body.symbols as string[]).map((s) => s.trim().toUpperCase()).filter((c) => format.test(c));
+      opts.europe?.[body.market]?.setVisible?.(user, [...new Set(codes)]);
       return reply.code(204).send();
     }
     const symbols = (body.symbols as string[]).map(normalizeTicker);
@@ -144,7 +170,8 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
   app.get('/api/status', async () => {
     const body: StatusResponse = {
       sources: listSourceStatus(db), counts: counts(db),
-      coverage: { US: computeCoverage(db, 'US', todayET()), IN: computeCoverage(db, 'IN', todayIST()), HK: computeCoverage(db, 'HK', todayHKT()), JP: computeCoverage(db, 'JP', todayJST()) },
+      coverage: { US: computeCoverage(db, 'US', todayET()), IN: computeCoverage(db, 'IN', todayIST()), HK: computeCoverage(db, 'HK', todayHKT()), JP: computeCoverage(db, 'JP', todayJST()),
+        UK: computeCoverage(db, 'UK', marketToday('UK')), EU: computeCoverage(db, 'EU', marketToday('EU')) },
     };
     return body;
   });

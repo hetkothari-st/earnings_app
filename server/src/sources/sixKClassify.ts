@@ -6,11 +6,18 @@ import type { FilingDoc } from './secFeed.js';
 /**
  * Shared 6-K classifier for the foreign markets. Profile `'hk'` is the Hong Kong classifier exactly as built (every
  * regex and branch); profile `'jp'` adds the Japanese results phrases, month-range headers, the nine-month span,
- * Tokyo clock / exchange phrases in date notices, and treats EDINET report translations as `other`.
+ * Tokyo clock / exchange phrases in date notices, and treats EDINET report translations as `other`. Profiles `'uk'`
+ * and `'eu'` (one rule set; clock times are judged against the caller's per-stock session) add the UK / European results phrases,
+ * "months / half year / year to" periods, "Q3 2026" quarter labels, "period 1 January to 30 September" ranges, the
+ * nine-month span, London / CET clocks and session phrases in date notices, and treat RNS housekeeping notices
+ * (own shares, voting rights, PDMR dealings, dividends, Form 20-F filings) as `other`.
  */
-export type SixKProfile = 'hk' | 'jp';
+export type SixKProfile = 'hk' | 'jp' | 'uk' | 'eu';
 
-/** `'nine'` only for `'jp'`; the HK output never contains it. */
+/** The UK and European profiles share every rule. */
+const isEurope = (profile: SixKProfile): profile is 'uk' | 'eu' => profile === 'uk' || profile === 'eu';
+
+/** `'nine'` only for `'jp'`, `'uk'` and `'eu'`; the HK output never contains it. */
 export type SixKSpan = 'quarter' | 'half' | 'nine' | 'year';
 
 /** Release timing against the local exchange session (the exchange calendar's type). */
@@ -78,9 +85,23 @@ const CALL_WORDS = /conference call|webcast|webinar|dial-in|teleconference/i;
 
 const HK_EXCHANGE = '(?:the\\s+)?(?:HKEX|Hong Kong Stock Exchange|Hong Kong market|Stock Exchange of Hong Kong)';
 const JP_EXCHANGE = '(?:the\\s+)?(?:Tokyo Stock Exchange|TSE)';
+const EU_EXCHANGE = '(?:the\\s+)?(?:London Stock Exchange|LSE)';
 
-/** One local clock time found in a sentence: minutes after midnight and where it ends. */
-type ClockHit = { index: number; length: number; mins: number };
+/**
+ * One local clock time found in a sentence: minutes after midnight and where it ends. `zone`: the IANA zone the
+ * clock is stated in (`'uk'` / `'eu'` only; hk / jp clocks are local by construction).
+ */
+type ClockHit = { index: number; length: number; mins: number; zone?: string };
+
+/**
+ * A stock's trading session as `europe/exchanges.ts` rows give it: IANA zone, open and close in minutes after local
+ * midnight. `'uk'` / `'eu'` clock times are judged against it; without one their timing is UNKNOWN.
+ */
+export interface SixKSession {
+  zone: string;
+  openMin: number;
+  closeMin: number;
+}
 
 /** Explicit Hong Kong clock times ("at 4:30 p.m. Hong Kong time [on]"). */
 function hkClocks(window: string): ClockHit[] {
@@ -107,11 +128,52 @@ function jpClocks(window: string): ClockHit[] {
   return out;
 }
 
+/**
+ * UK and European clock times: "at 7.00am (UK time)", "07:00 CET", "4.30pm BST", "08:00 Central European Summer
+ * Time". A UK zone (`UK|London time`, `BST`, `GMT`) is Europe/London wall time, a CET zone (`CET`, `CEST`, `Central
+ * European (Summer) Time`) Europe/Paris wall time; `zone` says which.
+ */
+function euClocks(window: string): ClockHit[] {
+  const clock = /(?:\bat\s+)?\b(\d{1,2})(?:[:.](\d{2}))?\s*(?:([ap])\.?\s?m\.?)?,?\s*\(?((?:UK|London)\s+time|BST|GMT|CES?T|Central\s+European\s+(?:Summer\s+)?Time)\b\)?(?:\s+on\s+)?/gi;
+  const out: ClockHit[] = [];
+  for (const t of window.matchAll(clock)) {
+    const h = Number(t[1]);
+    if (!t[3] && t[2] == null) continue; // a bare number before "UK time" is not a clock
+    if (t[3] ? h < 1 || h > 12 : h > 23) continue;
+    if (Number(t[2] ?? 0) > 59) continue;
+    const hour = t[3] ? (h % 12) + (t[3].toLowerCase() === 'p' ? 12 : 0) : h;
+    const zone = /^(?:UK|London|BST|GMT)/i.test(t[4]!) ? 'Europe/London' : 'Europe/Paris';
+    out.push({ index: t.index!, length: t[0].length, mins: hour * 60 + Number(t[2] ?? 0), zone });
+  }
+  return out;
+}
+
 /** HK: BMO before 09:30, DMH to 16:00. JP: BMO before 09:00, DMH 09:00–15:29 (lunch counts), AMC from 15:30 (the close). */
 function clockTiming(mins: number, profile: SixKProfile): LocalTiming {
   if (profile === 'jp') return mins < 9 * 60 ? 'BMO' : mins < 15 * 60 + 30 ? 'DMH' : 'AMC';
   return mins < 9 * 60 + 30 ? 'BMO' : mins <= 16 * 60 ? 'DMH' : 'AMC';
 }
+
+/**
+ * `'uk'` / `'eu'`: a clock stated on `date` in `hit.zone`, read in the stock's session zone. BMO before the open, DMH
+ * open..close-1, AMC from the close (`europe/exchanges.ts`). No session: UNKNOWN (the date still stands).
+ */
+function sessionTiming(date: string, hit: ClockHit, session: SixKSession | undefined): LocalTiming {
+  if (!session) return 'UNKNOWN';
+  const [year, month, day] = date.split('-').map(Number);
+  const local = DateTime.fromObject({ year, month, day, hour: Math.floor(hit.mins / 60), minute: hit.mins % 60 }, { zone: hit.zone })
+    .setZone(session.zone);
+  if (!local.isValid) return 'UNKNOWN';
+  const mins = local.hour * 60 + local.minute;
+  return mins < session.openMin ? 'BMO' : mins < session.closeMin ? 'DMH' : 'AMC';
+}
+
+/**
+ * `'uk'` / `'eu'` session phrase naming the exchange: "before the London Stock Exchange / LSE opens" (08:00 London,
+ * the same instant as every continental open in `exchanges.ts`). A bare "before the market opens" / "after the close"
+ * names no exchange (a dual-listed filer's market may be the US one), so it gives no timing.
+ */
+const EU_BEFORE_OPEN = /\bbefore\s+(?:the\s+)?(?:London\s+Stock\s+Exchange|LSE)\s+opens?\b/i;
 /** Words just before "on D" that make D a dividend date ("payable on", "holders of record on", "register … closed on"). */
 const DIVIDEND_DATE = /\b(?:payable|paid|payment|record|register|closed|closure|ex-dividend|ex-entitlement)\b[^.]{0,30}$/i;
 /** HKEX Rule 13.43 notice: "a meeting of [a committee of] the Board … will be held on D … to consider|approve … results|earnings release". */
@@ -137,17 +199,24 @@ function ownSentence(text: string): string {
  * dividend payment / record dates. Failing those, an HKEX board-meeting notice ("a meeting of the Board will be
  * held on D to consider … results") gives D.
  * Timing, first match wins:
- * - "before the U.S. market opens [on D]" / "before the opening of the U.S. market": D, AMC.
+ * - "before the U.S. market opens [on D]" / "before the opening of the U.S. market": D, AMC (`'uk'` / `'eu'`: D,
+ *   UNKNOWN; the US pre-open falls inside the European session).
  * - "after the U.S. market closes [on D]": D+1, BMO.
  * - An explicit local clock time (Hong Kong; for `'jp'` Japan / Tokyo time or JST): by the local thresholds.
+ *   `'uk'` / `'eu'`: a UK or CET clock, read in `session`'s zone against its open / close; no session: UNKNOWN.
  * - "before the opening / trading hours of the HKEX" (`'jp'`: the Tokyo Stock Exchange / TSE): BMO;
- *   "after the close / trading hours of …": AMC.
+ *   "after the close / trading hours of …": AMC. (`'uk'` / `'eu'`: the London Stock Exchange / LSE.)
+ * - `'uk'` / `'eu'`: "before the London Stock Exchange / LSE opens": BMO. A bare "before the market opens" / "after
+ *   the close" gives UNKNOWN.
  * - Otherwise UNKNOWN. Returns null when no such statement is found.
+ * `'uk'` / `'eu'` also take a UK / European results phrase ("will publish Q3 2026 results on D") as the earnings word.
  */
-export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: string; timing: LocalTiming } | null {
+export function parseDateNoticeFor(text: string, profile: SixKProfile, session?: SixKSession): { date: string; timing: LocalTiming } | null {
   const best: { rank: number; date: string; timing: LocalTiming }[] = [];
-  const exchange = profile === 'jp' ? JP_EXCHANGE : HK_EXCHANGE;
-  const clocks = profile === 'jp' ? jpClocks : hkClocks;
+  const exchange = profile === 'jp' ? JP_EXCHANGE : isEurope(profile) ? EU_EXCHANGE : HK_EXCHANGE;
+  const clocks = profile === 'jp' ? jpClocks : isEurope(profile) ? euClocks : hkClocks;
+  // 'uk' / 'eu': the US pre-open is inside the European session, so it says nothing about local timing.
+  const usOpen: LocalTiming = isEurope(profile) ? 'UNKNOWN' : 'AMC';
   // Each verb is tried on its own ("earnings release. Acme will report its results on D": the "release" with no
   // "results" in its sentence must not swallow the "report" clause after it).
   const verbs = /\b(?:(?:to|will(?:\s+further)?)\s+)?(?:announce|report|release|upload|publish)\b/gi;
@@ -161,15 +230,16 @@ export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: 
     // "announce the results of the poll / voting / general meeting" is a meeting notice, not earnings.
     const own = text.slice(c.index!, c.index! + results.index + results[0].length + 80);
     if (/poll|vot(?:e|ing)|results\s+of\s+(?:the\s+)?(?:annual|extraordinary|general)\b|meeting\s+results/i.test(own)) continue;
-    if (!EARNINGS_WORDS.test(text.slice(Math.max(0, c.index! - 300), c.index! + 400))) continue;
+    const around = text.slice(Math.max(0, c.index! - 300), c.index! + 400);
+    if (!EARNINGS_WORDS.test(around) && !(isEurope(profile) && EU_RESULTS_RE.test(around))) continue;
 
     // A dividend's payment / record / book-closure date is never the results date.
     const nearest = datesAfter(window, '\\bon\\s+').find((d) => !DIVIDEND_DATE.test(window.slice(Math.max(0, d.index - 40), d.index)))?.date;
     let found: { date: string; timing: LocalTiming } | null = null;
 
     const open = datesAfter(window, 'before the U\\.?S\\.? market opens?\\s+on\\s+')[0]?.date;
-    if (open) found = { date: open, timing: 'AMC' };
-    else if (nearest && /before\s+(?:the\s+)?(?:U\.?S\.?\s+market\s+opens?|opening\s+of\s+the\s+U\.?S\.?\s+market)/i.test(window)) found = { date: nearest, timing: 'AMC' };
+    if (open) found = { date: open, timing: usOpen };
+    else if (nearest && /before\s+(?:the\s+)?(?:U\.?S\.?\s+market\s+opens?|opening\s+of\s+the\s+U\.?S\.?\s+market)/i.test(window)) found = { date: nearest, timing: usOpen };
     if (!found) {
       const close = datesAfter(window, 'after the U\\.?S\\.? market closes?\\s+on\\s+')[0]?.date
         ?? (nearest && /after\s+the\s+U\.?S\.?\s+market\s+closes?/i.test(window) ? nearest : undefined);
@@ -181,9 +251,8 @@ export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: 
       for (const t of clocks(window)) {
         const around = window.slice(Math.max(0, t.index - 120), t.index + 40);
         if (CALL_WORDS.test(around)) continue;
-        const timing = clockTiming(t.mins, profile);
         const date = dateAt(window, t.index + t.length)?.date ?? nearest; // "on D at 4:30 p.m. Hong Kong time"
-        if (date) { found = { date, timing }; break; }
+        if (date) { found = { date, timing: isEurope(profile) ? sessionTiming(date, t, session) : clockTiming(t.mins, profile) }; break; }
       }
     }
 
@@ -193,6 +262,7 @@ export function parseDateNoticeFor(text: string, profile: SixKProfile): { date: 
       // JP Ruling 7: "before the opening of trading on the Tokyo Stock Exchange" / "after the close of trading on …".
       else if (profile === 'jp' && new RegExp(`before\\s+(?:the\\s+)?(?:opening|start)\\s+of\\s+trading\\s+on\\s+${exchange}`, 'i').test(window)) found = { date: nearest, timing: 'BMO' };
       else if (profile === 'jp' && new RegExp(`after\\s+(?:the\\s+)?(?:close|end)\\s+of\\s+trading\\s+on\\s+${exchange}`, 'i').test(window)) found = { date: nearest, timing: 'AMC' };
+      else if (isEurope(profile) && EU_BEFORE_OPEN.test(window)) found = { date: nearest, timing: 'BMO' };
     }
     if (found) best.push({ rank: 3, ...found });
     else if (nearest) best.push({ rank: 1, date: nearest, timing: 'UNKNOWN' });
@@ -232,19 +302,20 @@ function dividendContext(text: string, at: number): boolean {
 
 /**
  * A stated period end. `range`: from a `'jp'` month-range header, which may also head a forecast column. `index`:
- * where the prose states it (absent for table headers).
+ * where the prose states it (absent for table headers). `label`: a `'uk'` / `'eu'` quarter label ("Q3 2026"), which
+ * names an end but never outranks a stated span at that end (a nine-month report also says "Q3 2026").
  */
-type PeriodMention = { end: string; span: SixKSpan; range?: true; index?: number };
+type PeriodMention = { end: string; span: SixKSpan; range?: true; index?: number; label?: true };
 
-/** All period ends the document states, as (end date, span). */
-function periodMentions(text: string, profile: SixKProfile): PeriodMention[] {
+/** All period ends the document states, as (end date, span). `fyEndMonth` places `'uk'` / `'eu'` quarter labels. */
+function periodMentions(text: string, profile: SixKProfile, fyEndMonth?: number): PeriodMention[] {
   const out: PeriodMention[] = [];
   const words = '(?:three|six|nine|twelve)';
   for (const m of text.matchAll(new RegExp(`\\b(${words}(?:\\s+and\\s+${words})?)\\s+months\\s+ended\\s+`, 'gi'))) {
     const d = dateAt(text, m.index! + m[0].length);
     if (!d) continue;
     const w = m[1]!.toLowerCase();
-    const span: SixKSpan | null = profile === 'jp'
+    const span: SixKSpan | null = profile === 'jp' || isEurope(profile)
       ? (w.includes('three') ? 'quarter' : w.includes('six') ? 'half' : w.includes('nine') ? 'nine' : w.includes('twelve') ? 'year' : null)
       : (w.includes('three') ? 'quarter' : w.includes('six') ? 'half' : w.includes('twelve') ? 'year' : null);
     if (span) out.push({ end: d.date, span, index: m.index! });
@@ -254,6 +325,7 @@ function periodMentions(text: string, profile: SixKProfile): PeriodMention[] {
     if (d) out.push({ end: d.date, span: 'quarter', index: m.index! });
   }
   for (const m of text.matchAll(/\byear\s+ended\s+/gi)) {
+    if (isEurope(profile) && HALF_BEFORE.test(text.slice(Math.max(0, m.index! - 5), m.index!))) continue; // the half (europeMentions)
     const d = dividendContext(text, m.index!) ? null : dateAt(text, m.index! + m[0].length);
     if (d) out.push({ end: d.date, span: 'year', index: m.index! });
   }
@@ -277,6 +349,54 @@ function periodMentions(text: string, profile: SixKProfile): PeriodMention[] {
     }
     out.push(...monthRangeMentions(text), ...dateRangeMentions(text));
   }
+  if (isEurope(profile)) out.push(...europeMentions(text, fyEndMonth ?? 12));
+  return out;
+}
+
+/** "half-" / "half " just before "year ended / to": a half year, not a year. */
+const HALF_BEFORE = /half[- ]$/i;
+
+/**
+ * `'uk'` / `'eu'` periods: "(three|six|nine|twelve) months to D", "half year / six months to D", "half-year ended D",
+ * "year to D" (not a dividend's year), "period [from] 1 January 2026 to 30 September 2026" (Novo Nordisk's title; span
+ * by its length, as `'jp'` date ranges), and "Q3 2026" labels: quarter n of the fiscal year ending in that calendar
+ * year (`fyEndMonth`; December gives calendar quarters).
+ */
+function europeMentions(text: string, fyEndMonth: number): PeriodMention[] {
+  const out: PeriodMention[] = [];
+  // AB InBev "three-month period ended 31 March 2025", STMicroelectronics "Six-month period ended June 27, 2026".
+  for (const m of text.matchAll(/\b(three|six|nine|twelve|3|6|9|12)[- ]month\s+periods?\s+ended\s+/gi)) {
+    const d = dateAt(text, m.index! + m[0].length);
+    if (d) out.push({ end: d.date, span: EU_MONTH_SPAN[m[1]!.toLowerCase()]!, index: m.index! });
+  }
+  for (const m of text.matchAll(/\b(three|six|nine|twelve)\s+months\s+to\s+/gi)) {
+    const d = dateAt(text, m.index! + m[0].length);
+    if (d) out.push({ end: d.date, span: JP_MONTH_WORD_SPAN[m[1]!.toLowerCase()]!, index: m.index! });
+  }
+  for (const m of text.matchAll(/\b(?:half[- ]year\s+(?:to|ended)|six\s+months\s+to)\s+/gi)) {
+    const d = dateAt(text, m.index! + m[0].length);
+    if (d) out.push({ end: d.date, span: 'half', index: m.index! });
+  }
+  for (const m of text.matchAll(/\byear\s+to\s+/gi)) {
+    if (HALF_BEFORE.test(text.slice(Math.max(0, m.index! - 5), m.index!)) || dividendContext(text, m.index!)) continue;
+    const d = dateAt(text, m.index! + m[0].length);
+    if (d) out.push({ end: d.date, span: 'year', index: m.index! });
+  }
+  for (const m of text.matchAll(/\bperiod\s+(?:from\s+)?/gi)) {
+    const from = dateAt(text, m.index! + m[0].length);
+    const sep = from ? /^\s*(?:to|through|until|[-–])\s*/i.exec(text.slice(from.end)) : null;
+    const to = from && sep ? dateAt(text, from.end + sep[0].length) : null;
+    if (!from || !to || !from.date.endsWith('-01')) continue;
+    const a = DateTime.fromISO(from.date, { zone: 'utc' });
+    const b = DateTime.fromISO(to.date, { zone: 'utc' });
+    if (b.toISODate() !== b.endOf('month').toISODate()) continue;
+    const span = RANGE_SPAN[(b.year * 12 + b.month) - (a.year * 12 + a.month) + 1];
+    if (span) out.push({ end: to.date, span, index: m.index! });
+  }
+  for (const m of text.matchAll(/\bQ([1-4])\s+(\d{4})\b/g)) {
+    const end = DateTime.utc(Number(m[2]), fyEndMonth, 1).minus({ months: 3 * (4 - Number(m[1])) }).endOf('month').toISODate();
+    if (end) out.push({ end, span: 'quarter', index: m.index!, label: true });
+  }
   return out;
 }
 
@@ -285,6 +405,7 @@ const MONTH_ANY_RE = '(January|February|March|April|May|June|July|August|Septemb
 const MONTH_RANGE = new RegExp(`\\b${MONTH_ANY_RE}\\.?\\s*[-–~～]\\s*${MONTH_ANY_RE}\\.?,?\\s*(\\d{4})\\b`, 'gi');
 const RANGE_SPAN: Record<number, SixKSpan> = { 3: 'quarter', 6: 'half', 9: 'nine', 12: 'year' };
 const JP_MONTH_WORD_SPAN: Record<string, SixKSpan> = { three: 'quarter', six: 'half', nine: 'nine', twelve: 'year' };
+const EU_MONTH_SPAN: Record<string, SixKSpan> = { ...JP_MONTH_WORD_SPAN, 3: 'quarter', 6: 'half', 9: 'nine', 12: 'year' };
 
 /** `'jp'` month-range headers: the range's end month, span by its length (3, 6, 9 or 12 months; any other is skipped). */
 function monthRangeMentions(text: string): PeriodMention[] {
@@ -327,7 +448,7 @@ function dateRangeMentions(text: string): PeriodMention[] {
  * "June 30, 2026 / RMB (million)" (Trip.com, NetEase, BeOne). Each header cell's text is joined with the text of
  * the header cells above and below it that share its columns, and that column text is read like prose.
  */
-function tableHeaderMentions(html: string, profile: SixKProfile): PeriodMention[] {
+function tableHeaderMentions(html: string, profile: SixKProfile, fyEndMonth?: number): PeriodMention[] {
   const out: PeriodMention[] = [];
   for (const t of parseTables(html, { rowspan: true })) {
     let block: Cell[][] = [];
@@ -338,7 +459,7 @@ function tableHeaderMentions(html: string, profile: SixKProfile): PeriodMention[
           const column = block
             .map((r) => r.filter((c) => c.text && c.start < cell.start + cell.span && c.start + c.span > cell.start).map((c) => c.text).join(' '))
             .join(' ');
-          out.push(...periodMentions(column, profile));
+          out.push(...periodMentions(column, profile, fyEndMonth));
         }
       }
       block = [];
@@ -392,10 +513,60 @@ const JP_RESULTS_PHRASES = [
   String.raw`\bearnings report\b`,
 ];
 
+/**
+ * UK / European results titles: "Half year 2026 results", "Q3 2026 financial results", "Q4 trading update", "results
+ * for the nine months ended", "Interim Management Statement". The last three are live titles the list misses: AZN
+ * "1st Quarter Results", ASML "2026 third-quarter results", Novo Nordisk "Financial report for the period 1 January
+ * 2026 to 30 June 2026", Santander "January - September 2026 Financial Report" (Task 21 live spot-check).
+ */
+const EU_RESULTS_PHRASES = [
+  String.raw`\b(?:half[- ]year|interim|full[- ]year|preliminary|annual|first quarter|third quarter|second quarter|fourth quarter|Q[1-4]|H[12]|[1-4]Q) (?:\d{4} )?(?:financial )?(?:results|report|trading (?:update|statement))\b`,
+  String.raw`\bresults for the (?:three|six|nine|twelve) months ended\b`,
+  String.raw`\b(?:half|full)[- ]year \d{4} results\b`,
+  String.raw`\binterim management statement\b`,
+  String.raw`\b(?:1st|2nd|3rd|4th) quarter results\b`,
+  String.raw`\b\d{4} (?:first|second|third|fourth)-quarter results\b`,
+  String.raw`\bfinancial report for the period\b`,
+  // Santander "January - September 2026 Financial Report" / "… 2026 Results" (a month-range title; hyphen, en or em
+  // dash, "to", "through"). Only "results" or "financial report": "January - September 2026 Report on traffic" is not.
+  String.raw`\b${MONTH_RE}(?:\s*[-–—]\s*|\s+(?:to|through)\s+)${MONTH_RE}\s+\d{4}\s+(?:(?:financial\s+)?results|financial\s+report)\b`,
+];
+const EU_RESULTS_RE = new RegExp(EU_RESULTS_PHRASES.join('|'), 'i');
+
 const RESULTS_PHRASE: Record<SixKProfile, RegExp> = {
   hk: new RegExp(HK_RESULTS_PHRASES.join('|'), 'i'),
   jp: new RegExp([...HK_RESULTS_PHRASES, ...JP_RESULTS_PHRASES].join('|'), 'gi'),
+  uk: new RegExp([...HK_RESULTS_PHRASES, ...EU_RESULTS_PHRASES].join('|'), 'i'),
+  eu: new RegExp([...HK_RESULTS_PHRASES, ...EU_RESULTS_PHRASES].join('|'), 'i'),
 };
+
+/**
+ * `'uk'` / `'eu'` housekeeping notices (RNS titles): own-share transactions and buyback programmes, total voting
+ * rights, director / PDMR dealings, dividend declarations, Form 20-F filing notices, and the DTR "Annual Financial
+ * Report" publication (the annual report is not a results release). One counts only when it comes no later than any
+ * results phrase in the opening: a results release names its results first and may then mention its dividend or
+ * buyback. The 6-K cover's "annual reports under cover of Form 20-F" is not a filing notice.
+ */
+const EU_NOTICE_TITLE = new RegExp([
+  String.raw`\btransactions?\s+in\s+own\s+shares\b`,
+  String.raw`\bshare\s+buy-?backs?\s+programmes?\b`,
+  String.raw`\btotal\s+voting\s+rights\b`,
+  String.raw`\b(?:director\s*\/\s*PDMR|PDMR|directors?'?)\s+(?:shareholdings?|dealings?)\b`,
+  String.raw`\bdeclaration\s+of\s+(?:an?\s+|the\s+)?(?:[a-z]+\s+){0,2}dividends?\b`,
+  String.raw`\bdividend\s+declaration\b`,
+  String.raw`\b(?:filing|publication|availability|submission)\s+of\s+(?:the\s+|its\s+|our\s+)?(?:\d{4}\s+)?(?:annual\s+report\s+(?:on|and)\s+)?Form\s+20-F\b`,
+  String.raw`\bannual\s+report\s+and\s+Form\s+20-F\b`,
+  String.raw`\bannual\s+financial\s+report\b`,
+  String.raw`\bForm\s+20-F\b[^.]{0,40}\b(?:filed|published|now\s+available)\b`,
+].join('|'), 'i');
+
+/** `'uk'` / `'eu'`: the opening names a housekeeping notice before any results phrase. */
+function isEuropeNotice(opening: string, profile: 'uk' | 'eu'): boolean {
+  const notice = opening.search(EU_NOTICE_TITLE);
+  if (notice < 0) return false;
+  const results = opening.search(RESULTS_PHRASE[profile]);
+  return results < 0 || notice <= results; // "Annual Financial Report" is both: the notice wins
+}
 
 /**
  * Words that make a results phrase's own title / sentence about something else than this release's results. A TSE
@@ -463,45 +634,68 @@ function jpReleasePeriod(all: PeriodMention[], titleAt: number, filedOn: string 
   return { end: latest, span };
 }
 
-/** True when some table row is labelled revenue / per share / per ADS (results releases carry one, notices do not). */
-function hasResultsTable(html: string): boolean {
+/**
+ * True when some table row is labelled revenue / per share / per ADS (results releases carry one, notices do not).
+ * `'uk'` / `'eu'` also take EPS / net sales / turnover (ASML's summary table: "Total net sales", "EPS (basic; in euros)").
+ */
+function hasResultsTable(html: string, profile: SixKProfile): boolean {
   for (const row of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
-    if (/per (ordinary )?share|per ads|revenue/i.test(htmlToText(row[1]!))) return true;
+    const label = htmlToText(row[1]!);
+    if (/per (ordinary )?share|per ads|revenue/i.test(label)) return true;
+    if (isEurope(profile) && /\bEPS\b|\bnet sales\b|\bturnover\b/i.test(label)) return true;
   }
   return false;
 }
 
 /**
  * Classify an exhibit (or 6-K main document) as an earnings release, a results-date notice, or something else.
- * `filedOn` is the local acceptance date. Profile `'hk'` is the Hong Kong classifier as built.
+ * `filedOn` is the local acceptance date. Profile `'hk'` is the Hong Kong classifier as built. `fyEndMonth` (1–12, the
+ * issuer's fiscal year end) places `'uk'` / `'eu'` "Q3 2026" labels; without it they are calendar quarters. `session`
+ * (the stock's exchange session) times `'uk'` / `'eu'` clock statements; without it their timing is UNKNOWN.
  */
-export function classifySixK(html: string, opts: { filedOn?: string; profile: SixKProfile }): SixKExhibit {
+export function classifySixK(
+  source: string,
+  opts: { filedOn?: string; profile: SixKProfile; fyEndMonth?: number; session?: SixKSession },
+): SixKExhibit {
   const { profile } = opts;
+  // 'uk' / 'eu': an inline-XBRL document's hidden <ix:header> (contexts, members, dates) is not text: in AZN's H1 2026
+  // 6-K it filled the first 5,000 characters, hiding the title. hk / jp read the document as built.
+  const html = isEurope(profile) ? source.replace(/<ix:header\b[\s\S]*?<\/ix:header>/gi, '') : source;
   const text = htmlToText(html);
   if (profile === 'jp' && isJpEdinetReport(text.slice(0, 5000))) return { kind: 'other' };
+  if (isEurope(profile) && isEuropeNotice(text.slice(0, 5000), profile)) return { kind: 'other' };
   // A notice whose opening names a results date after it was filed is a date notice, even with a "Revenue
   // guidance" row. (A release's own "next results on D" line sits deep in the body: HSBC at ~110k chars.)
-  const opening = parseDateNoticeFor(text.slice(0, 5000), profile);
+  const opening = parseDateNoticeFor(text.slice(0, 5000), profile, opts.session);
   if (opening && opts.filedOn && opening.date > opts.filedOn) return { kind: 'date-notice', ...opening };
 
   if (profile === 'jp') {
     const titleAt = jpResultsTitleAt(text.slice(0, 5000));
-    if (titleAt >= 0 && hasResultsTable(html)) {
+    if (titleAt >= 0 && hasResultsTable(html, profile)) {
       const p = jpReleasePeriod([...periodMentions(text, profile), ...tableHeaderMentions(html, profile)], titleAt, opts.filedOn);
       if (p) return { kind: 'results', periodEnd: p.end, span: p.span };
     }
   } else if (RESULTS_PHRASE[profile].test(text.slice(0, 5000))) {
-    // A results release cannot report a period ending after it was filed (`filedOn`: the acceptance date).
-    const periods = [...periodMentions(text, profile), ...tableHeaderMentions(html, profile)].filter((p) => !opts.filedOn || p.end <= opts.filedOn);
-    if (periods.length > 0 && hasResultsTable(html)) {
-      // The latest period end is this release's; at that end the most specific span wins.
+    // A results release cannot report a period ending after it was filed (`filedOn`: the acceptance date). 'uk' / 'eu':
+    // nor a full year ending more than 100 days before it (the 'jp' window) — a passing mention of the previous annual
+    // report ("our annual report for the year ended 31 December 2025" in an interim report) never dates a release.
+    const recentFrom = isEurope(profile) && opts.filedOn
+      ? DateTime.fromISO(opts.filedOn, { zone: 'utc' }).minus({ days: JP_RECENT_DAYS }).toISODate()!
+      : null;
+    const periods = [...periodMentions(text, profile, opts.fyEndMonth), ...tableHeaderMentions(html, profile, opts.fyEndMonth)]
+      .filter((p) => (!opts.filedOn || p.end <= opts.filedOn) && (!recentFrom || p.span !== 'year' || p.end >= recentFrom));
+    if (periods.length > 0 && hasResultsTable(html, profile)) {
+      // The latest period end is this release's; at that end the most specific span wins. A quarter label (only
+      // `'uk'` / `'eu'` have them) counts only when no span is stated at that end.
       const latest = periods.reduce((a, b) => (b.end > a ? b.end : a), '');
-      const span = periods.filter((p) => p.end === latest).reduce<SixKSpan>((a, p) => (SPAN_ORDER[p.span] < SPAN_ORDER[a] ? p.span : a), 'year');
+      const atLatest = periods.filter((p) => p.end === latest);
+      const stated = atLatest.filter((p) => !p.label);
+      const span = (stated.length > 0 ? stated : atLatest).reduce<SixKSpan>((a, p) => (SPAN_ORDER[p.span] < SPAN_ORDER[a] ? p.span : a), 'year');
       return { kind: 'results', periodEnd: latest, span };
     }
   }
 
-  const notice = parseDateNoticeFor(text, profile);
+  const notice = parseDateNoticeFor(text, profile, opts.session);
   // 'jp': a "notice" naming a date before the filing is about something past (Takeda's revision of results
   // "announced on May 19"), not a results date.
   if (notice && profile === 'jp' && opts.filedOn && notice.date < opts.filedOn) return { kind: 'other' };
