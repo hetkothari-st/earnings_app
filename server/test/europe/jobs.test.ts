@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDb, upsertCalendarRow } from '../../src/db/repo.js';
 import {
-  europePastDates, europeStocks, getEuropeReport, mergeEuropeActuals, saveBankHolidays, setEuropeProfile, storedBankHolidays,
+  europePastDates, europeStocks, getEuropeReport, mergeEuropeActuals, recordEuropeRelease, saveBankHolidays, setEuropeProfile, storedBankHolidays,
   syncEuropeUniverse, upsertEuropeCalendarRow,
 } from '../../src/europe/db/europeRepo.js';
 import { europePeriodFor, europePeriodLabel } from '../../src/europe/domain/period.js';
@@ -16,6 +16,7 @@ import { refreshEuropeYahooResults } from '../../src/europe/jobs/results.js';
 import { refreshEuropeStocks } from '../../src/europe/jobs/stocks.js';
 import { type EuropeCalRow, type EuropeQuote, fetchEuropeQuotes, parseEuropeSummary } from '../../src/europe/sources/yahooEurope.js';
 import type { EuropeUniverseEntry } from '../../src/europe/universeBuild.js';
+import { HttpError } from '../../src/sources/http.js';
 import type { SweepTurns } from '../../src/sources/sweepTurns.js';
 import type { YahooClient } from '../../src/sources/yahooClient.js';
 import type { YahooForeignSummary } from '../../src/sources/yahooForeignSummary.js';
@@ -72,6 +73,8 @@ function setup(opts: {
   quotes?: Map<string, EuropeQuote>;
   db?: ReturnType<typeof openDb>;
   fyEnd?: Record<string, number>;
+  /** SEC documents by URL (a stub of the one SEC client); absent: no SEC client. */
+  sec?: Record<string, string>;
 } = {}) {
   const db = opts.db ?? openDb(':memory:');
   if (!opts.db) {
@@ -126,7 +129,7 @@ function setup(opts: {
     prnFeed: async () => [],
     dila: null,
     optionChain: async () => null,
-    secHttp: null,
+    secHttp: opts.sec ? secStub(opts.sec) : null,
     tierA: () => opts.tierA ?? [],
   };
   return { db, ctx, summaryCalls, closeCalls, calendarCalls, quoteCalls, holidayCalls: () => holidayCalls };
@@ -464,8 +467,35 @@ describe('refreshEuropeYahooResults', () => {
   });
 });
 
+/** A stub of the SEC client: a 404 for any URL not given. */
+function secStub(docs: Record<string, string>): NonNullable<EuropeJobContext['secHttp']> {
+  const http: NonNullable<EuropeJobContext['secHttp']> = {
+    async text(url) {
+      const body = docs[url];
+      if (body === undefined) throw new HttpError(404, url);
+      return body;
+    },
+    async json(url) { return JSON.parse(await http.text(url)); },
+  };
+  return http;
+}
+
+// AstraZeneca's Q1 2026 results 6-K (Task 4 fixture), 0001654954-26-004047, filed 2026-04-29.
+const AZN_ACC = '0001654954-26-004047';
+const AZN_DIR = 'https://www.sec.gov/Archives/edgar/data/901832/000165495426004047';
+/** EDGAR documents for that 6-K with the given ET acceptance wall clock (`yyyyMMddHHmmss`). */
+const aznSec = (acceptedEt: string): Record<string, string> => ({
+  'https://data.sec.gov/submissions/CIK0000901832.json': JSON.stringify({ filings: { recent: {
+    accessionNumber: [AZN_ACC], filingDate: ['2026-04-29'], form: ['6-K'], items: [''], primaryDocument: ['azn_q1_2026.htm'],
+  } } }),
+  [`${AZN_DIR}/${AZN_ACC}-index.htm`]: `<html><body><table class="tableFile"><tr><th>Seq</th><th>Description</th><th>Document</th><th>Type</th><th>Size</th></tr>
+<tr><td>1</td><td>6-K</td><td><a href="${AZN_DIR}/azn_q1_2026.htm">azn_q1_2026.htm</a></td><td>6-K</td><td>1</td></tr></table></body></html>`,
+  [`${AZN_DIR}/azn_q1_2026.htm`]: fxText('sec/azn_q1_2026_results_6k.htm'),
+  [`${AZN_DIR}/${AZN_ACC}.hdr.sgml`]: `<SEC-HEADER>\n<ACCEPTANCE-DATETIME>${acceptedEt}\n</SEC-HEADER>`,
+});
+
 describe('computeEuropePrevMoves', () => {
-  it('previous move from the ADR US row maps to the LSE window', async () => {
+  it('ADR US row AMC → the next LSE trading day before the open: known timing', async () => {
     // US AMC Fri 2026-08-28 → the next LSE trading day, Tue 09-01 (Mon 08-31 is a UK bank holiday), BMO: Fri 08-28 → Tue 09-01.
     const closes = new Map([['2026-08-28', 100], ['2026-08-31', 999], ['2026-09-01', 105]]);
     const { db, ctx, closeCalls } = setup({ closes });
@@ -474,18 +504,64 @@ describe('computeEuropePrevMoves', () => {
     const id = ukRow(db, 'AZN.L', '2026-11-05', 12);
     await computeEuropePrevMoves(ctx);
     expect(closeCalls).toEqual([['AZN.L', '2026-08-23', '2026-09-02']]);
-    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-09-01', prevMoveBasis: 'assumed' });
+    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: 5, prevMoveDate: '2026-09-01', prevMoveBasis: 'known' });
   });
 
-  it('past date with unknown timing → AMC, assumed; nothing in 45–140 days → checked, blank', async () => {
+  it('past date with unknown timing → blank, never assumed; nothing in 45–140 days → checked, blank', async () => {
     const closes = new Map([['2026-09-10', 1000], ['2026-09-11', 950]]);
-    const { db, ctx } = setup({ closes });
-    db.prepare('INSERT INTO europe_past_dates (symbol, date, timing) VALUES (?, ?, NULL)').run('FEVR.L', '2026-07-01'); // older, also in 45–140 days: the newest wins
+    const { db, ctx, closeCalls } = setup({ closes });
     db.prepare('INSERT INTO europe_past_dates (symbol, date, timing) VALUES (?, ?, NULL)').run('FEVR.L', '2026-09-10');
     const id = ukRow(db, 'FEVR.L', '2026-11-10', 12);
     const bt = ukRow(db, 'BT-A.L', '2026-11-05', 3);
     await computeEuropePrevMoves(ctx);
-    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: -5, prevMoveDate: '2026-09-10', prevMoveBasis: 'assumed' });
+    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: null, prevMoveBasis: null, prevMoveCheckedAt: NOW });
     expect(getEuropeReport(db, bt)).toMatchObject({ prevMovePct: null, prevMoveCheckedAt: NOW });
+    expect(closeCalls).toEqual([]);
+  });
+
+  it('past date with a stated timing (Yahoo TAS BMO) → that window, known', async () => {
+    const closes = new Map([['2026-09-09', 1000], ['2026-09-10', 950], ['2026-09-11', 1]]);
+    const { db, ctx } = setup({ closes });
+    db.prepare("INSERT INTO europe_past_dates (symbol, date, timing) VALUES (?, ?, 'BMO')").run('FEVR.L', '2026-09-10');
+    const id = ukRow(db, 'FEVR.L', '2026-11-10', 12);
+    await computeEuropePrevMoves(ctx);
+    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: -5, prevMoveDate: '2026-09-10', prevMoveBasis: 'known' });
+  });
+
+  it('SEC results 6-K accepted before the LSE open on the report date proves BMO (US row BMO says nothing locally)', async () => {
+    // Accepted 02:00:00 ET Wed 2026-04-29 = 07:00 London, before the 08:00 open: Tue 04-28 → Wed 04-29.
+    const closes = new Map([['2026-04-28', 100], ['2026-04-29', 104], ['2026-04-30', 999]]);
+    const { db, ctx } = setup({ closes, today: '2026-07-23', sec: aznSec('20260429020000') });
+    usRow(db, 'AZN', '2026-04-29', 'BMO');
+    const id = ukRow(db, 'AZN.L', '2026-07-23', 12);
+    await computeEuropePrevMoves(ctx);
+    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: 4, prevMoveDate: '2026-04-29', prevMoveBasis: 'known' });
+  });
+
+  it('a results 6-K accepted after the local open proves nothing: blank', async () => {
+    // Accepted 07:00 ET = 12:00 London, inside the session (the RNS may have come at 07:00): unknown → blank.
+    const closes = new Map([['2026-04-28', 100], ['2026-04-29', 104], ['2026-04-30', 999]]);
+    const { db, ctx } = setup({ closes, today: '2026-07-23', sec: aznSec('20260429070000') });
+    usRow(db, 'AZN', '2026-04-29', 'BMO');
+    const id = ukRow(db, 'AZN.L', '2026-07-23', 12);
+    await computeEuropePrevMoves(ctx);
+    expect(getEuropeReport(db, id)).toMatchObject({ prevMovePct: null, prevMoveBasis: null, prevMoveCheckedAt: NOW });
+  });
+
+  it("the app's own release: SEC acceptance before the open on its date proves BMO; after the open → blank", async () => {
+    const closes = new Map([['2026-07-23', 100], ['2026-07-24', 90], ['2026-07-27', 999]]);
+    const early = setup({ closes });
+    const prior = ukRow(early.db, 'AZN.L', '2026-07-24', 12);
+    recordEuropeRelease(early.db, prior, { at: '2026-07-24T06:01:00.000Z', source: 'sec', timing: null }); // 07:01 London
+    const next = ukRow(early.db, 'AZN.L', '2026-10-30', 12);
+    await computeEuropePrevMoves(early.ctx);
+    expect(getEuropeReport(early.db, next)).toMatchObject({ prevMovePct: -10, prevMoveDate: '2026-07-24', prevMoveBasis: 'known' });
+
+    const late = setup({ closes });
+    const p2 = ukRow(late.db, 'AZN.L', '2026-07-24', 12);
+    recordEuropeRelease(late.db, p2, { at: '2026-07-24T11:00:00.000Z', source: 'sec', timing: null }); // 12:00 London
+    const n2 = ukRow(late.db, 'AZN.L', '2026-10-30', 12);
+    await computeEuropePrevMoves(late.ctx);
+    expect(getEuropeReport(late.db, n2)).toMatchObject({ prevMovePct: null, prevMoveBasis: null });
   });
 });
