@@ -44,7 +44,7 @@
  */
 import { DateTime } from 'luxon';
 import type { LocalTiming } from '../../domain/exchangeCalendar.js';
-import { HttpError } from '../../sources/http.js';
+import { HttpError, SourceFormatError } from '../../sources/http.js';
 import { parseYahooSummaryFor, type YahooForeignSummary } from '../../sources/yahooForeignSummary.js';
 import type { YahooClient } from '../../sources/yahooClient.js';
 import { EXCHANGES, exchangeOfSymbol, type ExchangeId } from '../exchanges.js';
@@ -283,14 +283,16 @@ export function createYahooEuropeSummary(
 
 /**
  * The symbols Yahoo's search returns for an ISIN (equities only; a result with no quoteType is kept). An unknown
- * query gives []. Only a candidate in this list is accepted as the symbol of that ISIN.
+ * query gives [] (an empty quotes array); an answer without a quotes array throws `SourceFormatError`. Only a
+ * candidate in this list is accepted as the symbol of that ISIN.
  */
 export async function yahooIsinSearch(y: YahooClient, isin: string): Promise<string[]> {
   const json = await y.json(
     `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(isin)}&quotesCount=10&newsCount=0`,
   );
   const quotes = (json as { quotes?: unknown } | null)?.quotes;
-  if (!Array.isArray(quotes)) return [];
+  // No quotes array is a format change, not "no symbols": the build must be incomplete, not shrink STO / CPH.
+  if (!Array.isArray(quotes)) throw new SourceFormatError(`Yahoo ISIN search ${isin}: no quotes array`);
   return quotes.flatMap((q: Record<string, unknown>) => {
     const symbol = str(q?.symbol);
     const type = str(q?.quoteType);
