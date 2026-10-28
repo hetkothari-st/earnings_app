@@ -130,6 +130,20 @@ describe('EuropeStockList', () => {
     expect(screen.getByText('EPS estimate / actual')).toBeTruthy();
   });
 
+  test('expected move shows the ADR underlying in US$, not as the local price', () => {
+    const r = dto({
+      expectedMove: {
+        adr: 'AZN', expiry: '2026-11-07', strike: 75, callMid: 2.1, putMid: 1.9, underlying: 75.42, movePct: 5.3,
+        illiquid: false, final: true, quoteDate: '2026-11-05', snapshotAt: '2026-11-05T20:00:00.000Z',
+      },
+    });
+    mount([r], ['UK:AZN.L']);
+    const em = screen.getByText('Expected move').nextElementSibling!.textContent!;
+    expect(em).toContain('±5.3%');
+    expect(em).toContain('ADR $75.42');
+    expect(em).not.toMatch(/75\.42p|£75/);
+  });
+
   test('full level: ADR line and 6-K note while unreleased; ESEF actual source', () => {
     const r = dto({
       revenue: { ...fig, actual: 54e9, actualCurrency: 'EUR', actualSource: 'esef', actualSpan: 'ytd', ytdMonths: 12 },

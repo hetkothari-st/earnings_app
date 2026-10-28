@@ -210,7 +210,11 @@ function EuropeDetails({ r, zone, note, onSaveNote, price }: {
         <dd><CurrencyFigure f={r.revenue} fmt={formatEuropeMoney} source={sourceOf(r.revenue)} spanLabel={spanOf(r.revenue)} notComparedText={NOT_COMPARED} /></dd>
 
         <dt>Expected move</dt>
-        <dd><ExpectedMoveLine em={r.expectedMove} level={r.level} /></dd>
+        <dd>
+          <ExpectedMoveLine em={r.expectedMove} level={r.level} />
+          {/* `underlying` is the US-listed ADR's close in US$, never the local line's price. */}
+          {r.expectedMove && <span className="muted"> · ADR {formatEuropePrice(r.expectedMove.underlying, 'USD')}</span>}
+        </dd>
 
         <dt>Live expected move</dt>
         <dd><LiveMoveLine live={r.liveMove} /></dd>
