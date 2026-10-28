@@ -827,6 +827,21 @@ export function markEuropeSecSeen(
     .run(market, accession, cik, kind, now);
 }
 
+// ---------- Universe builds ----------
+
+/** A complete universe build of `market` was synced: its left-out count and time replace the stored ones. */
+export function saveEuropeUniverseRun(db: DatabaseSync, market: EuropeMarket, leftOut: number, at: string): void {
+  db.prepare(`INSERT INTO europe_universe_runs (market, left_out, built_at) VALUES (?, ?, ?)
+    ON CONFLICT (market) DO UPDATE SET left_out = excluded.left_out, built_at = excluded.built_at`).run(market, leftOut, at);
+}
+
+/** The last complete build of `market`, or null when none was ever recorded. */
+export function lastEuropeUniverseRun(db: DatabaseSync, market: EuropeMarket): { leftOut: number; at: string } | null {
+  const r = db.prepare('SELECT left_out, built_at FROM europe_universe_runs WHERE market = ?').get(market) as
+    { left_out: number; built_at: string } | undefined;
+  return r ? { leftOut: r.left_out, at: r.built_at } : null;
+}
+
 export function lastEuropeSecSeenAt(db: DatabaseSync, market: EuropeMarket): string | null {
   return (db.prepare('SELECT MAX(seen_at) AS t FROM europe_sec_seen WHERE market = ?').get(market) as { t: string | null }).t;
 }

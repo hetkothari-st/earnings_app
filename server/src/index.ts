@@ -162,8 +162,6 @@ const europeHttp = makeHttp({ minIntervalMs: 1000, headers: { 'User-Agent': EURO
 const firdsHttp = makeFirdsHttp();
 const openFigi = createOpenFigi({ key: config.openFigiApiKey || undefined });
 const esef = createEsefClient();
-/** The last complete universe build per market in this process, for the admin page (null there until one has run). */
-const europeUniverseState: Partial<Record<EuropeMarket, { leftOut: number; at: string }>> = {};
 // Both markets' builds read the same FIRDS sets and SIX list: a complete read is reused for 6 h, then evicted.
 const universeSources = reusedUniverseSources({
   firds: (source, mics, onShare) => fetchFirdsShares(firdsHttp, source, mics, onShare),
@@ -207,13 +205,8 @@ const europeCtx = (market: EuropeMarket, tierA: () => string[]): EuropeJobContex
   yahooSummary: europeSummary,
   yahooQuotes: (s) => fetchEuropeQuotes(euYahoo, s),
   yahooCloses: (s, f, t) => fetchYahooDailyCloses(euYahoo, s, f, t, defaultZoneOf(s) ?? (market === 'UK' ? 'Europe/London' : 'Europe/Paris')),
-  buildUniverse: async () => {
-    const at = new Date().toISOString();
-    const r = await buildEuropeUniverseFor(db, market, universeSources, at);
-    // Only a complete build's count is meaningful (an incomplete one is not synced either).
-    if (r.complete) europeUniverseState[market] = { leftOut: r.leftOut, at };
-    return r;
-  },
+  // A complete, synced build's left-out count and time are stored by the stocks job (the admin page reads them).
+  buildUniverse: () => buildEuropeUniverseFor(db, market, universeSources, new Date().toISOString()),
   bankHolidaysJson: () => europeHttp.json(GOVUK_BANK_HOLIDAYS_URL),
   esef,
   prnFeed,
@@ -308,10 +301,9 @@ const app = buildServer(db, {
   europe: {
     UK: { prices: () => ukPrices.snapshot(), indices: () => ukPrices.indices(), indexQuote: (s) => fetchIndexQuote(euYahoo, s), setVisible: (u, c) => ukPrices.setVisible(u, c) },
     EU: { prices: () => euPrices.snapshot(), indices: () => euPrices.indices(), indexQuote: (s) => fetchIndexQuote(euYahoo, s), setVisible: (u, c) => euPrices.setVisible(u, c) },
-    // The admin page: the live Tradegate client's state and the last complete universe build per market.
+    // The admin page: the live Tradegate client's state (the last complete universe builds are read from the database).
     admin: () => ({
       tradegate: { state: tradegate.state(), backoffUntil: tradegate.backoffUntil(), lastPollAt: tradegate.lastPollAt() },
-      universe: europeUniverseState,
     }),
   },
 });
