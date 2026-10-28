@@ -144,7 +144,9 @@ export async function buildEuropeUniverseFor(
   }
 
   const built = buildEuropeUniverse({ ...base, names, figi, searched, full: [...UK_FULL, ...EU_FULL] });
-  const ukIsins = new Set(firdsUk.map((s) => s.isin));
+  // A left-out ISIN counts for one market only: UK when it has a live (issuer-requested, not terminated) UK line, as
+  // the UK-first tie-break would place it, else EU. A dead UK line never pulls an EU ISIN to UK.
+  const ukIsins = new Set(firdsUk.filter((s) => s.issuerRequested && !s.terminated).map((s) => s.isin));
   const leftOut = built.leftOut.filter((l) => (ukIsins.has(l.isin) ? 'UK' : 'EU') === market).length;
   return { entries: market === 'UK' ? built.uk : built.eu, leftOut, complete };
 }

@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../../src/db/repo.js';
 import {
-  EU_ID_BASE, UK_ID_BASE, confirmEuropePeriod, europeStocks, figiCached, getEuropeReport, mergeEuropeActuals, recordEuropeRelease,
+  EU_ID_BASE, UK_ID_BASE, confirmEuropePeriod, lastEsefAt, lastEsefDateAdded, markEsefSeen, setEuropePrevMove, europeStocks, figiCached, getEuropeReport, mergeEuropeActuals, recordEuropeRelease,
   saveBankHolidays, saveFigi, setEuropeEstimates, setEuropeProfile, setEuropeTiming, storedBankHolidays, syncEuropeUniverse,
   upsertEuropeCalendarRow,
 } from '../../src/europe/db/europeRepo.js';
@@ -131,6 +131,69 @@ describe('europeRepo', () => {
     expect(fy()).toMatchObject({ marketCap: 2e11, marketCapCurrency: 'GBP', fyEndMonth: 12 });
   });
 
+  it('market cap date moves with the cap: a new cap without a date never keeps the old date', () => {
+    const { db } = setup();
+    const p = { name: null, sector: null, industry: null, marketCap: null, marketCapCurrency: null, asOf: null };
+    const s = () => europeStocks(db, 'UK').find((x) => x.symbol === 'AZN.L')!;
+    setEuropeProfile(db, 'AZN.L', { ...p, marketCap: 2e11, marketCapCurrency: 'GBP', asOf: '2026-10-28' }, NOW);
+    // A date without a cap changes nothing.
+    setEuropeProfile(db, 'AZN.L', { ...p, asOf: '2026-10-29' }, NOW);
+    expect(s()).toMatchObject({ marketCap: 2e11, marketCapAsOf: '2026-10-28' });
+    setEuropeProfile(db, 'AZN.L', { ...p, marketCap: 2.1e11, marketCapCurrency: 'GBP', asOf: null }, NOW);
+    expect(s()).toMatchObject({ marketCap: 2.1e11, marketCapCurrency: 'GBP', marketCapAsOf: null });
+    setEuropeProfile(db, 'AZN.L', { ...p, marketCap: 2.2e11, marketCapCurrency: 'GBP', asOf: '2026-10-30' }, NOW);
+    expect(s()).toMatchObject({ marketCap: 2.2e11, marketCapAsOf: '2026-10-30' });
+  });
+
+  it('an unparseable stored released_at is kept', () => {
+    const { db, row } = setup();
+    const id = row('AZN.L');
+    db.prepare("UPDATE europe_reports SET released_at = 'garbage', released_source = 'sec' WHERE id = ?").run(id);
+    expect(recordEuropeRelease(db, id, { at: '2026-11-05T07:02:00.000Z', source: 'prn', timing: 'BMO', title: 't', url: 'https://u' })).toBe(false);
+    expect(getEuropeReport(db, id)).toMatchObject({ releasedAt: 'garbage', releasedSource: 'sec', timing: 'UNKNOWN' });
+    expect(recordEuropeRelease(db, row('TSCO.L'), { at: 'not a time', source: 'prn', timing: null })).toBe(false);
+  });
+
+  it('previous move: a found move is stored, a miss keeps it and only records the check', () => {
+    const { db, row } = setup();
+    const id = row('AZN.L');
+    setEuropePrevMove(db, id, { pct: -3.2, date: '2026-07-29', basis: 'known' }, NOW);
+    setEuropePrevMove(db, id, null, '2026-10-29T09:00:00.000Z');
+    expect(getEuropeReport(db, id)).toMatchObject({
+      prevMovePct: -3.2, prevMoveDate: '2026-07-29', prevMoveBasis: 'known', prevMoveCheckedAt: '2026-10-29T09:00:00.000Z',
+    });
+  });
+
+  it('estimates: a null never blanks; a currency change replaces value, analysts and currency together; a span change rewrites all', () => {
+    const { db, row } = setup();
+    const id = row('AZN.L');
+    const e = { eps: 2.1, epsAnalysts: 10, epsCurrency: 'USD', revenue: 14e9, revenueAnalysts: 9, revenueCurrency: 'USD', span: 'quarter' as const };
+    setEuropeEstimates(db, id, e, NOW);
+    setEuropeEstimates(db, id, { ...e, eps: null, epsAnalysts: null, revenue: null }, NOW);
+    expect(getEuropeReport(db, id)).toMatchObject({ epsEstimate: 2.1, epsAnalysts: 10, epsEstimateCurrency: 'USD', revenueEstimate: 14e9, revenueAnalysts: 9 });
+    setEuropeEstimates(db, id, { ...e, eps: 160, epsAnalysts: null, epsCurrency: 'GBp', revenue: null, revenueAnalysts: null }, NOW);
+    expect(getEuropeReport(db, id)).toMatchObject({
+      epsEstimate: 160, epsAnalysts: null, epsEstimateCurrency: 'GBp', revenueEstimate: 14e9, revenueEstimateCurrency: 'USD',
+    });
+    setEuropeEstimates(db, id, { ...e, revenue: null, revenueAnalysts: null, revenueCurrency: 'GBP' }, NOW);
+    expect(getEuropeReport(db, id)).toMatchObject({ revenueEstimate: null, revenueAnalysts: null, revenueEstimateCurrency: 'GBP' });
+    setEuropeEstimates(db, id, { eps: 8, epsAnalysts: 11, epsCurrency: 'USD', revenue: null, revenueAnalysts: null, revenueCurrency: 'USD', span: 'year' }, NOW);
+    expect(getEuropeReport(db, id)).toMatchObject({
+      estimateSpan: 'year', epsEstimate: 8, epsEstimateCurrency: 'USD', revenueEstimate: null, revenueEstimateCurrency: 'USD',
+    });
+  });
+
+  it('ESEF seen keeps the filing date_added; lastEsefDateAdded reads it per market', () => {
+    const { db } = setup();
+    markEsefSeen(db, 'fxo-1', 'AZN.L', '2025-12-31', 'merged', NOW, '2026-03-01 10:00:00.000000');
+    markEsefSeen(db, 'fxo-2', 'TTE.PA', '2025-12-31', 'merged', NOW, '2026-04-02 11:00:00.000000');
+    markEsefSeen(db, 'fxo-3', null, null, 'no-row', NOW); // no date_added: the old signature still works
+    expect(lastEsefDateAdded(db)).toBe('2026-04-02 11:00:00.000000');
+    expect(lastEsefDateAdded(db, 'UK')).toBe('2026-03-01 10:00:00.000000');
+    expect(lastEsefDateAdded(db, 'EU')).toBe('2026-04-02 11:00:00.000000');
+    expect(lastEsefAt(db, 'UK')).toBe(NOW);
+  });
+
   it('merge confirms the period', () => {
     const { db, row } = setup();
     const id = row('AZN.L');
@@ -161,10 +224,15 @@ describe('europeRepo', () => {
       for (const t of (old.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'europe_%'").all() as { name: string }[])) {
         old.exec(`DROP TABLE ${t.name}`);
       }
+      old.exec('CREATE TABLE europe_esef_seen (fxo_id TEXT PRIMARY KEY, symbol TEXT, period_end TEXT, outcome TEXT NOT NULL, seen_at TEXT NOT NULL)');
+      old.exec(`INSERT INTO europe_esef_seen VALUES ('fxo-old', NULL, NULL, 'no-row', '${NOW}')`);
+      old.exec(`INSERT INTO reports (symbol, symbol_key, name, fiscal_quarter, report_date) VALUES ('AAPL', 'AAPL', 'Apple', 'Q4 2026', '2026-10-30')`);
+      old.exec(`INSERT INTO hk_stocks (code, name, yahoo_symbol, level, cadence, fy_end_month, updated_at)
+        VALUES ('0005', 'HSBC', '0005.HK', 'full', 'Q', 12, '${NOW}')`);
       old.exec(`INSERT INTO jp_stocks (code, name, yahoo_symbol, level, updated_at) VALUES ('7203', 'TOYOTA', '7203.T', 'full', '${NOW}')`);
       old.exec(`INSERT INTO jp_reports (id, code, name, period_end, fiscal_quarter, fy_end, period_label, report_date)
         VALUES (3000000001, '7203', 'TOYOTA', '2026-09-30', 2, '2027-03-31', '2Q FY27', '2026-11-05')`);
-      const dump = (d: DatabaseSync) => JSON.stringify([d.prepare('SELECT * FROM jp_stocks').all(), d.prepare('SELECT * FROM jp_reports').all()]);
+      const dump = (d: DatabaseSync) => JSON.stringify(['jp_stocks', 'jp_reports', 'reports', 'hk_stocks'].map((t) => d.prepare(`SELECT * FROM ${t}`).all()));
       const before = dump(old);
       old.close();
       const db = openDb(path);
@@ -175,6 +243,9 @@ describe('europeRepo', () => {
         'europe_bank_holidays', 'europe_date_sweep', 'europe_esef_seen', 'europe_expected_moves', 'europe_figi', 'europe_live_moves',
         'europe_past_dates', 'europe_reports', 'europe_sec_seen', 'europe_signal_seen', 'europe_stocks',
       ]);
+      // The US and HK rows survived too (dump compared above), and the old europe_esef_seen gained date_added.
+      expect((JSON.parse(dump(db)) as unknown[][]).map((t) => t.length)).toEqual([1, 1, 1, 1]);
+      expect(db.prepare('SELECT fxo_id, date_added FROM europe_esef_seen').all()).toEqual([{ fxo_id: 'fxo-old', date_added: null }]);
       db.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -183,12 +254,15 @@ describe('europeRepo', () => {
 });
 
 describe('buildEuropeUniverseFor', () => {
-  const share = (isin: string, mic: string, fullName: string): FirdsShare =>
-    ({ isin, fullName, cfi: 'ESVUFR', lei: null, mic, issuerRequested: true, terminated: false });
-  const sources = (figi: (jobs: { isin: string; exchCode: string }[]) => Promise<FigiAnswer[]>, o: { firdsComplete?: boolean; sixThrows?: boolean } = {}) => ({
+  const share = (isin: string, mic: string, fullName: string, issuerRequested = true): FirdsShare =>
+    ({ isin, fullName, cfi: 'ESVUFR', lei: null, mic, issuerRequested, terminated: false });
+  const sources = (
+    figi: (jobs: { isin: string; exchCode: string }[]) => Promise<FigiAnswer[]>,
+    o: { firdsComplete?: boolean; sixThrows?: boolean; fca?: FirdsShare[]; esma?: FirdsShare[] } = {},
+  ) => ({
     firds: async (source: 'esma' | 'fca', _mics: ReadonlySet<string>, onShare: (s: FirdsShare) => void) => {
-      if (source === 'fca') onShare(share('GB00BLGZ9862', 'XLON', 'TESCO PLC ORD 6 1/3P'));
-      else onShare(share('FR0000120271', 'XPAR', 'TOTALENERGIES SE'));
+      if (source === 'fca') [share('GB00BLGZ9862', 'XLON', 'TESCO PLC ORD 6 1/3P'), ...o.fca ?? []].forEach(onShare);
+      else [share('FR0000120271', 'XPAR', 'TOTALENERGIES SE'), ...o.esma ?? []].forEach(onShare);
       return { files: 1, complete: source === 'fca' ? o.firdsComplete ?? true : true };
     },
     sixList: async () => {
@@ -228,5 +302,20 @@ describe('buildEuropeUniverseFor', () => {
     expect(asked).toBe(0);
     saveFigi(db, { isin: 'X', exchCode: 'LN', tickers: [], outcome: 'no-ticker' }, NOW);
     expect(figiCached(db, 'X', 'LN')).toMatchObject({ tickers: [], outcome: 'no-ticker' });
+  });
+
+  it('leftOut per market: an ISIN with live lines on both sides counts for UK only (UK first); a dead UK line does not pull an EU ISIN to UK', async () => {
+    const db = openDb(':memory:');
+    const o = {
+      // US ISIN, issuer-requested on XLON, AIMX and XPAR: two UK lines, no home line -> ambiguous; counted for UK only.
+      fca: [share('US0000000001', 'XLON', 'DUAL A'), share('US0000000001', 'AIMX', 'DUAL A'),
+        // EU-ambiguous ISIN that also has a non-issuer-requested UK line: counted for EU.
+        share('US0000000002', 'XLON', 'DUAL B', false)],
+      esma: [share('US0000000001', 'XPAR', 'DUAL A'), share('US0000000002', 'XPAR', 'DUAL B'), share('US0000000002', 'XETA', 'DUAL B')],
+    };
+    const uk = await buildEuropeUniverseFor(db, 'UK', sources(async (j) => answer(j), o), NOW);
+    const eu = await buildEuropeUniverseFor(db, 'EU', sources(async (j) => answer(j), o), NOW);
+    expect(uk.leftOut).toBe(1);
+    expect(eu.leftOut).toBe(1);
   });
 });

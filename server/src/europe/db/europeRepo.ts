@@ -126,12 +126,13 @@ export function setEuropeProfile(
   now: string,
 ): void {
   // A cap is stored only with its currency, and a currency only with its cap: never a cap read in the wrong unit.
+  // Its date moves with it: a new cap without a date gets no date, never the previous cap's.
   const capOk = p.marketCap != null && Number.isFinite(p.marketCap) && !!p.marketCapCurrency;
   db.prepare(`UPDATE europe_stocks SET profile_name = COALESCE(?, profile_name), sector = COALESCE(?, sector), industry = COALESCE(?, industry),
       market_cap = COALESCE(?, market_cap), market_cap_currency = COALESCE(?, market_cap_currency),
-      market_cap_as_of = COALESCE(?, market_cap_as_of), updated_at = ? WHERE symbol = ?`)
+      market_cap_as_of = CASE WHEN ? THEN ? ELSE market_cap_as_of END, updated_at = ? WHERE symbol = ?`)
     .run(p.name?.trim() || null, p.sector?.trim() || null, p.industry?.trim() || null, capOk ? p.marketCap : null,
-      capOk ? p.marketCapCurrency : null, capOk ? p.asOf : null, now, symbol);
+      capOk ? p.marketCapCurrency : null, capOk ? 1 : 0, capOk ? p.asOf : null, now, symbol);
   const fy = p.fyEndMonth;
   if (fy && Number.isInteger(fy.month) && fy.month >= 1 && fy.month <= 12) {
     db.prepare(`UPDATE europe_stocks SET fy_end_month = ?, fy_end_source = ?
@@ -471,7 +472,15 @@ export function recordEuropeRelease(
   if (!Number.isFinite(at)) return false;
   const row = db.prepare('SELECT released_at FROM europe_reports WHERE id = ?').get(id) as { released_at: string | null } | undefined;
   if (!row) return false;
-  if (row.released_at && Date.parse(row.released_at) <= at) return false;
+  if (row.released_at) {
+    const stored = Date.parse(row.released_at);
+    if (!Number.isFinite(stored)) {
+      // Never overwrite a stored value we cannot read: keep it and say so.
+      console.warn(`europe release: report ${id} has an unparseable released_at; kept, ${r.source} signal ignored`);
+      return false;
+    }
+    if (stored <= at) return false;
+  }
   db.prepare('UPDATE europe_reports SET released_at = ?, released_source = ?, signal_title = ?, signal_url = ? WHERE id = ?')
     .run(r.at, r.source, r.title?.trim() || null, r.url?.trim() || null, id);
   if (r.source === 'prn' && r.timing && r.timing !== 'UNKNOWN') setEuropeTiming(db, id, r.timing, 'prn');
@@ -836,11 +845,23 @@ export function esefSeen(db: DatabaseSync, fxoId: string): boolean {
   return db.prepare('SELECT 1 FROM europe_esef_seen WHERE fxo_id = ?').get(fxoId) != null;
 }
 
+/** `dateAdded` is the filing's filings.xbrl.org `date_added`, kept for paging (`lastEsefDateAdded`). */
 export function markEsefSeen(
   db: DatabaseSync, fxoId: string, symbol: string | null, periodEnd: string | null, outcome: EsefOutcome, now: string,
+  dateAdded?: string | null,
 ): void {
-  db.prepare('INSERT OR IGNORE INTO europe_esef_seen (fxo_id, symbol, period_end, outcome, seen_at) VALUES (?, ?, ?, ?, ?)')
-    .run(fxoId, symbol, periodEnd, outcome, now);
+  db.prepare('INSERT OR IGNORE INTO europe_esef_seen (fxo_id, symbol, period_end, outcome, seen_at, date_added) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(fxoId, symbol, periodEnd, outcome, now, dateAdded?.trim() || null);
+}
+
+/**
+ * The latest filings.xbrl.org `date_added` among handled filings (the ESEF job's `since`); with `market`, only
+ * filings matched to that market's stocks. Null when none is recorded.
+ */
+export function lastEsefDateAdded(db: DatabaseSync, market?: EuropeMarket): string | null {
+  if (!market) return (db.prepare('SELECT MAX(date_added) AS t FROM europe_esef_seen').get() as { t: string | null }).t;
+  return (db.prepare(`SELECT MAX(e.date_added) AS t FROM europe_esef_seen e JOIN europe_stocks s ON s.symbol = e.symbol WHERE s.market = ?`)
+    .get(market) as { t: string | null }).t;
 }
 
 /** The last ESEF filing handled; with `market`, only filings matched to that market's stocks. */
