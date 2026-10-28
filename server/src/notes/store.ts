@@ -91,9 +91,12 @@ export function jpNoteDeadline(r: { reportDate: string; timing: Timing | 'DMH'; 
  */
 export function europeNoteDeadline(r: { reportDate: string; timing: Timing | 'DMH'; releasedAt: string | null; exchange: ExchangeId }): string {
   const ex = EXCHANGES[r.exchange];
-  const at = (min: number) => DateTime.fromISO(r.reportDate, { zone: ex.zone }).startOf('day').plus({ minutes: min });
+  // Wall-clock time in the exchange zone, so a DST changeover day still gives the local open or close.
+  const at = (min: number) => DateTime.fromISO(r.reportDate, { zone: ex.zone }).set({ hour: Math.floor(min / 60), minute: min % 60 });
+  // An unreadable stored release time (kept by recordEuropeRelease) falls back to the timing rule.
+  const stated = r.releasedAt ? DateTime.fromISO(r.releasedAt) : null;
   let released: DateTime;
-  if (r.releasedAt) released = DateTime.fromISO(r.releasedAt);
+  if (stated?.isValid) released = stated;
   else if (r.timing === 'BMO') released = at(ex.openMin);
   else if (r.timing === 'UNKNOWN') released = DateTime.fromISO(`${r.reportDate}T23:59:59`, { zone: ex.zone });
   else released = at(ex.closeMin);

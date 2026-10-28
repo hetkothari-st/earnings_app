@@ -98,7 +98,8 @@ export interface EuropeMarketAdmin {
   full: number;
   basic: number;
   inactive: number;
-  leftOut: number;
+  /** From the last universe build this process ran; null until one has run (unknown, never 0). */
+  leftOut: number | null;
   lastUniverseAt: string | null;
   lastSixKAt: string | null;
   lastPrnAt: string | null;
@@ -110,7 +111,8 @@ export interface EuropeMarketAdmin {
 export interface EuropeAdminDto {
   UK: EuropeMarketAdmin;
   EU: EuropeMarketAdmin;
-  tradegate: { state: TradegateState; backoffUntil: string | null; lastPollAt: string | null };
+  /** `state` null: no live Tradegate client to ask (unknown). */
+  tradegate: { state: TradegateState | null; backoffUntil: string | null; lastPollAt: string | null };
   secConfigured: boolean;
   openFigiConfigured: boolean;
 }

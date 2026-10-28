@@ -134,6 +134,14 @@ describe('markets UK and EU plumbing', () => {
     expect(europeNoteDeadline({ reportDate: '2026-11-05', timing: 'BMO', releasedAt: null, exchange: 'HEL' })).toBe('2026-11-06T08:00:00.000Z');
     expect(europeNoteDeadline({ reportDate: '2026-11-05', timing: 'AMC', releasedAt: null, exchange: 'XET' })).toBe('2026-11-06T16:30:00.000Z');
     expect(europeNoteDeadline({ reportDate: '2026-11-05', timing: 'AMC', releasedAt: '2026-11-05T07:02:00.000Z', exchange: 'LSE' })).toBe('2026-11-06T07:02:00.000Z');
+    // Summer time: 16:30 BST is 15:30Z.
+    expect(europeNoteDeadline({ reportDate: '2026-06-05', timing: 'AMC', releasedAt: null, exchange: 'LSE' })).toBe('2026-06-06T15:30:00.000Z');
+    // DST changeover Sundays: the close is wall-clock time on that day, not minutes after midnight.
+    expect(europeNoteDeadline({ reportDate: '2026-10-25', timing: 'AMC', releasedAt: null, exchange: 'LSE' })).toBe('2026-10-26T16:30:00.000Z');
+    expect(europeNoteDeadline({ reportDate: '2026-03-29', timing: 'AMC', releasedAt: null, exchange: 'XET' })).toBe('2026-03-30T15:30:00.000Z');
+    expect(europeNoteDeadline({ reportDate: '2026-03-29', timing: 'BMO', releasedAt: null, exchange: 'XET' })).toBe('2026-03-30T07:00:00.000Z');
+    // An unreadable stored release time falls back to the timing rule instead of throwing.
+    expect(europeNoteDeadline({ reportDate: '2026-11-05', timing: 'AMC', releasedAt: 'not-a-date', exchange: 'LSE' })).toBe('2026-11-06T16:30:00.000Z');
   });
 
   test('notes accept a UK report id and use the exchange deadline', async () => {
@@ -143,6 +151,11 @@ describe('markets UK and EU plumbing', () => {
     expect(put.json().deleteAt).toBe('2026-11-06T23:59:59.000Z');
     const list = (await app.inject({ url: '/api/notes', headers: as('1A') })).json();
     expect(JSON.stringify(list)).toContain('2026-11-06T23:59:59.000Z');
+    // A stored released_at that cannot be read keeps GET /api/notes working (Task 13 keeps such values).
+    db.prepare("UPDATE europe_reports SET released_at = 'garbage' WHERE id = ?").run(id);
+    const again = await app.inject({ url: '/api/notes', headers: as('1A') });
+    expect(again.statusCode).toBe(200);
+    expect(again.json().notes).toEqual([expect.objectContaining({ reportId: id, deleteAt: '2026-11-06T23:59:59.000Z' })]);
   });
 
   test('status has UK and EU coverage; expectedMove counts full only', async () => {
@@ -182,12 +195,12 @@ describe('markets UK and EU plumbing', () => {
     expect(body.secConfigured).toBe(!!config.secUserAgent);
     expect(body.tradegate).toEqual(TRADEGATE.tradegate);
     expect(body.UK).toEqual({
-      full: 1, basic: 1, inactive: 0, leftOut: 0, lastUniverseAt: null, lastSixKAt: '2026-10-27T10:00:00.000Z',
+      full: 1, basic: 1, inactive: 0, leftOut: null, lastUniverseAt: null, lastSixKAt: '2026-10-27T10:00:00.000Z',
       lastPrnAt: '2026-10-27T07:02:00.000Z', lastDilaAt: null, lastEsefAt: null,
       readerOn: !!(config.fastFields.ukEps || config.fastFields.ukRevenue),
     });
     expect(body.EU).toEqual({
-      full: 1, basic: 0, inactive: 1, leftOut: 0, lastUniverseAt: null, lastSixKAt: null,
+      full: 1, basic: 0, inactive: 1, leftOut: null, lastUniverseAt: null, lastSixKAt: null,
       lastPrnAt: '2026-10-27T07:02:00.000Z', lastDilaAt: '2026-10-27T12:00:00.000Z', lastEsefAt: '2026-10-26T12:00:00.000Z',
       readerOn: !!(config.fastFields.euEps || config.fastFields.euRevenue),
     });
@@ -199,8 +212,21 @@ describe('markets UK and EU plumbing', () => {
     }) } });
     const u = (await withUniverse.inject({ url: '/api/admin/europe', headers: as('ADM') })).json() as EuropeAdminDto;
     expect(u.UK).toMatchObject({ leftOut: 7, lastUniverseAt: '2026-10-25T03:00:00.000Z' });
-    expect(u.EU).toMatchObject({ leftOut: 0, lastUniverseAt: null });
+    // Unknown stays unknown: never a made-up 0.
+    expect(u.EU).toMatchObject({ leftOut: null, lastUniverseAt: null });
     expect(Object.keys(u)).not.toContain('universe');
+  });
+
+  test('admin europe without a live Tradegate client: state unknown, off-env only when the flag is off', async () => {
+    const saved = config.tradegatePrices;
+    try {
+      const bare = buildServer(db, { requireAuth: true, now: () => clock });
+      config.tradegatePrices = true;
+      expect((await bare.inject({ url: '/api/admin/europe', headers: as('ADM') })).json().tradegate)
+        .toEqual({ state: null, backoffUntil: null, lastPollAt: null });
+      config.tradegatePrices = false;
+      expect((await bare.inject({ url: '/api/admin/europe', headers: as('ADM') })).json().tradegate.state).toBe('off-env');
+    } finally { config.tradegatePrices = saved; }
   });
 
   test('visible accepts UK and EU symbols by the Ruling 2 format', async () => {
