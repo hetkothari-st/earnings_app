@@ -6,14 +6,19 @@
  *   npm run reader-corpus -w server -- --hk            (HK 6-K releases, test/fixtures/hk/releases/, exact match)
  *   npm run reader-corpus -w server -- --jp            (JP 6-K releases, test/fixtures/jp/releases/, exact match)
  *   npm run reader-corpus -w server -- --jp-heldout    (JP held-out set, test/fixtures/jp/releases/heldout/; run once)
+ *   npm run reader-corpus -w server -- --uk | --eu     (UK / EU 6-K and 8-K releases, test/fixtures/europe/releases/<uk|eu>/, exact match)
+ *   npm run reader-corpus -w server -- --uk-heldout | --eu-heldout  (held-out sets, …/<uk|eu>/heldout/; run once)
  * Reads every test/fixtures/us/releases/*.htm and compares accepted values with
  * expected.json (EPS ±0.01, revenue ±0.5%). Adjusted EPS is gated against Nasdaq;
  * GAAP EPS against the release (hand-read); revenue against Finnhub or the release.
  * An accepted value whose expected figure is null counts as a miss.
  */
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
+import { gateCounts, gateMarks, gatePasses, gateVerdict } from '../domain/readerGate.js';
+import { EUROPE_GATE_FIELDS, readEuropeRelease } from '../europe/sources/releaseEurope.js';
+import { europeIssuerFor } from '../europe/universe.js';
 import type { HkPeriodKind } from '../hk/domain/period.js';
 import { readHkRelease } from '../hk/sources/releaseHk.js';
 import { HK_UNIVERSE } from '../hk/universe.js';
@@ -38,6 +43,10 @@ if (process.argv.includes('--india')) await runIndia();
 else if (process.argv.includes('--hk')) runHk();
 else if (process.argv.includes('--jp-heldout')) runJp('heldout/', true);
 else if (process.argv.includes('--jp')) runJp('', false);
+else if (process.argv.includes('--uk-heldout')) runEurope('uk', 'heldout/', true);
+else if (process.argv.includes('--uk')) runEurope('uk', '', false);
+else if (process.argv.includes('--eu-heldout')) runEurope('eu', 'heldout/', true);
+else if (process.argv.includes('--eu')) runEurope('eu', '', false);
 else runUs();
 
 /**
@@ -112,6 +121,47 @@ function runJp(sub: string, heldout: boolean): void {
   for (const k of ['jpEps', 'jpRevenue'] as const) {
     const cfg = config.fastFields[k] ?? false;
     const note = !gatePasses && cfg ? '  <-- config on but this set fails' : '';
+    console.log(`${k}: config ${cfg} (may be on only when main >= 20 exact carrying values and 0 wrong, and every held-out set 0 wrong)${note}`);
+  }
+}
+
+/**
+ * UK / EU (Global Constraints, reader gate, as JP): every hand-checked entry of
+ * test/fixtures/europe/releases/<uk|eu>/[heldout/]expected.json is read with readEuropeRelease for its period and
+ * scored on the seven EUROPE_GATE_FIELDS (domain/readerGate.ts). The main set needs >= 20 exact releases that carry a
+ * value and none wrong; a held-out set needs none wrong (blanks acceptable in both). ukEps / ukRevenue (euEps /
+ * euRevenue) may be on only when the main and every held-out set pass.
+ */
+function runEurope(profile: 'uk' | 'eu', sub: string, heldout: boolean): void {
+  const dir = fileURLToPath(new URL(`../../test/fixtures/europe/releases/${profile}/${sub}`, import.meta.url));
+  interface EuropeExpected {
+    adr: string; periodEnd: string; fiscalQuarter: 1 | 2 | 3 | 4; checked: boolean; note: string;
+    revenue: number | null; revenueCurrency: string | null; eps: number | null; epsDiluted: number | null;
+    epsCurrency: string | null; span: string | null; ytdMonths: number | null;
+  }
+  const FIELDS = EUROPE_GATE_FIELDS;
+  const expected: Record<string, EuropeExpected> = existsSync(`${dir}expected.json`) ? JSON.parse(readFileSync(`${dir}expected.json`, 'utf8')) : {};
+  let unchecked = 0;
+  const adrs = new Set<string>();
+  const scored: { expected: EuropeExpected; got: ReturnType<typeof readEuropeRelease> }[] = [];
+  for (const [file, e] of Object.entries(expected).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!e.checked) { unchecked++; continue; }
+    adrs.add(e.adr);
+    const got = readEuropeRelease(readFileSync(`${dir}${file}`, 'utf8'), { periodEnd: e.periodEnd, fiscalQuarter: e.fiscalQuarter, profile, issuer: europeIssuerFor(e.adr) });
+    scored.push({ expected: e, got });
+    const marks = gateMarks(FIELDS, e, got);
+    const verdict = gateVerdict(FIELDS, e, got);
+    console.log(`${verdict.padEnd(5)} ${file} (Q${e.fiscalQuarter})`);
+    FIELDS.forEach((f, i) => { if (marks[i] !== 'exact') console.log(`      ${f}: got ${got[f]}, expected ${e[f]} [${marks[i]}]`); });
+    if (verdict !== 'exact' && got.notes.length) console.log(`      notes: ${got.notes.join('; ')}`);
+  }
+  const c = gateCounts(FIELDS, scored);
+  const passes = gatePasses(c, heldout);
+  console.log(`${heldout ? 'held-out' : 'main'}: checked ${c.checked} (${adrs.size} issuers), exact ${c.exact} (${c.exactWithValues} carrying values), wrong ${c.wrong}${unchecked ? `, not yet checked ${unchecked}` : ''}; gate ${passes ? 'passes' : 'fails'}`);
+  const flags = config.fastFields as Record<string, boolean | undefined>;
+  for (const k of [`${profile}Eps`, `${profile}Revenue`]) {
+    const cfg = flags[k] ?? false;
+    const note = !passes && cfg ? '  <-- config on but this set fails' : '';
     console.log(`${k}: config ${cfg} (may be on only when main >= 20 exact carrying values and 0 wrong, and every held-out set 0 wrong)${note}`);
   }
 }
