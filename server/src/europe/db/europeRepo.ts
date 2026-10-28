@@ -3,6 +3,7 @@ import type { LocalTiming } from '../../domain/exchangeCalendar.js';
 import type { ExpectedMove } from '../../types.js';
 import type { EuropePeriod } from '../domain/period.js';
 import type { EuropeMarket, ExchangeId } from '../exchanges.js';
+import { httpUrlOrNull } from '../sources/sourceUrls.js';
 import { europeLevel } from '../universe.js';
 import type { EuropeUniverseEntry } from '../universeBuild.js';
 import { EUROPE_ADDED_COLUMNS, EUROPE_SCHEMA } from './schema.js';
@@ -482,7 +483,7 @@ export function recordEuropeRelease(
     if (stored <= at) return false;
   }
   db.prepare('UPDATE europe_reports SET released_at = ?, released_source = ?, signal_title = ?, signal_url = ? WHERE id = ?')
-    .run(r.at, r.source, r.title?.trim() || null, r.url?.trim() || null, id);
+    .run(r.at, r.source, r.title?.trim() || null, httpUrlOrNull(r.url), id);
   if (r.source === 'prn' && r.timing && r.timing !== 'UNKNOWN') setEuropeTiming(db, id, r.timing, 'prn');
   return true;
 }
@@ -853,7 +854,7 @@ export function lastEuropeSecSeenAt(db: DatabaseSync, market: EuropeMarket): str
 // ---------- Fast-signal bookkeeping (PR Newswire, DILA) ----------
 
 /** `timing`: a PRN item whose row an earlier signal already released; only its timing was used. */
-export type SignalOutcome = 'flipped' | 'timing' | 'no-match' | 'ambiguous' | 'not-results' | 'no-row' | 'done';
+export type SignalOutcome = 'flipped' | 'timing' | 'no-match' | 'ambiguous' | 'not-results' | 'no-row' | 'done' | 'failed' | 'error';
 
 /** Every active stock of both markets, with its universe and Yahoo profile names (the fast-signal issuer index). */
 export function europeIssuerStocks(db: DatabaseSync): {
@@ -879,6 +880,12 @@ export function signalSeen(db: DatabaseSync, source: string, itemId: string): bo
 export function markSignalSeen(db: DatabaseSync, source: string, itemId: string, symbol: string | null, outcome: SignalOutcome, now: string): void {
   db.prepare('INSERT OR IGNORE INTO europe_signal_seen (source, item_id, symbol, outcome, seen_at) VALUES (?, ?, ?, ?, ?)')
     .run(source, itemId, symbol, outcome, now);
+}
+
+/** Rows of `source` whose item id starts with `prefix` (the DILA per-day failure count). */
+export function signalCountWithPrefix(db: DatabaseSync, source: string, prefix: string): number {
+  const rows = db.prepare('SELECT item_id FROM europe_signal_seen WHERE source = ?').all(source) as { item_id: string }[];
+  return rows.filter((r) => r.item_id.startsWith(prefix)).length;
 }
 
 export function lastSignalAt(db: DatabaseSync, source: string): string | null {
@@ -959,6 +966,26 @@ export function saveFigi(
 ): void {
   db.prepare(`INSERT OR REPLACE INTO europe_figi (isin, exch_code, tickers_json, yahoo_symbol, outcome, checked_at) VALUES (?, ?, ?, ?, ?, ?)`)
     .run(a.isin, a.exchCode, JSON.stringify(a.tickers), a.yahooSymbol ?? null, a.outcome, now);
+}
+
+/** A stored Yahoo ISIN search answer (`symbols` [] = confirmed no match), or null when none or unreadable. */
+export function isinSearchCached(db: DatabaseSync, isin: string): { symbols: string[]; checkedAt: string } | null {
+  const r = db.prepare('SELECT symbols_json, checked_at FROM europe_isin_search WHERE isin = ?').get(isin) as
+    { symbols_json: string; checked_at: string } | undefined;
+  if (!r) return null;
+  let symbols: unknown;
+  try {
+    symbols = JSON.parse(r.symbols_json);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(symbols) || !symbols.every((s) => typeof s === 'string')) return null;
+  return { symbols, checkedAt: r.checked_at };
+}
+
+/** Stores a Yahoo ISIN search answer. Callers never store a failed search (that is no answer, not "no match"). */
+export function saveIsinSearch(db: DatabaseSync, isin: string, symbols: string[], now: string): void {
+  db.prepare('INSERT OR REPLACE INTO europe_isin_search (isin, symbols_json, checked_at) VALUES (?, ?, ?)').run(isin, JSON.stringify(symbols), now);
 }
 
 // ---------- Bank holidays (gov.uk, England and Wales) ----------

@@ -87,14 +87,17 @@ export function jpNoteDeadline(r: { reportDate: string; timing: Timing | 'DMH'; 
 
 /**
  * UK and Europe: 24 hours after the release if known, else the exchange's open for before-open, end of day for
- * unknown, otherwise its close, in the exchange's own zone.
+ * unknown, otherwise its close, in the exchange's own zone. A Yahoo "results out" time (`releasedSource` 'yahoo') is
+ * when the app saw Yahoo's actual, not the release, so it never counts as the release time.
  */
-export function europeNoteDeadline(r: { reportDate: string; timing: Timing | 'DMH'; releasedAt: string | null; exchange: ExchangeId }): string {
+export function europeNoteDeadline(r: {
+  reportDate: string; timing: Timing | 'DMH'; releasedAt: string | null; releasedSource?: string | null; exchange: ExchangeId;
+}): string {
   const ex = EXCHANGES[r.exchange];
   // Wall-clock time in the exchange zone, so a DST changeover day still gives the local open or close.
   const at = (min: number) => DateTime.fromISO(r.reportDate, { zone: ex.zone }).set({ hour: Math.floor(min / 60), minute: min % 60 });
   // An unreadable stored release time (kept by recordEuropeRelease) falls back to the timing rule.
-  const stated = r.releasedAt ? DateTime.fromISO(r.releasedAt) : null;
+  const stated = r.releasedAt && r.releasedSource !== 'yahoo' ? DateTime.fromISO(r.releasedAt) : null;
   let released: DateTime;
   if (stated?.isValid) released = stated;
   else if (r.timing === 'BMO') released = at(ex.openMin);
@@ -108,7 +111,7 @@ interface Row {
   inReportDate: string | null; inTiming: Timing | null; inReleasedAt: string | null;
   hkReportDate: string | null; hkTiming: Timing | 'DMH' | null; hkReleasedAt: string | null;
   jpReportDate: string | null; jpTiming: Timing | 'DMH' | null; jpReleasedAt: string | null;
-  euReportDate: string | null; euTiming: Timing | 'DMH' | null; euReleasedAt: string | null; euExchange: string | null;
+  euReportDate: string | null; euTiming: Timing | 'DMH' | null; euReleasedAt: string | null; euReleasedSource: string | null; euExchange: string | null;
 }
 
 function rows(db: Db, userId: string | null): Row[] {
@@ -118,7 +121,7 @@ function rows(db: Db, userId: string | null): Row[] {
         i.report_date AS inReportDate, i.timing AS inTiming, i.released_at AS inReleasedAt,
         h.report_date AS hkReportDate, h.timing AS hkTiming, h.released_at AS hkReleasedAt,
         j.report_date AS jpReportDate, j.timing AS jpTiming, j.released_at AS jpReleasedAt,
-        e.report_date AS euReportDate, e.timing AS euTiming, e.released_at AS euReleasedAt, e.exchange AS euExchange
+        e.report_date AS euReportDate, e.timing AS euTiming, e.released_at AS euReleasedAt, e.released_source AS euReleasedSource, e.exchange AS euExchange
       FROM notes n LEFT JOIN reports r ON r.id = n.report_id LEFT JOIN in_reports i ON i.id = n.report_id LEFT JOIN hk_reports h ON h.id = n.report_id LEFT JOIN jp_reports j ON j.id = n.report_id
         LEFT JOIN europe_reports e ON e.id = n.report_id
       ${userId == null ? '' : 'WHERE n.user_id = ?'} ORDER BY COALESCE(r.report_date, i.report_date, h.report_date, j.report_date, e.report_date)`)
@@ -131,7 +134,9 @@ const deadlineOf = (r: Row) => {
   if (r.hkReportDate && r.hkTiming) return hkNoteDeadline({ reportDate: r.hkReportDate, timing: r.hkTiming, releasedAt: r.hkReleasedAt });
   if (r.jpReportDate && r.jpTiming) return jpNoteDeadline({ reportDate: r.jpReportDate, timing: r.jpTiming, releasedAt: r.jpReleasedAt });
   if (r.euReportDate && r.euTiming && r.euExchange && r.euExchange in EXCHANGES) {
-    return europeNoteDeadline({ reportDate: r.euReportDate, timing: r.euTiming, releasedAt: r.euReleasedAt, exchange: r.euExchange as ExchangeId });
+    return europeNoteDeadline({
+      reportDate: r.euReportDate, timing: r.euTiming, releasedAt: r.euReleasedAt, releasedSource: r.euReleasedSource, exchange: r.euExchange as ExchangeId,
+    });
   }
   return null;
 };

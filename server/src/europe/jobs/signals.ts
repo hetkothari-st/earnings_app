@@ -3,7 +3,7 @@ import { DateTime } from 'luxon';
 import type { LocalTiming } from '../../domain/exchangeCalendar.js';
 import {
   activeEuropeStocksByIsin, europeIssuerStocks, markSignalSeen, nearestUnreleasedEurope, recordEuropeRelease, releasedEuropeNear,
-  setEuropeTiming, signalSeen, type SignalOutcome,
+  setEuropeTiming, signalCountWithPrefix, signalSeen, type SignalOutcome,
 } from '../db/europeRepo.js';
 import { calendarFor } from '../domain/calendars.js';
 import { EXCHANGES, type ExchangeId } from '../exchanges.js';
@@ -142,9 +142,15 @@ export async function refreshPrnSignals(ctx: EuropeJobContext): Promise<number[]
   return [...changed];
 }
 
+/** A batch that fails this many times in one (Paris) day is marked `error` for that day and not downloaded again. */
+export const DILA_MAX_FAILURES_PER_DAY = 3;
+
 /**
- * DILA AMF results-out (EU only; without `ctx.dila` a no-op). Each unseen batch of today's directory (`signal_seen`
- * 'dila-file') is streamed, never buffered whole; a batch that fails is not marked and is read again next run. Each
+ * DILA AMF results-out (EU only; without `ctx.dila` a no-op). Each unseen batch of yesterday's and today's directory
+ * (`signal_seen` 'dila-file') is streamed, never buffered whole. Yesterday's are listed too: a batch appears about an
+ * hour after its HHMM name, so the evening (19:05) batch can land after the day's last run. A batch that fails is not
+ * marked and is read again next run, up to DILA_MAX_FAILURES_PER_DAY times a day ('dila-file-fail' rows keyed
+ * `day|file|n`); then 'dila-file-error' `day|file` is set and the batch is skipped for the rest of that day. Each
  * document is handled once across batches (by id). A results-type document whose ISIN is exactly one active EU stock
  * with a row within ±3 days of its filing day flips it (two lines with that ISIN: `ambiguous`). The ISIN match is
  * exact, so a non-French ISIN filed with the AMF (a Dutch-incorporated Paris listing) counts too (controller-accepted).
@@ -153,13 +159,25 @@ export async function refreshPrnSignals(ctx: EuropeJobContext): Promise<number[]
 export async function refreshDilaSignals(ctx: EuropeJobContext): Promise<number[]> {
   const dila = ctx.dila;
   if (ctx.market !== 'EU' || !dila) return [];
-  const files = await trackIn(ctx, 'dila', () => dila.list(ctx.today()));
+  const today = ctx.today();
+  const yesterday = DateTime.fromISO(today, { zone: 'utc' }).minus({ days: 1 }).toISODate()!;
+  const files = await trackIn(ctx, 'dila', async () => [...new Set([...(await dila.list(yesterday)), ...(await dila.list(today))])]);
   if (!files) return [];
   const changed: number[] = [];
   for (const file of files) {
     if (signalSeen(ctx.db, 'dila-file', file)) continue;
+    const dayKey = `${today}|${file}`;
+    if (signalSeen(ctx.db, 'dila-file-error', dayKey)) continue;
     const docs = await trackIn(ctx, 'dila', async () => parseDilaArchiveStream(await dila.archive(file)));
-    if (!docs) continue;
+    if (!docs) {
+      const failures = signalCountWithPrefix(ctx.db, 'dila-file-fail', `${dayKey}|`) + 1;
+      markSignalSeen(ctx.db, 'dila-file-fail', `${dayKey}|${failures}`, null, 'failed', ctx.now());
+      if (failures >= DILA_MAX_FAILURES_PER_DAY) {
+        console.warn(`dila: ${file} failed ${failures} times today; skipped until tomorrow`);
+        markSignalSeen(ctx.db, 'dila-file-error', dayKey, null, 'error', ctx.now());
+      }
+      continue;
+    }
     const now = ctx.now();
     for (const d of docs) {
       if (signalSeen(ctx.db, 'dila', d.id)) continue;

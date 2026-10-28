@@ -46,6 +46,14 @@ describe('parsePrnRss', () => {
     expect(() => parsePrnRss('<html><body>Error</body></html>')).toThrow(SourceFormatError);
   });
 
+  it('only http(s) links are kept: an item with any other scheme is skipped', () => {
+    const it = (link: string) => `<item><title>A plc Half-year results</title><link>${link}</link>`
+      + '<pubDate>Tue, 27 Oct 2026 07:00:05 +0000</pubDate></item>';
+    const xml = `<rss><channel>${it('javascript:alert(1)')}${it('data:text/html,x')}${it(' JavaScript:alert(1)')}`
+      + `${it('//www.prnewswire.co.uk/a-2.html')}${it('http://www.prnewswire.co.uk/news-releases/a-3.html')}</channel></rss>`;
+    expect(parsePrnRss(xml).map((i) => i.link)).toEqual(['http://www.prnewswire.co.uk/news-releases/a-3.html']);
+  });
+
   it('results titles yes; "to announce Q3 results on" no; "conference call" no', () => {
     for (const t of [
       'Pearson 2026 Nine Month Trading Update (Unaudited)',

@@ -150,4 +150,28 @@ describe('fetchFirdsShares', () => {
     expect(r).toEqual({ files: 0, complete: false });
     warn.mockRestore();
   });
+
+  it('a part download never leaves the FIRDS part hosts: redirects are followed by hand, each target re-checked', async () => {
+    const seen: { url: string; redirect: RequestRedirect | undefined }[] = [];
+    const hops: Record<string, Response | (() => Response)> = {
+      'https://data.fca.org.uk/a.zip': () => new Response(null, { status: 302, headers: { location: 'https://firds.esma.europa.eu/b.zip' } }),
+      'https://firds.esma.europa.eu/b.zip': () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
+      'https://data.fca.org.uk/evil.zip': () => new Response(null, { status: 301, headers: { location: 'https://example.com/x.zip' } }),
+      'https://data.fca.org.uk/http.zip': () => new Response(null, { status: 302, headers: { location: 'http://data.fca.org.uk/x.zip' } }),
+      'https://data.fca.org.uk/loop.zip': () => new Response(null, { status: 302, headers: { location: '/loop.zip' } }),
+    };
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen.push({ url, redirect: init.redirect });
+      const h = hops[url];
+      return typeof h === 'function' ? h() : new Response('nope', { status: 404 });
+    }) as unknown as typeof fetch;
+    const http = makeFirdsHttp({ minIntervalMs: 0, fetchImpl });
+    expect([...await http.bytes('https://data.fca.org.uk/a.zip')]).toEqual([1, 2, 3]);
+    expect(seen.every((s) => s.redirect === 'manual')).toBe(true);
+    await expect(http.bytes('https://data.fca.org.uk/evil.zip')).rejects.toThrow(/unexpected host/);
+    expect(seen.some((s) => s.url.includes('example.com'))).toBe(false);
+    await expect(http.bytes('https://data.fca.org.uk/http.zip')).rejects.toThrow(/unexpected host/);
+    await expect(http.bytes('https://data.fca.org.uk/loop.zip')).rejects.toThrow(/redirects/);
+    await expect(http.bytes('https://example.com/start.zip')).rejects.toThrow(/unexpected host/);
+  });
 });

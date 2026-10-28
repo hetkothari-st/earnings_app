@@ -142,6 +142,11 @@ describe('markets UK and EU plumbing', () => {
     expect(europeNoteDeadline({ reportDate: '2026-03-29', timing: 'BMO', releasedAt: null, exchange: 'XET' })).toBe('2026-03-30T07:00:00.000Z');
     // An unreadable stored release time falls back to the timing rule instead of throwing.
     expect(europeNoteDeadline({ reportDate: '2026-11-05', timing: 'AMC', releasedAt: 'not-a-date', exchange: 'LSE' })).toBe('2026-11-06T16:30:00.000Z');
+    // A Yahoo "results out" time is when the app saw Yahoo's actual, not the release: the timing rule applies.
+    expect(europeNoteDeadline({ reportDate: '2026-11-05', timing: 'UNKNOWN', releasedAt: '2026-11-09T12:35:00.000Z', releasedSource: 'yahoo', exchange: 'LSE' }))
+      .toBe('2026-11-06T23:59:59.000Z');
+    expect(europeNoteDeadline({ reportDate: '2026-11-05', timing: 'AMC', releasedAt: '2026-11-05T07:02:00.000Z', releasedSource: 'prn', exchange: 'LSE' }))
+      .toBe('2026-11-06T07:02:00.000Z');
   });
 
   test('notes accept a UK report id and use the exchange deadline', async () => {
@@ -239,8 +244,14 @@ describe('markets UK and EU plumbing', () => {
     expect((await put('UK', ['AZN.L', 'bt-a.l', 'AZN.L'])).statusCode).toBe(204);
     expect((await put('EU', ['SAP.DE', 'ERIC-B.ST'])).statusCode).toBe(204);
     expect(seen).toEqual([['UK', '1A', ['AZN.L', 'BT-A.L']], ['EU', '1A', ['SAP.DE', 'ERIC-B.ST']]]);
-    expect((await put('UK', ['SAP.DE'])).statusCode).toBe(400);
-    expect((await put('EU', ['AZN.L'])).statusCode).toBe(400);
-    expect((await put('EU', ['AAPL'])).statusCode).toBe(400);
+    // An invalid code is dropped, not the batch: one odd symbol never removes prices for the whole page.
+    seen.length = 0;
+    expect((await put('UK', ['SAP.DE', 'AZN.L', 'M&S.L'])).statusCode).toBe(204);
+    expect((await put('EU', ['AZN.L', 'AAPL', 'SAP.DE'])).statusCode).toBe(204);
+    expect((await put('EU', ['AAPL'])).statusCode).toBe(204);
+    expect(seen).toEqual([['UK', '1A', ['AZN.L']], ['EU', '1A', ['SAP.DE']], ['EU', '1A', []]]);
+    // The batch shape is still checked.
+    expect((await put('UK', 'AZN.L')).statusCode).toBe(400);
+    expect((await put('UK', [1])).statusCode).toBe(400);
   });
 });

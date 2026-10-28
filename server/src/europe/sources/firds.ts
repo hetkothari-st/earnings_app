@@ -35,6 +35,16 @@ const OPEN = '<RefData>';
 const CLOSE = '</RefData>';
 /** Hosts a download link may point to (the plan's FIRDS hosts). */
 const PART_HOSTS = new Set(['firds.esma.europa.eu', 'data.fca.org.uk']);
+/** An https URL on a FIRDS part host. */
+const onPartHost = (url: string): boolean => {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && PART_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
+};
+const MAX_PART_REDIRECTS = 3;
 
 const decodeXml = (s: string) =>
   s.replace(/&(lt|gt|quot|apos|amp|#x[0-9a-fA-F]+|#[0-9]+);/g, (m, e: string) => {
@@ -245,9 +255,21 @@ export function makeFirdsHttp(o: { fetchImpl?: typeof fetch; minIntervalMs?: num
   return {
     ...http,
     async bytes(url) {
-      await limiter.wait();
-      const res = await fetchImpl(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(10 * 60_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      // Redirects are followed by hand so every hop is checked: a download never leaves the FIRDS part hosts.
+      let target = url;
+      let res: Response;
+      for (let hop = 0; ; hop++) {
+        if (!onPartHost(target)) throw new Error(`FIRDS part on an unexpected host: ${target}`);
+        await limiter.wait();
+        res = await fetchImpl(target, { headers, redirect: 'manual', signal: AbortSignal.timeout(10 * 60_000) });
+        if (res.status < 300 || res.status >= 400) break;
+        const location = res.headers.get('location');
+        await res.body?.cancel();
+        if (!location) throw new Error(`HTTP ${res.status} without a location for ${target}`);
+        if (hop >= MAX_PART_REDIRECTS) throw new Error(`FIRDS part: too many redirects from ${url}`);
+        target = new URL(location, target).href;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${target}`);
       const declared = Number(res.headers.get('content-length'));
       if (Number.isFinite(declared) && declared > maxBytes) {
         await res.body?.cancel();

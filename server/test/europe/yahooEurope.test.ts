@@ -4,7 +4,7 @@ import {
   createYahooEuropeSummary, defaultZoneOf, EUROPE_INDICES, fetchEuropeEarningsCalendar, fetchEuropeQuotes,
   parseEuropeCalendarPage, parseEuropeSummary, YAHOO_REGIONS, yahooIsinSearch, type ExchangeId,
 } from '../../src/europe/sources/yahooEurope.js';
-import { HttpError } from '../../src/sources/http.js';
+import { HttpError, SourceFormatError } from '../../src/sources/http.js';
 import { parseIndexQuote } from '../../src/sources/yahoo.js';
 import type { YahooClient } from '../../src/sources/yahooClient.js';
 
@@ -220,7 +220,9 @@ describe('Yahoo Europe ISIN search and indices', () => {
     expect(url).toContain('q=SE0000108656');
     expect(url).toContain('quotesCount=10');
     expect(await yahooIsinSearch(stub({ json: async () => ({ quotes: [] }) }), 'XX0000000000')).toEqual([]);
-    expect(await yahooIsinSearch(stub({ json: async () => ({}) }), 'XX0000000000')).toEqual([]);
+    await expect(yahooIsinSearch(stub({ json: async () => ({}) }), 'XX0000000000')).rejects.toBeInstanceOf(SourceFormatError);
+    await expect(yahooIsinSearch(stub({ json: async () => null }), 'XX0000000000')).rejects.toBeInstanceOf(SourceFormatError);
+    await expect(yahooIsinSearch(stub({ json: async () => ({ quotes: 'x' }) }), 'XX0000000000')).rejects.toBeInstanceOf(SourceFormatError);
     expect(await yahooIsinSearch(stub({ json: async () => ({ quotes: [
       { symbol: 'ABC.L', quoteType: 'EQUITY' }, { symbol: 'FUND.L', quoteType: 'MUTUALFUND' },
     ] }) }), 'GB0000000000')).toEqual(['ABC.L']);

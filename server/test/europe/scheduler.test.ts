@@ -111,7 +111,7 @@ describe('Europe scheduler', () => {
       estimates: '20,50 * * * *',
       results: '35 */2 * * *',
       prn: '*/2 6-17 * * 1-5',
-      dila: '*/15 7-19 * * *',
+      dila: '*/15 7-22 * * *',
       esef: '0 2 * * *',
       secSweep: '25,55 * * * *',
       prevMoves: '40 1 * * *',

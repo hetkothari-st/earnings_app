@@ -31,8 +31,11 @@ export const EUROPE_CRONS = {
   results: '35 */2 * * *',
   /** London, weekdays; the job also checks 06:00–18:00 London itself. */
   prn: '*/2 6-17 * * 1-5',
-  /** Paris; EU only. */
-  dila: '*/15 7-19 * * *',
+  /**
+   * Paris; EU only. Until 22:45: a batch appears about an hour after its HHMM name, so the 19:05 after-close batch
+   * lands around 20:05 (each run also lists yesterday's batches, so a later one is read the next morning).
+   */
+  dila: '*/15 7-22 * * *',
   /** since = the last seen date_added (less the margin), else today − 30. */
   esef: '0 2 * * *',
   /** Only with the SEC client. */

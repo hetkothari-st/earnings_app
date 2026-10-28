@@ -35,7 +35,7 @@ describe('EuropeStockList', () => {
     const bt = dto({ id: 4_000_000_002, symbol: 'BT-A.L', name: 'BT Group', level: 'basic', adrTicker: null, adrRatio: null });
     mount([dto({}), bt], [], {
       prices: {
-        'AZN.L': { price: 145.3, prevClose: 144, changePct: 0.9, at: '2026-11-05T10:00:00.000Z', currency: 'EUR', venue: 'tradegate' },
+        'AZN.L': { price: 145.3, prevClose: 144, changePct: 0.9, at: new Date().toISOString(), currency: 'EUR', venue: 'tradegate' },
         'BT-A.L': { price: 1234.5, prevClose: 1240, changePct: -0.44, at: '2026-11-05T10:00:00.000Z', currency: 'GBp', venue: 'yahoo' },
       },
     });
@@ -88,13 +88,22 @@ describe('EuropeStockList', () => {
     expect(screen.getByText('Stock').nextElementSibling!.textContent).toContain('SAP.DE SAP · Xetra');
   });
 
+  test('Yahoo results out shows no clock: the time is when the app saw it, not the release', () => {
+    const r = sapRow({ releasedAt: '2026-11-05T12:35:00.000Z', releasedSource: 'yahoo' });
+    mount([r], ['EU:SAP.DE'], { market: 'EU', zone: 'America/New_York' });
+    const dd = screen.getByText('Release').nextElementSibling as HTMLElement;
+    expect(dd.textContent!.startsWith('Results out · Yahoo')).toBe(true);
+    expect(dd.textContent).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(dd.textContent).not.toContain('your time');
+  });
+
   test('Real-time label carries the price own currency; none when the server sends none', () => {
     const a = dto({ id: 4_000_000_005, symbol: 'X1.L', name: 'One' });
     const b = dto({ id: 4_000_000_006, symbol: 'X2.L', name: 'Two' });
     mount([a, b], ['UK:X2.L'], {
       prices: {
-        'X1.L': { price: 10, prevClose: null, changePct: null, at: '2026-11-05T10:00:00.000Z', currency: 'USD', venue: 'tradegate' },
-        'X2.L': { price: 11, prevClose: null, changePct: null, at: '2026-11-05T10:00:00.000Z', currency: null, venue: 'tradegate' },
+        'X1.L': { price: 10, prevClose: null, changePct: null, at: new Date().toISOString(), currency: 'USD', venue: 'tradegate' },
+        'X2.L': { price: 11, prevClose: null, changePct: null, at: new Date().toISOString(), currency: null, venue: 'tradegate' },
       },
     });
     const one = document.querySelector<HTMLElement>('[data-symbol="X1.L"]')!;
@@ -102,6 +111,25 @@ describe('EuropeStockList', () => {
     const two = document.querySelector<HTMLElement>('[data-symbol="X2.L"]')!;
     expect(within(two).getByText('Real-time · Tradegate')).toBeTruthy();
     expect(two.textContent).not.toContain('EUR');
+  });
+
+  test('a Tradegate quote older than 60 s reads "Tradegate HH:MM", never real-time', () => {
+    const old = new Date(Date.now() - 5 * 60_000).toISOString();
+    const fresh = new Date(Date.now() - 10_000).toISOString();
+    const a = dto({ id: 4_000_000_007, symbol: 'X3.L', name: 'Three' });
+    const b = dto({ id: 4_000_000_008, symbol: 'X4.L', name: 'Four' });
+    mount([a, b], ['UK:X3.L'], {
+      prices: {
+        'X3.L': { price: 10, prevClose: null, changePct: null, at: old, currency: 'EUR', venue: 'tradegate' },
+        'X4.L': { price: 11, prevClose: null, changePct: null, at: fresh, currency: 'EUR', venue: 'tradegate' },
+      },
+    });
+    const hhmm = new Date(old).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
+    const three = document.querySelector<HTMLElement>('[data-symbol="X3.L"]')!;
+    expect(within(three).getByText(`Tradegate ${hhmm} · EUR`)).toBeTruthy();
+    expect(three.textContent).not.toMatch(/real-time/i);
+    const four = document.querySelector<HTMLElement>('[data-symbol="X4.L"]')!;
+    expect(within(four).getByText('Real-time · Tradegate · EUR')).toBeTruthy();
   });
 
   test('UNKNOWN timing tooltip text', () => {
@@ -166,7 +194,8 @@ describe('EuropeStockList', () => {
     });
     mount([r], ['UK:AZN.L']);
     expect(screen.getByText('Stock').nextElementSibling!.textContent).toContain('· ADR AZN (1 ADS = 1 share)');
-    expect(screen.getByText(/SEC 6-K usually arrives within hours of the 07:00 release/)).toBeTruthy();
+    expect(screen.getByText(/SEC 6-K usually arrives within hours of the company's release/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain('07:00 release');
     const rev = screen.getByText('Revenue estimate / actual').nextElementSibling!.textContent;
     expect(rev).toContain('€54B');
     expect(rev).toContain('from ESEF annual report');

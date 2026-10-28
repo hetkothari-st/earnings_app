@@ -17,7 +17,7 @@ const WANTED = [
 function setup(start: number, initial: TradegateState = 'on') {
   let t = start;
   const fetched: string[] = [];
-  const st = { state: initial, wanted: [...WANTED] };
+  const st: { state: TradegateState; wanted: { isin: string; symbol: string; visible?: boolean }[] } = { state: initial, wanted: [...WANTED] };
   const client = {
     state: vi.fn(() => st.state),
     checkRobots: vi.fn(async () => {}),
@@ -65,6 +65,39 @@ describe('TradegatePoller', () => {
     expect(b.fetched).toHaveLength(3);
     await b.advance(4 * 60_000);
     expect(b.fetched).toEqual(['GB0009895292', 'DE0007164600', 'FR0000120271', 'GB0009895292']);
+  });
+
+  it("users' visible codes are polled first; the rest take the seconds left", async () => {
+    const s = setup(IN_HOURS);
+    s.st.wanted = [...WANTED.slice(0, 2), { ...WANTED[2]!, visible: true }];
+    await s.advance(0); // robots
+    await s.advance(1000);
+    expect(s.fetched).toEqual(['FR0000120271']); // visible, though last in the list
+    await s.advance(1000);
+    await s.advance(1000);
+    expect(s.fetched).toEqual(['FR0000120271', 'GB0009895292', 'DE0007164600']);
+    // Due again at +31 s: the visible one goes first.
+    for (let i = 0; i < 28; i++) await s.advance(1000);
+    expect(s.fetched.at(-1)).toBe('FR0000120271');
+  });
+
+  it('an unchanged quote is published again once its last push is 45 s old (its time stays current)', async () => {
+    let t = IN_HOURS - 3_600_000; // 20:59 Berlin
+    const client = {
+      state: () => 'on' as const,
+      checkRobots: async () => {},
+      quote: async (isin: string): Promise<TradegateQuote> => ({ isin, last: 100, close: 99, bid: null, ask: null, changePct: 1, at: new Date(t).toISOString() }),
+    };
+    const published: Record<string, TradegateQuote>[] = [];
+    const poller = new TradegatePoller(client, () => [WANTED[0]!], (c) => published.push(c), () => t);
+    await poller.tick(); // robots
+    t += 1000; await poller.tick();
+    expect(published).toHaveLength(1);
+    t += 30_000; await poller.tick(); // unchanged, pushed 30 s ago: not pushed
+    expect(published).toHaveLength(1);
+    t += 30_000; await poller.tick(); // unchanged, pushed 60 s ago: pushed with the new time
+    expect(published).toHaveLength(2);
+    expect(published[1]!['AZN.L']!.at).toBe(new Date(t).toISOString());
   });
 
   it('backoff state → no fetch', async () => {

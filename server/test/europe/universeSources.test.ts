@@ -86,4 +86,18 @@ describe('DILA client', () => {
     await expect(dila.archive('../etc/passwd')).rejects.toThrow(/unexpected DILA batch name/);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it("listing two days in one run fetches the listing page once", async () => {
+    let fetched = 0;
+    let t = 0;
+    const html = readFileSync(new URL('../fixtures/europe/feeds/dila_listing.html', import.meta.url), 'utf8');
+    const http: Http = { text: async () => { fetched++; return html; }, json: async () => ({}) };
+    const dila = createDilaClient({ http, limiter: { wait: async () => {} }, now: () => t });
+    expect(await dila.list('2026-10-26')).toContain('amf-gz_26102026_1905.tar.gz');
+    expect(await dila.list('2026-10-27')).toContain('amf-gz_27102026_0800.tar.gz');
+    expect(fetched).toBe(1);
+    t = 61_000;
+    await dila.list('2026-10-27');
+    expect(fetched).toBe(2);
+  });
 });

@@ -11,6 +11,8 @@ const OFF_HOURS_EVERY_MS = 15 * 60_000;
 /** robots.txt is read at start and weekly; while it has not passed (state 'off-robots'), again every hour. */
 const ROBOTS_EVERY_MS = 7 * 86_400_000;
 const ROBOTS_RETRY_MS = 3_600_000;
+/** An unchanged quote is pushed again once its last push is this old, so the time a user sees stays current. */
+const REPUSH_UNCHANGED_MS = 45_000;
 
 const OPEN_MIN = 8 * 60;
 const CLOSE_MIN = 22 * 60;
@@ -65,7 +67,8 @@ type Client = Pick<ReturnType<typeof createTradegate>, 'quote' | 'checkRobots' |
 /**
  * The one Tradegate poller for UK and EU (Ruling 14). Every second it fetches at most one ISIN: of the wanted ISINs
  * (visible ∪ watched ∪ reporting today/tomorrow, both markets) that are due, the one fetched longest ago (never
- * fetched first), so the list is served round-robin. An ISIN is due every 30 s in Tradegate hours and every 15 min
+ * fetched first), so the list is served round-robin. ISINs a user has on screen (`visible`) go first; the others
+ * take the seconds left. An unchanged quote is pushed again once its last push is 45 s old. An ISIN is due every 30 s in Tradegate hours and every 15 min
  * outside them. robots.txt is checked at start and every 7 days (hourly while it has not passed); the client is
  * fail-closed, so nothing is fetched before a check passes. In state `backoff` or `off-*` a tick fetches no quote.
  * A failed or empty answer keeps the last quote. Only changed quotes are published, keyed by Yahoo symbol. A symbol
@@ -77,12 +80,13 @@ export class TradegatePoller {
   private lastRobots = -Infinity;
   private readonly fetchedAt = new Map<string, number>();
   private readonly quotes = new Map<string, TradegateQuote>();
+  private readonly pushedAt = new Map<string, number>();
   /** Yahoo symbol → ISIN, from the last `wanted()`. */
   private readonly isinOf = new Map<string, string>();
 
   constructor(
     private readonly client: Client,
-    private readonly wanted: () => { isin: string; symbol: string }[],
+    private readonly wanted: () => { isin: string; symbol: string; visible?: boolean }[],
     private readonly publish: (changed: Record<string, TradegateQuote>) => void,
     private readonly now: () => number = Date.now,
     /** Called with the client's state when it changes (and once at the first tick): prices re-publish their venue. */
@@ -128,13 +132,16 @@ export class TradegatePoller {
       // The wanted list is read every tick, whatever the state: a symbol no longer wanted is dropped with its quote,
       // so a quote nobody polls any more is never served.
       const symbolsOf = new Map<string, string[]>();
+      const visible = new Set<string>();
       this.isinOf.clear();
       for (const w of this.wanted()) {
         this.isinOf.set(w.symbol, w.isin);
         symbolsOf.set(w.isin, [...(symbolsOf.get(w.isin) ?? []), w.symbol]);
+        if (w.visible) visible.add(w.isin);
       }
       for (const isin of [...this.quotes.keys()]) if (!symbolsOf.has(isin)) this.quotes.delete(isin);
       for (const isin of [...this.fetchedAt.keys()]) if (!symbolsOf.has(isin)) this.fetchedAt.delete(isin);
+      for (const isin of [...this.pushedAt.keys()]) if (!symbolsOf.has(isin)) this.pushedAt.delete(isin);
       this.noteState();
 
       const robotsDue = now - this.lastRobots >= (this.client.state() === 'off-robots' ? ROBOTS_RETRY_MS : ROBOTS_EVERY_MS);
@@ -149,10 +156,12 @@ export class TradegatePoller {
       const every = tradegateInHours(now) ? IN_HOURS_EVERY_MS : OFF_HOURS_EVERY_MS;
       let pick: string | null = null;
       let oldest = Infinity;
+      let pickVisible = false;
       for (const isin of symbolsOf.keys()) {
         const at = this.fetchedAt.get(isin) ?? -Infinity;
         if (now - at < every) continue;
-        if (at < oldest) { oldest = at; pick = isin; }
+        const v = visible.has(isin);
+        if ((v && !pickVisible) || (v === pickVisible && at < oldest)) { oldest = at; pick = isin; pickVisible = v; }
       }
       if (!pick) return;
       this.fetchedAt.set(pick, now);
@@ -161,7 +170,9 @@ export class TradegatePoller {
       if (!q) return; // keep the last quote
       const prev = this.quotes.get(pick);
       this.quotes.set(pick, q);
-      if (prev && prev.last === q.last && prev.close === q.close) return;
+      const unchanged = prev && prev.last === q.last && prev.close === q.close;
+      if (unchanged && now - (this.pushedAt.get(pick) ?? -Infinity) < REPUSH_UNCHANGED_MS) return;
+      this.pushedAt.set(pick, now);
       const changed: Record<string, TradegateQuote> = {};
       for (const symbol of symbolsOf.get(pick)!) changed[symbol] = q;
       this.publish(changed);

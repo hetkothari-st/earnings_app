@@ -65,11 +65,21 @@ export function reusedUniverseSources(
  * shared with the other non-SEC, non-Yahoo Europe requests.
  */
 export function createDilaClient(o: {
-  http: Http; limiter: SlotLimiter; fetchImpl?: typeof fetch; timeoutMs?: number;
+  http: Http; limiter: SlotLimiter; fetchImpl?: typeof fetch; timeoutMs?: number; now?: () => number;
 }): NonNullable<EuropeJobContext['dila']> {
   const doFetch = o.fetchImpl ?? fetch;
+  const now = o.now ?? Date.now;
+  // One run lists two days (yesterday and today): the listing page is fetched once per minute at most.
+  let listing: { at: number; html: Promise<string> } | null = null;
+  const html = (): Promise<string> => {
+    if (listing && now() - listing.at < 60_000) return listing.html;
+    const p = o.http.text(DILA_BASE);
+    listing = { at: now(), html: p };
+    p.catch(() => { listing = null; });
+    return p;
+  };
   return {
-    list: async (day) => listDilaFiles(await o.http.text(DILA_BASE), day),
+    list: async (day) => listDilaFiles(await html(), day),
     archive: async (name) => {
       if (!/^amf-gz_\d{8}_\d{4}\.tar\.gz$/.test(name)) throw new Error(`unexpected DILA batch name ${name}`);
       await o.limiter.wait();

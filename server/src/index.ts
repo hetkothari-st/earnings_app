@@ -1,4 +1,6 @@
+import { getTasks as getCronTasks } from 'node-cron';
 import { buildServer } from './api/server.js';
+import { installShutdown } from './shutdown.js';
 import { Broadcaster, registerStream } from './api/stream.js';
 import { parseCookies } from './auth/cookies.js';
 import { SESSION_COOKIE } from './auth/routes.js';
@@ -402,6 +404,16 @@ ukPrices.start();
 euPrices.start();
 // Fail-closed: no Tradegate quote is fetched until robots.txt (checked at start, then weekly) allows /refresh.php.
 tradegatePoller.start();
+
+// SIGTERM (every Railway redeploy) / SIGINT: stop the cron tasks and pollers, close the server, then the database.
+installShutdown({
+  stops: [
+    () => { for (const t of getCronTasks().values()) void t.stop(); }, // every market's cron jobs, read at shutdown
+    () => tradegatePoller.stop(), () => ukPrices.stop(), () => euPrices.stop(),
+    () => prices.stop(), () => hkPrices.stop(), () => jpPrices.stop(), () => inPrices.stop(),
+  ],
+  closes: [() => app.close(), () => db.close()],
+});
 
 startInScheduler(inCtx, job, {
   onResults: (ids) => { live.publish('in-results', { ids }); inPrices.refresh(); },

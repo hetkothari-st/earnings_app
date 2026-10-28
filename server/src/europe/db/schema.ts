@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS europe_past_dates (
 
 -- Fast signals (PR Newswire, DILA): each item handled once.
 CREATE TABLE IF NOT EXISTS europe_signal_seen (
-  source TEXT NOT NULL,              -- 'prn' | 'dila' (and 'dila-file' for a whole day file)
+  source TEXT NOT NULL,              -- 'prn' | 'dila' (and 'dila-file' for a whole day file; 'dila-file-fail' / 'dila-file-error' per day)
   item_id TEXT NOT NULL,
   symbol TEXT,
   outcome TEXT NOT NULL,
@@ -160,6 +160,14 @@ CREATE TABLE IF NOT EXISTS europe_figi (
   outcome TEXT NOT NULL,
   checked_at TEXT NOT NULL,
   PRIMARY KEY (isin, exch_code)
+);
+
+-- Yahoo ISIN search answers (STO / CPH universe lines): only new ISINs cost a search. symbols_json '[]' is a confirmed
+-- "no match"; a failed search is never stored.
+CREATE TABLE IF NOT EXISTS europe_isin_search (
+  isin TEXT PRIMARY KEY,
+  symbols_json TEXT NOT NULL,
+  checked_at TEXT NOT NULL
 );
 
 -- gov.uk England and Wales bank holidays (the LSE's closed weekdays).

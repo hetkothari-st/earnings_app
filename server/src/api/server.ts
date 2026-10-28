@@ -132,10 +132,10 @@ export function buildServer(db: Db, opts: ServerOptions = {}): FastifyInstance {
       return reply.code(204).send();
     }
     if (body.market === 'UK' || body.market === 'EU') {
-      // Ruling 2: Yahoo symbols upper-cased; UK takes `.L` only, EU the continental suffixes.
-      const codes = (body.symbols as string[]).map((s) => s.trim().toUpperCase());
+      // Ruling 2: Yahoo symbols upper-cased; UK takes `.L` only, EU the continental suffixes. A code off the format is
+      // dropped, not the batch: one odd symbol must not remove prices for the user's whole page.
       const format = body.market === 'UK' ? UK_SYMBOL : EU_SYMBOL;
-      if (!codes.every((c) => format.test(c))) return reply.code(400).send({ error: 'invalid symbol' });
+      const codes = (body.symbols as string[]).map((s) => s.trim().toUpperCase()).filter((c) => format.test(c));
       opts.europe?.[body.market]?.setVisible?.(user, [...new Set(codes)]);
       return reply.code(204).send();
     }
