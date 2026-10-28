@@ -438,8 +438,8 @@ describe('readEuropeRelease — fix round 4: fail closed on footnote letters, cu
     expect(p('')).toEqual([12.3, null, 'GBp']);
     // A "$" column unit on another column of the table counts too.
     expect(epsOf(doc(table('', [['£m', 'Q3 2026', 'Q3 2026 US$m']], [['Revenue', '5,000', '6,000'], ['Basic earnings per share (p)', '12.3', '15.0']])), Q3)).toEqual([null, null, null]);
-    // "pence" spelled out is no footnote letter: still pence.
-    expect(epsOf(doc(table('', [['$m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share (pence)', '12.3', '10.1']])), Q3)).toEqual([12.3, null, 'GBp']);
+    // Fix round 5 ruling: "(pence)" spelled out in a $m table is blank too (pence only in an all-GBP document).
+    expect(epsOf(doc(table('', [['$m', 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share (pence)', '12.3', '10.1']])), Q3)).toEqual([null, null, null]);
   });
 
   it('period words in the caption above a table: no column of it is read as a quarter', () => {
@@ -453,5 +453,49 @@ describe('readEuropeRelease — fix round 4: fail closed on footnote letters, cu
     // The YTD column of such a table still reads as the YTD span.
     const r = v('Nine months to 30 September 2026', EU_Q3, ['€m', '9M 2026', '9M 2025']);
     expect([r.revenue, r.span, r.ytdMonths]).toEqual([5_000_000_000, 'ytd', 9]);
+  });
+});
+
+describe('readEuropeRelease — fix round 5: final fail-closed cases (re-review 4)', () => {
+  const EU_Q3 = { ...Q3, profile: 'eu' as const };
+  const epsOf = (html: string, p: Parameters<typeof readEuropeRelease>[1] = EU_Q3) => {
+    const v = readEuropeRelease(html, p);
+    return [v.eps, v.epsCurrency];
+  };
+
+  it('R4-1: a lone "c" / "(c)" mark cell is cents only when no major-currency mark or unit stands over the same column', () => {
+    // A footnote "(c)" cell under the first column, with a "$" mark row over it: blank.
+    const footnote = doc(table('', [['US$m', 'Q3 2026', 'Q3 2025'], ['', '$', '$'], ['', '(c)', '']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share', '1.25', '1.10']]));
+    expect(epsOf(footnote, Q3)).toEqual([null, null]);
+    const markBelow = doc(table('', [['US$m', 'Q3 2026', 'Q3 2025'], ['', 'c', 'c'], ['', '$', '$']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share', '177.7', '150.0']]));
+    expect(epsOf(markBelow, Q3)).toEqual([null, null]);
+    // A unit with a currency over the same column: blank.
+    expect(epsOf(doc(table('', [['', 'Q3 2026 €m', 'Q3 2025 €m'], ['', '(c)', '(c)']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share (€)', '45.3', '40.1']])))).toEqual([null, null]);
+    // The currency from the row label: still cents.
+    expect(epsOf(doc(table('', [['US$m', 'Q3 2026', 'Q3 2025'], ['', '(c)', '(c)']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share ($)(a)', '177.7', '150.0']])), Q3)).toEqual([1.777, 'USD']);
+    // Word forms in a mark cell beside a "$" mark keep their round-1 reading.
+    expect(epsOf(doc(table('', [['US$m', 'Q3 2026', 'Q3 2025'], ['', 'cents', 'cents']], [['Revenue', '5,000', '4,800'], ['Basic earnings per share ($)', '177.7', '150.0']])), Q3)).toEqual([1.777, 'USD']);
+  });
+
+  it('R4-2: "cum" without a dot blocks a quarter', () => {
+    const q = (head: string) => {
+      const v = readEuropeRelease(doc(table('', [['€m', head]], [['Revenue', '5,000'], ['Basic EPS (€)', '1.25']])), EU_Q3);
+      return v.span === 'quarter' ? v.revenue : null;
+    };
+    for (const head of ['Q3 2026 (cum)', 'Q3 2026 cum', 'Cum Q3 2026', 'Q3 2026 cum.']) expect([head, q(head)]).toEqual([head, null]);
+  });
+
+  it('pence ("(p)", "(pence)", "12.3p") only when no other currency appears anywhere in the document\'s tables', () => {
+    const pTable = (label = 'Basic earnings per share (p)', unit = '', fig = '12.3') =>
+      table('', [[unit, 'Q3 2026', 'Q3 2025']], [['Revenue', '5,000', '4,800'], [label, fig, '10.1']]);
+    const other = table('', [['$m', 'Q3 2026', 'Q3 2025']], [['Operating cash flow', '900', '800']]);
+    expect(epsOf(doc(pTable(), other), Q3)).toEqual([null, null]);
+    expect(epsOf(doc(pTable('Basic earnings per share (pence)', '$m')), Q3)).toEqual([null, null]);
+    expect(epsOf(doc(pTable('Basic earnings per share (pence)'), other), Q3)).toEqual([null, null]);
+    expect(epsOf(doc(pTable('Basic earnings per share', '£m', '12.3p'), other), Q3)).toEqual([null, null]);
+    expect(epsOf(doc(pTable('Basic earnings per share', '', '12.3'), table('', [['', 'Q3 2026'], ['', 'p']], [['Diluted earnings per share', '12.1']]), other), Q3)).toEqual([null, null]);
+    // Only pounds / pence in the document: pence.
+    expect(epsOf(doc(pTable()), Q3)).toEqual([12.3, 'GBp']);
+    expect(epsOf(doc(pTable('Basic earnings per share (pence)', '£m'), table('', [['£m', 'Q3 2026']], [['Operating cash flow', '900']])), Q3)).toEqual([12.3, 'GBp']);
   });
 });
