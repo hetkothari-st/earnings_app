@@ -98,7 +98,8 @@ export function jpEntries(db?: Db): IndexEntry[] {
 
 /**
  * UK or Europe: active europe_stocks of the market, by Yahoo symbol. The name is the served one (curated for full level,
- * Yahoo's preferred for basic); `exchange` is the exchange's name.
+ * Yahoo's preferred for basic); `exchange` is the exchange's name, or the stored id for an id not in EXCHANGES (the
+ * stock stays searchable and watchable; only the label falls back).
  */
 export function europeEntries(db: Db | undefined, market: EuropeMarket): IndexEntry[] {
   if (!db) return [];

@@ -86,7 +86,7 @@ export function registerEuropeRoutes(
 
 /**
  * What only the running server knows for the admin page: the Tradegate poller and, once a universe build has run in
- * this process, its left-out count and time per market (not stored; 0 and null until then).
+ * this process, its left-out count and time per market (not stored; null until then).
  */
 export type EuropeAdminSource = () => Pick<EuropeAdminDto, 'tradegate'> & {
   universe?: Partial<Record<EuropeMarket, { leftOut: number; at: string }>>;
@@ -97,7 +97,7 @@ function marketAdmin(db: DatabaseSync, market: EuropeMarket, universe: { leftOut
       COALESCE(SUM(active = 0), 0) AS inactive FROM europe_stocks WHERE market = ?`).get(market) as { full: number; basic: number; inactive: number };
   return {
     full: c.full, basic: c.basic, inactive: c.inactive,
-    leftOut: universe?.leftOut ?? 0, lastUniverseAt: universe?.at ?? null,
+    leftOut: universe?.leftOut ?? null, lastUniverseAt: universe?.at ?? null,
     lastSixKAt: lastEuropeSecSeenAt(db, market),
     // One PR Newswire feed serves both markets; DILA (the AMF) is EU only.
     lastPrnAt: lastSignalAt(db, 'prn'),

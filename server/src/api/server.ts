@@ -63,9 +63,12 @@ export interface ServerOptions {
 }
 
 const MAX_RANGE_DAYS = 400;
-/** Admin source while the live Europe pieces are not running (tests): Tradegate as configured, never polled. */
+/**
+ * Admin source while no live Tradegate client is supplied: its state is unknown (null). Only 'off-env' is certain from
+ * configuration alone (TRADEGATE_PRICES=0).
+ */
 const NO_EUROPE_LIVE: EuropeAdminSource = () => ({
-  tradegate: { state: config.tradegatePrices ? 'on' : 'off-env', backoffUntil: null, lastPollAt: null },
+  tradegate: { state: config.tradegatePrices ? null : 'off-env', backoffUntil: null, lastPollAt: null },
 });
 
 function validDate(s: string | undefined): s is string {
