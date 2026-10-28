@@ -241,7 +241,7 @@ describe('europeRepo', () => {
         .map((t) => t.name);
       expect(tables).toEqual([
         'europe_bank_holidays', 'europe_date_sweep', 'europe_esef_seen', 'europe_expected_moves', 'europe_figi', 'europe_live_moves',
-        'europe_past_dates', 'europe_reports', 'europe_sec_seen', 'europe_signal_seen', 'europe_stocks',
+        'europe_past_dates', 'europe_reports', 'europe_sec_seen', 'europe_signal_seen', 'europe_stocks', 'europe_universe_runs',
       ]);
       // The US and HK rows survived too (dump compared above), and the old europe_esef_seen gained date_added.
       expect((JSON.parse(dump(db)) as unknown[][]).map((t) => t.length)).toEqual([1, 1, 1, 1]);

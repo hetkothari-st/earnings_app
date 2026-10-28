@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import { recordSourceError, recordSourceSuccess } from '../../db/repo.js';
-import { europeStocks, saveBankHolidays, setEuropeProfile, syncEuropeUniverse } from '../db/europeRepo.js';
+import { europeStocks, saveBankHolidays, saveEuropeUniverseRun, setEuropeProfile, syncEuropeUniverse } from '../db/europeRepo.js';
 import { parseGovUkBankHolidays } from '../domain/bankHolidays.js';
 import { calendarFor, holidaysUnknown } from '../domain/calendars.js';
 import { EXCHANGES, exchangesOf } from '../exchanges.js';
@@ -66,6 +66,8 @@ export async function refreshEuropeStocks(ctx: EuropeJobContext): Promise<void> 
       const r = syncEuropeUniverse(ctx.db, ctx.market, built.entries, ctx.now());
       console.log(`[${universeSource}] ${r.upserted} upserted, ${r.deactivated} deactivated, ${built.leftOut} left out`);
       recordSourceSuccess(ctx.db, universeSource, ctx.now());
+      // The admin page reads the last complete build from here, also after a restart.
+      saveEuropeUniverseRun(ctx.db, ctx.market, built.leftOut, ctx.now());
     } catch (err) {
       recordSourceError(ctx.db, universeSource, `${ctx.market} universe sync refused: ${(err as Error).message}`, ctx.now());
     }
