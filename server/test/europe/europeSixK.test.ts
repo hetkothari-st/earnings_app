@@ -230,6 +230,26 @@ describe('UK / EU on the shared 6-K watcher', () => {
     expect(europeSecSeen(db, 'UK', NOTICE_ACC)).toBe(true);
   });
 
+  it('no fiscal year end yet: a notice or results 6-K is not marked seen, and is handled once the year end is known', async () => {
+    const { db, ctx } = setup();
+    db.prepare("UPDATE europe_stocks SET fy_end_month = NULL, fy_end_source = NULL WHERE symbol = 'AZN.L'").run();
+    const notice = {
+      cik: AZN_CIK, accession: NOTICE_ACC, indexUrl: NOTICE_INDEX, acceptedAt: '2026-10-20T10:00:00.000Z', form: '6-K',
+      session: { zone: 'Europe/London', openMin: EXCHANGES.LSE.openMin, closeMin: EXCHANGES.LSE.closeMin },
+    };
+    expect((await handleEuropeFiling(ctx, notice, GATES_CLOSED)).dated).toEqual([]);
+    expect(europeSecSeen(db, 'UK', NOTICE_ACC)).toBe(false);
+    expect((await handleEuropeFiling(ctx, AZN_FILING, GATES_CLOSED)).released).toEqual([]);
+    expect(europeSecSeen(db, 'UK', AZN_ACC)).toBe(false);
+
+    setEuropeProfile(db, 'AZN.L', { name: null, sector: null, industry: null, marketCap: null, marketCapCurrency: null, asOf: null,
+      fyEndMonth: { month: 12, source: 'yahoo' } }, NOW);
+    const r = await handleEuropeFiling(ctx, notice, GATES_CLOSED);
+    expect(r.dated).toHaveLength(1);
+    expect(getEuropeReport(db, r.dated[0]!)).toMatchObject({ reportDate: '2026-11-06', dateStatus: 'confirmed' });
+    expect(europeSecSeen(db, 'UK', NOTICE_ACC)).toBe(true);
+  });
+
   it('a notice with no session gives UNKNOWN timing (never a default)', async () => {
     const { db, ctx } = setup();
     const id = row(db, 'AZN.L', '2026-11-05');

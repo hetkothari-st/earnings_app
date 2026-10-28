@@ -153,7 +153,11 @@ export async function handleEuropeFiling(
       out.dated.push(id);
     }
   }
-  markEuropeSecSeen(ctx.db, market, f.accession, f.cik, ex.kind, ctx.now());
+  // With no fiscal year end yet (a first boot sweeps SEC before Yahoo or ESEF supplied it), a notice or a results
+  // 6-K that found no row cannot be placed: it stays unseen, so a later sweep (45 days back) handles it.
+  const unplaced = stock.fyEndMonth == null && out.released.length === 0 && out.dated.length === 0
+    && ((ex.kind === 'date-notice' && ex.date >= localDate) || ex.kind === 'results');
+  if (!unplaced) markEuropeSecSeen(ctx.db, market, f.accession, f.cik, ex.kind, ctx.now());
   return out;
 }
 
