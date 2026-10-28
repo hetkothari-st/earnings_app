@@ -84,6 +84,22 @@ export function Header(p: Props) {
           >
             Japan
           </button>
+          <button
+            id="market-uk"
+            className={`market-btn${p.market === 'UK' ? ' on' : ''}`}
+            onClick={() => p.onMarket('UK')}
+            aria-pressed={p.market === 'UK'}
+          >
+            UK
+          </button>
+          <button
+            id="market-eu"
+            className={`market-btn${p.market === 'EU' ? ' on' : ''}`}
+            onClick={() => p.onMarket('EU')}
+            aria-pressed={p.market === 'EU'}
+          >
+            Europe
+          </button>
         </div>
         <label className="zone">
           <span>Times shown in {p.zoneText}</span>

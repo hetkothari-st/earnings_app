@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { formatDateHeading, formatEps, formatHkEps, formatHkMoney, formatHkPrice, formatJpEps, formatJpMoney, formatJpPrice, formatPct, formatUsd, formatUsdFull, ytdLabel } from '../src/lib/format';
+import { formatDateHeading, formatEps, formatEuropeEps, formatEuropeMoney, formatEuropePrice, formatHkEps, formatHkMoney, formatHkPrice, formatJpEps, formatJpMoney, formatJpPrice, formatPct, formatUsd, formatUsdFull, ytdLabel } from '../src/lib/format';
 
 describe('Japan formats', () => {
   test('yen price, money, EPS and ytdLabel', () => {
@@ -68,5 +68,36 @@ describe('format', () => {
   });
   test('formatDateHeading', () => {
     expect(formatDateHeading('2026-10-15')).toBe('Thu, Oct 15, 2026');
+  });
+});
+
+describe('UK and Europe formats', () => {
+  test('prices: pence stay pence, each currency its own prefix', () => {
+    expect(formatEuropePrice(1234.5, 'GBp')).toBe('1,234.5p');
+    expect(formatEuropePrice(12.34, 'GBP')).toBe('£12.34');
+    expect(formatEuropePrice(12.34, 'EUR')).toBe('€12.34');
+    expect(formatEuropePrice(12.34, 'USD')).toBe('$12.34');
+    expect(formatEuropePrice(12.34, 'CHF')).toBe('CHF 12.34');
+    expect(formatEuropePrice(12.34, 'SEK')).toBe('SEK 12.34');
+    expect(formatEuropePrice(12.34, null)).toBe('12.34');
+    expect(formatEuropePrice(null, 'EUR')).toBe('—');
+  });
+
+  test('EPS in the unit stated, negatives with a true minus', () => {
+    expect(formatEuropeEps(12.3, 'GBp')).toBe('12.3p');
+    expect(formatEuropeEps(0.118, 'GBP')).toBe('£0.12');
+    expect(formatEuropeEps(1.23, 'EUR')).toBe('€1.23');
+    expect(formatEuropeEps(-0.5, 'EUR')).toBe('−€0.50');
+    expect(formatEuropeEps(-4.2, 'GBp')).toBe('−4.2p');
+    expect(formatEuropeEps(null, 'EUR')).toBe('—');
+  });
+
+  test('compact money in its stated currency; a GBp amount is never shown as pounds', () => {
+    expect(formatEuropeMoney(48_040_000_000, 'GBP')).toBe('£48.04B');
+    expect(formatEuropeMoney(1.2e12, 'EUR')).toBe('€1.2T');
+    expect(formatEuropeMoney(12.4e9, 'SEK')).toBe('SEK 12.4B');
+    expect(formatEuropeMoney(4_804_000_000_000, 'GBp')).not.toContain('£');
+    expect(formatEuropeMoney(4_804_000_000_000, 'GBp')).toBe('4.8Tp');
+    expect(formatEuropeMoney(null, 'EUR')).toBe('—');
   });
 });

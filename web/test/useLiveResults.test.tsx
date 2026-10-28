@@ -135,3 +135,25 @@ test('jp-results and jp-prices reach the jp group', () => {
   expect(jp.onIndices).toHaveBeenCalledWith(idx);
   expect(onIds).not.toHaveBeenCalled();
 });
+
+test('uk-prices and eu-results reach their groups', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  vi.stubGlobal('WebSocket', undefined); // event-stream path
+  const uk = { onIds: vi.fn(), onMoves: vi.fn(), onPrices: vi.fn(), onIndices: vi.fn() };
+  const eu = { onIds: vi.fn(), onMoves: vi.fn(), onPrices: vi.fn(), onIndices: vi.fn() };
+  const jp = { onIds: vi.fn(), onPrices: vi.fn() };
+  renderHook(() => useLiveResults(vi.fn(), undefined, undefined, undefined, undefined, undefined, jp, uk, eu));
+  const price = { price: 1234.5, prevClose: 1240, changePct: -0.44, at: '2026-11-05T10:00:00.000Z', currency: 'GBp', venue: 'yahoo' };
+  FakeSource.last!.emit('uk-prices', { prices: { 'BT-A.L': price } });
+  FakeSource.last!.emit('eu-results', { ids: [4000000009] });
+  FakeSource.last!.emit('uk-moves', { ids: [4000000001] });
+  FakeSource.last!.emit('eu-indices', { indices: [{ index: 'DAX', price: 24000, changePct: 0.1, asOf: 'x' }] });
+  expect(uk.onPrices).toHaveBeenCalledWith({ 'BT-A.L': price });
+  expect(eu.onIds).toHaveBeenCalledWith([4000000009]);
+  expect(uk.onMoves).toHaveBeenCalledWith([4000000001]);
+  expect(eu.onIndices).toHaveBeenCalledWith([{ index: 'DAX', price: 24000, changePct: 0.1, asOf: 'x' }]);
+  expect(uk.onIds).not.toHaveBeenCalled();
+  expect(eu.onPrices).not.toHaveBeenCalled();
+  expect(jp.onIds).not.toHaveBeenCalled();
+  expect(jp.onPrices).not.toHaveBeenCalled();
+});

@@ -55,7 +55,7 @@ export function PreviousMoveLine({ pm }: { pm: ForeignPreviousMove | null }) {
 /** EPS or revenue: each side in its own currency, and no colour when they cannot be compared. */
 export function CurrencyFigure({ f, fmt, source, spanLabel, extra, notComparedText }: {
   f: HkFigureDto; fmt: (n: number | null, currency: string | null) => string;
-  source?: 'Yahoo' | 'EDINET' | null; spanLabel?: string | null; extra?: ReactNode;
+  source?: 'Yahoo' | 'EDINET' | 'ESEF annual report' | null; spanLabel?: string | null; extra?: ReactNode;
   /** Wording of the not-compared note (Japan adds span). */
   notComparedText?: string;
 }) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MarketIndexDto, MarketsResponse } from '../../../server/src/api/types';
-import { apiFetch, type HkMarketDto, type InMarket, type JpMarketDto } from '../api';
+import { apiFetch, type EuropeMarketDto, type HkMarketDto, type InMarket, type JpMarketDto } from '../api';
 import { changeClass, formatChange } from '../lib/format';
 
 const level = (n: number | null) =>
@@ -95,6 +95,47 @@ export function JapanMarketBar({ live = [] }: { live?: JpMarketDto[] }) {
       {indices.map((m) => (
         <div key={m.index} className="market">
           <span className="market-exchange">TSE</span>
+          <span className="market-index">{m.index} · delayed</span>
+          <span className="market-level">{level(m.price)}</span>
+          <span className={`market-change ${changeClass(m.changePct)}`}>{formatChange(m.changePct)}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** The exchange named on the strip beside each continental index. */
+const EU_EXCHANGE: Record<string, string> = {
+  'Euro Stoxx 50': 'STOXX', DAX: 'Xetra', 'CAC 40': 'Euronext Paris', AEX: 'Euronext Amsterdam', 'IBEX 35': 'BME',
+  'FTSE MIB': 'Euronext Milan', SMI: 'SIX', OMXS30: 'Nasdaq Stockholm',
+};
+
+/**
+ * UK: FTSE 100, FTSE 250, FTSE AIM All-Share. Europe: Euro Stoxx 50, DAX, CAC 40, AEX, IBEX 35, FTSE MIB, SMI,
+ * OMXS30. Yahoo only, so every index is delayed. `live` carries pushes over the live stream; /api/{uk|eu}/markets
+ * (every 15 s) fills the rest.
+ */
+export function EuropeMarketBar({ market, live = [] }: { market: 'UK' | 'EU'; live?: EuropeMarketDto[] }) {
+  const [polled, setIndices] = useState<EuropeMarketDto[] | null>(null);
+  const byName = new Map(live.map((m) => [m.index, m]));
+  const indices = polled?.map((m) => byName.get(m.index) ?? m) ?? null;
+  useEffect(() => {
+    let alive = true;
+    setIndices(null);
+    const load = () => apiFetch(`/api/${market === 'UK' ? 'uk' : 'eu'}/markets`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ indices: EuropeMarketDto[] }>) : null))
+      .then((b) => { if (alive && b) setIndices(b.indices); })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [market]);
+  if (!indices) return null;
+  return (
+    <section className={`markets markets-${market.toLowerCase()}`} aria-label={market === 'UK' ? 'UK markets' : 'Europe markets'}>
+      {indices.map((m) => (
+        <div key={m.index} className="market">
+          <span className="market-exchange">{market === 'UK' ? 'LSE' : EU_EXCHANGE[m.index] ?? 'Europe'}</span>
           <span className="market-index">{m.index} · delayed</span>
           <span className="market-level">{level(m.price)}</span>
           <span className={`market-change ${changeClass(m.changePct)}`}>{formatChange(m.changePct)}</span>

@@ -1,6 +1,7 @@
 import type { EarningsResponse, StatusResponse } from '../../server/src/api/types';
 import type { HkAdminDto, HkEarningsResponse, HkLivePriceDto, HkMarketDto, HkReportDto } from '../../server/src/hk/api/types';
 import type { JpAdminDto, JpEarningsResponse, JpLivePriceDto, JpMarketDto, JpReportDto } from '../../server/src/jp/api/types';
+import type { EuropeAdminDto, EuropeEarningsResponse, EuropeLivePriceDto, EuropeMarketDto, EuropeReportDto, ExchangeId } from '../../server/src/europe/api/types';
 import type { Market } from './lib/market';
 import type { InEarningsResponse, InLivePriceDto, KiteStatusDto } from '../../server/src/india/api/types';
 
@@ -26,11 +27,16 @@ export async function fetchEarnings(
 }
 
 /** One report as the calendar lists it; null when it is gone. Live updates patch rows with these. */
-export async function fetchReport(market: Market, id: number): Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto | JpReportDto | null> {
-  const res = await apiFetch(market === 'IN' ? `/api/in/earnings/${id}` : market === 'HK' ? `/api/hk/earnings/${id}` : market === 'JP' ? `/api/jp/earnings/${id}` : `/api/earnings/${id}`);
+type AnyReport = EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto | JpReportDto | EuropeReportDto;
+
+/** The path segment of a market's own API (US has none). */
+const MARKET_PATH: Record<Market, string> = { US: '', IN: '/in', HK: '/hk', JP: '/jp', UK: '/uk', EU: '/eu' };
+
+export async function fetchReport(market: Market, id: number): Promise<AnyReport | null> {
+  const res = await apiFetch(`/api${MARKET_PATH[market]}/earnings/${id}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
-  return res.json() as Promise<EarningsResponse['rows'][number] | InEarningsResponse['rows'][number] | HkReportDto | JpReportDto>;
+  return res.json() as Promise<AnyReport>;
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
@@ -179,6 +185,27 @@ export async function fetchJpPrices(): Promise<Record<string, JpLivePriceDto>> {
   const res = await apiFetch('/api/jp/prices');
   if (!res.ok) throw new Error(`Server returned ${res.status}`);
   return ((await res.json()) as { prices: Record<string, JpLivePriceDto> }).prices;
+}
+
+export type { EuropeAdminDto, EuropeEarningsResponse, EuropeLivePriceDto, EuropeMarketDto, EuropeReportDto, ExchangeId };
+
+/** UK or Europe rows; `exchange` narrows on the server (the list's own exchange filter works client-side). */
+export async function fetchEuropeEarnings(
+  market: 'UK' | 'EU', from: string, to: string, q: string, exchange: ExchangeId | null, signal?: AbortSignal,
+): Promise<EuropeEarningsResponse> {
+  const qs = new URLSearchParams({ from, to });
+  if (q.trim()) qs.set('q', q.trim());
+  if (exchange) qs.set('exchange', exchange);
+  const res = await apiFetch(`/api${MARKET_PATH[market]}/earnings?${qs}`, { signal });
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return res.json() as Promise<EuropeEarningsResponse>;
+}
+
+/** Prices by Yahoo symbol: Tradegate real-time (EUR) where it quotes the stock, else Yahoo delayed. */
+export async function fetchEuropePrices(market: 'UK' | 'EU'): Promise<Record<string, EuropeLivePriceDto>> {
+  const res = await apiFetch(`/api${MARKET_PATH[market]}/prices`);
+  if (!res.ok) throw new Error(`Server returned ${res.status}`);
+  return ((await res.json()) as { prices: Record<string, EuropeLivePriceDto> }).prices;
 }
 
 export type { SymbolsResponse, WatchHistoryDto, WatchRow, WatchRowsResponse } from '../../server/src/api/types';

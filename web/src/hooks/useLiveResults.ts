@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { HkLivePriceDto, HkMarketDto, InLivePriceDto, JpLivePriceDto, JpMarketDto, InMarket, LivePrice } from '../api';
+import type { EuropeLivePriceDto, EuropeMarketDto, HkLivePriceDto, HkMarketDto, InLivePriceDto, JpLivePriceDto, JpMarketDto, InMarket, LivePrice } from '../api';
 
 /** India events: results and moves by report id, prices by NSE symbol. */
 export interface IndiaLive {
@@ -28,11 +28,22 @@ export interface JapanLive {
   onIndices?: (indices: JpMarketDto[]) => void;
 }
 
+/** UK or Europe events: results and moves by report id, prices by Yahoo symbol. */
+export interface EuropeLive {
+  onIds?: (ids: number[]) => void;
+  onMoves?: (ids: number[]) => void;
+  onPrices?: (prices: Record<string, EuropeLivePriceDto>) => void;
+  /** FTSE 100 / 250 / AIM All-Share (UK) or the eight continental indices (Europe) as they tick. */
+  onIndices?: (indices: EuropeMarketDto[]) => void;
+}
+
 /** Reconnect waits after a WebSocket closes: doubling from 1 s to 10 s. */
 const WS_RETRY_MS = 1000;
 const WS_RETRY_MAX_MS = 10_000;
 /** Sockets that never open this many times in a row (blocked by a proxy): use the event stream instead. */
 const WS_GIVE_UP_AFTER = 3;
+
+const EUROPE_EVENTS = ['uk', 'eu'].flatMap((m) => ['results', 'moves', 'prices', 'indices'].map((k) => `${m}-${k}`));
 
 /**
  * Listens to the server's live stream. `onIds` gets report ids whose results just arrived;
@@ -50,13 +61,15 @@ export function useLiveResults(
   onReconnect?: () => void,
   hk?: HongKongLive,
   jp?: JapanLive,
+  uk?: EuropeLive,
+  eu?: EuropeLive,
 ): void {
-  const cb = useRef({ onIds, onMoves, onPrices, india, onReconnect, hk, jp });
-  cb.current = { onIds, onMoves, onPrices, india, onReconnect, hk, jp };
+  const cb = useRef({ onIds, onMoves, onPrices, india, onReconnect, hk, jp, uk, eu });
+  cb.current = { onIds, onMoves, onPrices, india, onReconnect, hk, jp, uk, eu };
   useEffect(() => {
     const dispatch = (event: string, data: string) => {
       try {
-        const body = JSON.parse(data) as { ids?: number[]; prices?: Record<string, unknown>; indices?: (InMarket | HkMarketDto | JpMarketDto)[] };
+        const body = JSON.parse(data) as { ids?: number[]; prices?: Record<string, unknown>; indices?: (InMarket | HkMarketDto | JpMarketDto | EuropeMarketDto)[] };
         const ids = Array.isArray(body.ids) && body.ids.length ? body.ids : null;
         const prices = body.prices && typeof body.prices === 'object' ? body.prices : null;
         const c = cb.current;
@@ -75,6 +88,14 @@ export function useLiveResults(
         else if (event === 'jp-moves' && ids) c.jp?.onMoves?.(ids);
         else if (event === 'jp-prices' && prices) c.jp?.onPrices?.(prices as Record<string, JpLivePriceDto>);
         else if (event === 'jp-indices' && Array.isArray(body.indices)) c.jp?.onIndices?.(body.indices as JpMarketDto[]);
+        else if (event.startsWith('uk-') || event.startsWith('eu-')) {
+          const group = event.startsWith('uk-') ? c.uk : c.eu;
+          const kind = event.slice(3);
+          if (kind === 'results' && ids) group?.onIds?.(ids);
+          else if (kind === 'moves' && ids) group?.onMoves?.(ids);
+          else if (kind === 'prices' && prices) group?.onPrices?.(prices as Record<string, EuropeLivePriceDto>);
+          else if (kind === 'indices' && Array.isArray(body.indices)) group?.onIndices?.(body.indices as EuropeMarketDto[]);
+        }
       } catch {
         // malformed frame: ignore
       }
@@ -92,7 +113,7 @@ export function useLiveResults(
         if (dropped) cb.current.onReconnect?.();
         dropped = false;
       });
-      for (const event of ['results', 'moves', 'in-results', 'in-moves', 'prices', 'in-prices', 'in-indices', 'hk-results', 'hk-moves', 'hk-prices', 'hk-indices', 'jp-results', 'jp-moves', 'jp-prices', 'jp-indices']) {
+      for (const event of ['results', 'moves', 'in-results', 'in-moves', 'prices', 'in-prices', 'in-indices', 'hk-results', 'hk-moves', 'hk-prices', 'hk-indices', 'jp-results', 'jp-moves', 'jp-prices', 'jp-indices', ...EUROPE_EVENTS]) {
         source.addEventListener(event, (e: MessageEvent) => dispatch(event, String(e.data)));
       }
       cleanup = () => source.close();
