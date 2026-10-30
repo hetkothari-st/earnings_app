@@ -18,7 +18,7 @@ import { daySummary } from '../lib/session';
 import type { SortKey } from '../lib/sort';
 import { todayEt, zoneLabel } from '../lib/time';
 import { DayStrip } from './DayStrip';
-import { Header } from './Header';
+import { Header, type UsView } from './Header';
 import { EuropeMarketBar, HongKongMarketBar, IndiaMarketBar, JapanMarketBar, LiveMarketBar } from './MarketBar';
 import { HkStockList } from './HkStockList';
 import { EuropeStockList } from './EuropeStockList';
@@ -28,6 +28,9 @@ import { StaleBanner } from './StaleBanner';
 import { StockList } from './StockList';
 import { InStockList } from './InStockList';
 import { WatchlistView } from './WatchlistView';
+import { MyStocksView } from './MyStocksView';
+import { useAccount } from '../lib/account';
+import { readJson, writeJson } from '../lib/storage';
 
 /** Live updates are gathered this long before fetching; more ids than MAX_PATCH reload the range instead. */
 const PATCH_DELAY_MS = 250;
@@ -78,6 +81,12 @@ export function Calendar() {
   const [reloadKey, setReloadKey] = useState(0);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
   const [showWatch, setShowWatch] = useState(false);
+  // US view choice ("all" = the full calendar, "mine" = only picked stocks), remembered per user on this browser.
+  const account = useAccount();
+  const usViewKey = `usView:${account?.userId ?? ''}`;
+  const [usView, setUsViewState] = useState<UsView>(() => (readJson<string>(usViewKey, 'all') === 'mine' ? 'mine' : 'all'));
+  const setUsView = useCallback((v: UsView) => { setUsViewState(v); setShowWatch(false); writeJson(usViewKey, v); }, [usViewKey]);
+  const mine = market === 'US' && usView === 'mine';
   const watch = useWatchlist(market);
   useVisibleSymbols(market !== 'IN', market === 'IN' ? 'US' : market);
   const onWatch = useCallback((symbol: string, on: boolean) => { (on ? watch.add(symbol) : watch.remove(symbol)).catch(() => {}); }, [watch.add, watch.remove]);
@@ -311,6 +320,7 @@ export function Calendar() {
         sort={sort} onSort={setSort}
         zone={zone} zoneText={zoneText} isOverride={isOverride} onZone={setZone}
         market={market} onMarket={setMarket} watchlist={showWatch} onWatchlist={setShowWatch}
+        usView={usView} onUsView={setUsView}
       />
 
       {market === 'US' && load.status === 'ok' && <StaleBanner sources={load.data.sources} />}
@@ -320,20 +330,25 @@ export function Calendar() {
         {showWatch && (
           <WatchlistView market={market} prices={market === 'IN' ? inPrices : market === 'HK' ? hkPrices : market === 'JP' ? jpPrices : market === 'UK' ? ukPrices : market === 'EU' ? euPrices : prices} watch={watch} reloadKey={reloadKey + watchKey} />
         )}
+        {!showWatch && mine && (
+          <MyStocksView watch={watch} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
+            notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={prices} query={query}
+            reloadKey={reloadKey + watchKey} />
+        )}
         {/* US day view: session band */}
-        {!showWatch && market === 'US' && load.status === 'ok' && view === 'day' && usRows.length > 0 && (
+        {!showWatch && market === 'US' && !mine && load.status === 'ok' && view === 'day' && usRows.length > 0 && (
           <SessionBand date={range.from} sessionClose={usRows[0]!.sessionClose} zone={zone} zoneText={zoneText}
             counts={days[0] ?? { bmo: 0, amc: 0, other: 0 }} onJump={jump} />
         )}
         {/* Multi-day strip (US only; India day-strip is same component) */}
-        {!showWatch && market === 'US' && load.status === 'ok' && view !== 'day' && <DayStrip days={days} onPick={openDay} />}
+        {!showWatch && market === 'US' && !mine && load.status === 'ok' && view !== 'day' && <DayStrip days={days} onPick={openDay} />}
 
-        {!showWatch && customInvalid && <p className="warn-text">Pick a valid From and To date.</p>}
+        {!showWatch && !mine && customInvalid && <p className="warn-text">Pick a valid From and To date.</p>}
 
         {/* US loading/error */}
-        {!showWatch && market === 'US' && !customInvalid && load.status === 'loading' && <p className="muted">Loading…</p>}
-        {!showWatch && market === 'US' && load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
-        {!showWatch && market === 'US' && load.status === 'ok' && (
+        {!showWatch && market === 'US' && !mine && !customInvalid && load.status === 'loading' && <p className="muted">Loading…</p>}
+        {!showWatch && market === 'US' && !mine && load.status === 'error' && <p className="warn-text">Could not load data: {load.error}</p>}
+        {!showWatch && market === 'US' && !mine && load.status === 'ok' && (
           <StockList rows={usRows} zone={zone} expanded={expanded} sort={sort} onToggle={toggle}
             notes={notes} onSaveNote={onSaveNote} highlight={highlight} prices={prices}
             watched={watch.symbols} onWatch={onWatch} />

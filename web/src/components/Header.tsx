@@ -28,7 +28,11 @@ interface Props {
   zone: string; zoneText: string; isOverride: boolean; onZone: (z: string | null) => void;
   market: Market; onMarket: (m: Market) => void;
   watchlist?: boolean; onWatchlist?: (on: boolean) => void;
+  /** US only: which view is shown, the full calendar ('all') or only the user's picked stocks ('mine'). */
+  usView?: UsView; onUsView?: (v: UsView) => void;
 }
+
+export type UsView = 'all' | 'mine';
 
 const ZONES: string[] = (() => {
   try { return Intl.supportedValuesOf('timeZone'); } catch { return ['Asia/Kolkata', 'America/New_York', 'Europe/London', 'UTC']; }
@@ -48,6 +52,8 @@ function title(view: View, from: string, to: string): { main: string; sub: strin
 export function Header(p: Props) {
   const t = title(p.view, p.range.from, p.range.to);
   const account = useAccount();
+  // "My stocks" shows the picks whatever their date, so the period controls do not apply.
+  const mine = p.market === 'US' && p.usView === 'mine';
   return (
     <header className="header">
       <div className="masthead">
@@ -118,8 +124,8 @@ export function Header(p: Props) {
       </div>
 
       <div className="headline">
-        <h1>{t.main} <span className="headline-sub">{t.sub}</span></h1>
-        {p.view === 'custom' ? (
+        {mine ? <h1>My stocks</h1> : <h1>{t.main} <span className="headline-sub">{t.sub}</span></h1>}
+        {mine ? null : p.view === 'custom' ? (
           <div className="custom">
             <input type="date" aria-label="From" value={p.custom.from} onChange={(e) => p.onCustom({ ...p.custom, from: e.target.value })} />
             <span>to</span>
@@ -135,20 +141,28 @@ export function Header(p: Props) {
       </div>
 
       <div className="toolbar">
-        <div className="seg" role="tablist" aria-label="Period">
-          {VIEWS.map((v) => (
-            <button key={v.id} role="tab" aria-selected={p.view === v.id} className={p.view === v.id ? 'on' : ''} onClick={() => p.onView(v.id)}>
-              {v.label}
-            </button>
-          ))}
-        </div>
+        {p.market === 'US' && p.onUsView && (
+          <select className="view-select" value={p.usView ?? 'all'} onChange={(e) => p.onUsView!(e.target.value as UsView)} aria-label="View">
+            <option value="all">View 1: All stocks</option>
+            <option value="mine">View 2: My stocks</option>
+          </select>
+        )}
+        {!mine && (
+          <div className="seg" role="tablist" aria-label="Period">
+            {VIEWS.map((v) => (
+              <button key={v.id} role="tab" aria-selected={p.view === v.id} className={p.view === v.id ? 'on' : ''} onClick={() => p.onView(v.id)}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+        )}
         {p.onWatchlist && (
           <button className={`watch-toggle${p.watchlist ? ' on' : ''}`} aria-pressed={!!p.watchlist} onClick={() => p.onWatchlist!(!p.watchlist)}>
             Watchlist
           </button>
         )}
         <div className="filters">
-          {p.market === 'US' && (
+          {p.market === 'US' && !mine && (
             <select value={p.minCap ?? ''} onChange={(e) => p.onMinCap(e.target.value === '' ? null : Number(e.target.value))} aria-label="Market cap">
               {CAP_OPTIONS.map((o) => <option key={o.label} value={o.value ?? ''}>{o.label}</option>)}
             </select>

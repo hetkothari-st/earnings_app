@@ -348,6 +348,13 @@ table.status { border-collapse: collapse; width: 100%; background: var(--surface
 .star:hover, .star.on { color: var(--amber); }
 .has-star > .star { position: absolute; right: 6px; top: 8px; }
 .watchlist { display: grid; gap: 14px; }
+.my-stocks { display: grid; gap: 14px; }
+.my-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.my-tools .symbol-search { flex: 1 1 260px; }
+.my-confirm { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.my-confirm .danger { border-color: var(--miss); color: var(--miss); }
+.my-undated .stock { display: grid; grid-template-columns: minmax(72px, max-content) minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding: 11px 14px; }
+@media (max-width: 780px) { .my-undated .stock { grid-template-columns: minmax(60px, max-content) 1fr auto; } .my-undated .stock .muted { grid-column: 1 / -1; } }
 .symbol-search { position: relative; max-width: 420px; }
 .symbol-search input { width: 100%; }
 .symbol-hits { list-style: none; margin: 4px 0 0; padding: 4px; position: absolute; left: 0; right: 0; z-index: 5; max-height: 280px; overflow-y: auto;
